@@ -1,0 +1,115 @@
+name: Unit Tests (CI)
+
+on:
+  workflow_dispatch: # Triggered by Dispatch (CI/CD)
+
+jobs:
+  build-unit-tests:
+    runs-on: ${{ vars.RUNNER }}
+    env:
+      QT_QPA_PLATFORM: offscreen # Qt without display
+    defaults:
+      run:
+        shell: bash
+
+    container:
+      image: ghcr.io/tsukini22/unit-tests:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Install the xdesk dependencies (Qt 6, OpenSSL, libjpeg-turbo)
+        run: dnf install -y qt6-qtbase-devel openssl-devel libjpeg-turbo-devel pipewire-devel libXtst-devel
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: /github/home/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ hashFiles('**/*.cpp', '**/*.hpp', 'cmake/config/exceptions/*.json', 'CMakeLists.txt') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
+
+      - name: Build unit-tests
+        run: |
+          set -e
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON
+          cmake --build build --parallel $(nproc)
+        timeout-minutes: 6
+
+      - name: Show ccache stats
+        run: ccache -s
+
+      - name: Check binary
+        run: |
+          set -euo pipefail
+          if [ ! -f "./unit_tests" ]; then
+            echo "::error title=Missing binary::unit_tests binary not found at repo root"
+            exit 1
+          fi
+          echo "✓ unit_tests binary found"
+
+      - name: Run unit-tests
+        working-directory: build
+        run: |
+          ctest --output-on-failure --timeout 30 --parallel $(nproc)
+        timeout-minutes: 3
+
+  build-unit-tests-windows:
+    runs-on: ${{ vars.RUNNER }}
+    env:
+      QT_QPA_PLATFORM: offscreen # Qt without display
+    defaults:
+      run:
+        shell: bash
+
+    container:
+      image: ghcr.io/tsukini22/mingw64-unit-tests:latest
+
+    env:
+      WINEPREFIX: /root/.wine # prefix initialized in the image (a new one takes minutes)
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Install the xdesk dependencies (Qt 6, OpenSSL, libjpeg-turbo)
+        run: dnf install -y mingw64-qt6-qtbase mingw64-openssl mingw64-libjpeg-turbo
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: /github/home/.cache/ccache
+          key: ccache-mingw64-tests-${{ hashFiles('**/*.cpp', '**/*.hpp', 'cmake/config/exceptions/*.json', 'CMakeLists.txt') }}
+          restore-keys: |
+            ccache-mingw64-tests-
+
+      - name: Build unit-tests (MinGW-w64)
+        run: |
+          set -e
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain/mingw-w64.cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON
+          cmake --build build --parallel $(nproc)
+        timeout-minutes: 8
+
+      - name: Show ccache stats
+        run: ccache -s
+
+      - name: Check binary
+        run: |
+          set -euo pipefail
+          if [ ! -f "./unit_tests.exe" ]; then
+            echo "::error title=Missing binary::unit_tests.exe binary not found at repo root"
+            exit 1
+          fi
+          echo "✓ unit_tests.exe binary found"
+
+      - name: Run unit-tests (wine)
+        working-directory: build
+        run: |
+          set -euo pipefail
+          ctest --output-on-failure --timeout 60 --parallel $(nproc)
+        timeout-minutes: 6

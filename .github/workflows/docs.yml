@@ -1,0 +1,57 @@
+name: Docs - Pages (CD)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+
+permissions:
+  contents: write
+
+jobs:
+  sync-docs:
+
+    runs-on: ${{ vars.RUNNER }}
+    defaults:
+      run:
+        shell: bash
+
+    container:
+      image: ghcr.io/tsukini22/git:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          path: main
+
+      - name: Checkout xdesk - gh-pages
+        uses: actions/checkout@v5
+        with:
+          ref: gh-pages
+          path: gh-pages
+          fetch-depth: 1
+
+      - name: Sync docs/ into gh-pages
+        run: |
+          set -euo pipefail
+          rm -rf gh-pages/docs
+          cp -r main/docs gh-pages/docs
+          touch gh-pages/.nojekyll
+          echo "✓ docs/ copied ($(find gh-pages/docs -type f | wc -l) files)"
+
+      - name: Commit and push
+        working-directory: gh-pages
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if git diff --cached --quiet; then
+            echo "No changes to sync."
+            exit 0
+          fi
+          git commit -m "docs(pages): update the documentation (${{ github.sha }})"
+          git push origin gh-pages

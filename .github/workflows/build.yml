@@ -1,0 +1,125 @@
+name: Build (CI)
+
+on:
+  workflow_dispatch: # Triggered by Dispatch (CI/CD)
+
+env:
+  # Content of the project (the XDESK_PACKAGE_BIN / XDESK_PACKAGE_LIB options of the CMakeLists.txt)
+  NAME: "xdesk"
+  PACKAGE_BIN: "ON"
+  PACKAGE_LIB: "OFF"
+
+jobs:
+  build:
+    runs-on: ${{ vars.RUNNER }}
+    defaults:
+      run:
+        shell: bash
+
+    container:
+      image: ghcr.io/tsukini22/ci:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Install the xdesk dependencies (Qt 6, OpenSSL, libjpeg-turbo)
+        run: dnf install -y qt6-qtbase-devel openssl-devel libjpeg-turbo-devel pipewire-devel libXtst-devel
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: /github/home/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ hashFiles('**/*.cpp', '**/*.hpp', 'cmake/config/exceptions/*.json', 'CMakeLists.txt') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
+
+      - name: Build (Release)
+        run: |
+          set -e
+          cmake -S . -B build
+          cmake --build build --target release --parallel $(nproc)
+        timeout-minutes: 6
+
+      - name: Show ccache stats
+        run: ccache -s
+
+      - name: Check outputs
+        run: |
+          set -euo pipefail
+          if [ "$PACKAGE_BIN" = "ON" ]; then
+            if [ ! -x "./$NAME" ]; then
+              echo "::error title=Missing executable,file=$NAME::Executable '$NAME' not found at repo root (or not executable)"
+              exit 1
+            fi
+            echo "✓ Executable '$NAME' ok"
+          fi
+          if [ "$PACKAGE_LIB" = "ON" ]; then
+            for suffix in "" _debug _asan; do
+              library="lib${NAME#lib}${suffix}"
+              if ! compgen -G "./build/$library.*" > /dev/null; then
+                echo "::error title=Missing library,file=$library::Library '$library' not found in build/"
+                exit 1
+              fi
+              echo "✓ Library '$library' ok"
+            done
+          fi
+
+  build-windows:
+    runs-on: ${{ vars.RUNNER }}
+    defaults:
+      run:
+        shell: bash
+
+    container:
+      image: ghcr.io/tsukini22/mingw64-ci:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Install the xdesk dependencies (Qt 6, OpenSSL, libjpeg-turbo)
+        run: dnf install -y mingw64-qt6-qtbase mingw64-openssl mingw64-libjpeg-turbo
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: /github/home/.cache/ccache
+          key: ccache-mingw64-${{ hashFiles('**/*.cpp', '**/*.hpp', 'cmake/config/exceptions/*.json', 'CMakeLists.txt') }}
+          restore-keys: |
+            ccache-mingw64-
+
+      - name: Build (Release, MinGW-w64)
+        run: |
+          set -e
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain/mingw-w64.cmake
+          cmake --build build --target release --parallel $(nproc)
+        timeout-minutes: 8
+
+      - name: Show ccache stats
+        run: ccache -s
+
+      - name: Check outputs
+        run: |
+          set -euo pipefail
+          if [ "$PACKAGE_BIN" = "ON" ]; then
+            if [ ! -f "./$NAME.exe" ]; then
+              echo "::error title=Missing executable,file=$NAME.exe::Executable '$NAME.exe' not found at repo root"
+              exit 1
+            fi
+            echo "✓ Executable '$NAME.exe' ok"
+          fi
+          if [ "$PACKAGE_LIB" = "ON" ]; then
+            for suffix in "" _debug; do # no Asan with MinGW
+              library="lib${NAME#lib}${suffix}"
+              if ! compgen -G "./build/$library.*" > /dev/null; then
+                echo "::error title=Missing library,file=$library::Library '$library' not found in build/"
+                exit 1
+              fi
+              echo "✓ Library '$library' ok"
+            done
+          fi

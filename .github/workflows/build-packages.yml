@@ -1,0 +1,387 @@
+name: Build - Packages (CI/CD)
+
+on:
+  workflow_dispatch: # Triggered by Dispatch (CI/CD)
+    inputs:
+      stable:
+        description: 'Stable release build'
+        required: true
+        type: string
+        default: 'OFF'
+
+concurrency:
+  group: packages-${{ github.repository }}
+  cancel-in-progress: false # queue the syncs, never cancel a publication
+
+env:
+  # Content of the packages (the XDESK_PACKAGE_BIN / XDESK_PACKAGE_LIB / XDESK_PACKAGE_DEV options of the CMakeLists.txt)
+  NAME: "xdesk"
+  PACKAGE_BIN: "ON"
+  PACKAGE_LIB: "OFF"
+  PACKAGE_DEV: "OFF"
+
+jobs:
+  build-packages:
+    runs-on: ${{ vars.RUNNER }}
+    defaults:
+      run:
+        shell: bash
+
+    container:
+      image: ghcr.io/tsukini22/ci:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Install the xdesk dependencies (Qt 6, OpenSSL, libjpeg-turbo)
+        run: dnf install -y qt6-qtbase-devel openssl-devel libjpeg-turbo-devel pipewire-devel libXtst-devel
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: /github/home/.cache/ccache
+          key: ccache-${{ runner.os }}-${{ hashFiles('**/*.cpp', '**/*.hpp', 'cmake/config/exceptions/*.json', 'CMakeLists.txt') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-
+
+      - name: Build packages (Release)
+        run: |
+          set -e
+          cmake -S . -B build -DXDESK_STABLE_RELEASE=${{ inputs.stable }} -DPACKAGE_RELEASE=${{ github.run_number }}
+          cmake --build build --target package_release --parallel $(nproc)
+        timeout-minutes: 6
+
+      - name: Show ccache stats
+        run: ccache -s
+
+      - name: Check packages
+        run: |
+          set -euo pipefail
+          # Expected files: <base>-<variant>-<version>-Linux-<component>.<ext>, <dev>-<version>-Linux-headers[-<variant>].<ext>, <base>-<version>-Linux.<ext>
+          # (<version> = X.Y.Z or pre-X.Y.Z), the file base is the executable name, else the library one
+          LIB="lib${NAME#lib}"
+          if [ "$PACKAGE_BIN" = "ON" ]; then BASE="$NAME"; else BASE="$LIB"; fi
+          if [ "$PACKAGE_LIB" = "ON" ]; then DEV="$LIB-dev"; else DEV="$BASE-dev"; fi
+
+          check() { # <package> <file pattern>
+            for ext in rpm deb; do
+              pattern="${2//@ext@/$ext}"
+              FILE=$(find ./build -maxdepth 1 -name "$pattern" -print -quit)
+              if [ -z "$FILE" ]; then
+                echo "::error title=Missing package (${ext^^})::Package '$1' (.$ext) not found (pattern: $pattern)"
+                exit 1
+              fi
+              echo "✓ Package '$1' (.$ext) ok -> $(basename "$FILE")"
+            done
+          }
+
+          for variant in op db as; do
+            [ "$PACKAGE_BIN" = "ON" ] && check "$NAME-$variant" "$BASE-$variant-*-Linux-bin.@ext@"
+            [ "$PACKAGE_LIB" = "ON" ] && check "$LIB-$variant" "$BASE-$variant-*-Linux-lib.@ext@"
+            [ "$PACKAGE_DEV" = "ON" ] && [ "$PACKAGE_LIB" = "ON" ] && check "$DEV-$variant" "$DEV-*-Linux-headers-$variant.@ext@"
+          done
+          [ "$PACKAGE_DEV" = "ON" ] && check "$DEV" "$DEV-*-Linux-headers.@ext@"
+          check "$BASE" "$BASE-*-Linux.@ext@"
+
+      - name: Check packages (Arch)
+        run: |
+          set -euo pipefail
+          # Expected files: <package>-<pkgver>-<pkgrel>-<arch>.pkg.tar.zst, one per package (named like the RPM / DEB packages)
+          LIB="lib${NAME#lib}"
+          if [ "$PACKAGE_BIN" = "ON" ]; then BASE="$NAME"; else BASE="$LIB"; fi
+          if [ "$PACKAGE_LIB" = "ON" ]; then DEV="$LIB-dev"; else DEV="$BASE-dev"; fi
+
+          check() { # <package> <arch>
+            pattern="$1(-pre)?-[0-9.]+-[0-9]+-$2\.pkg\.tar\.zst"
+            FILE=$(find ./build -maxdepth 1 -regextype posix-extended -regex ".*/$pattern" -print -quit)
+            if [ -z "$FILE" ]; then
+              echo "::error title=Missing package (ARCH)::Package '$1' (.pkg.tar.zst) not found (pattern: $pattern)"
+              exit 1
+            fi
+            echo "✓ Package '$1' (.pkg.tar.zst) ok -> $(basename "$FILE")"
+          }
+
+          for variant in op db as; do
+            [ "$PACKAGE_BIN" = "ON" ] && check "$NAME-$variant" x86_64
+            [ "$PACKAGE_LIB" = "ON" ] && check "$LIB-$variant" x86_64
+            [ "$PACKAGE_DEV" = "ON" ] && [ "$PACKAGE_LIB" = "ON" ] && check "$DEV-$variant" any
+          done
+          [ "$PACKAGE_DEV" = "ON" ] && check "$DEV" any
+          check "$BASE" any
+
+      - name: Upload compiled packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: compiled-packages
+          path: |
+            build/*.rpm
+            build/*.deb
+            build/*.pkg.tar.zst
+          retention-days: 1
+
+  build-packages-windows:
+    runs-on: ${{ vars.RUNNER }}
+    defaults:
+      run:
+        shell: bash
+
+    container:
+      image: ghcr.io/tsukini22/mingw64-ci:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Install the xdesk dependencies (Qt 6, OpenSSL, libjpeg-turbo)
+        run: dnf install -y mingw64-qt6-qtbase mingw64-openssl mingw64-libjpeg-turbo
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: /github/home/.cache/ccache
+          key: ccache-mingw64-${{ hashFiles('**/*.cpp', '**/*.hpp', 'cmake/config/exceptions/*.json', 'CMakeLists.txt') }}
+          restore-keys: |
+            ccache-mingw64-
+
+      - name: Build packages (Release, MinGW-w64)
+        run: |
+          set -e
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain/mingw-w64.cmake -DXDESK_STABLE_RELEASE=${{ inputs.stable }} -DPACKAGE_RELEASE=${{ github.run_number }}
+          cmake --build build --target package_release --parallel $(nproc)
+        timeout-minutes: 8
+
+      - name: Show ccache stats
+        run: ccache -s
+
+      - name: Check packages
+        run: |
+          set -euo pipefail
+          # Same files as the Linux ones with the mingw64- prefix and the win64 system, without the Asan variant
+          LIB="mingw64-lib${NAME#lib}"
+          if [ "$PACKAGE_BIN" = "ON" ]; then BASE="mingw64-$NAME"; else BASE="$LIB"; fi
+          if [ "$PACKAGE_LIB" = "ON" ]; then DEV="$LIB-dev"; else DEV="$BASE-dev"; fi
+
+          check() { # <package> <file pattern>
+            for ext in rpm deb; do
+              pattern="${2//@ext@/$ext}"
+              FILE=$(find ./build -maxdepth 1 -name "$pattern" -print -quit)
+              if [ -z "$FILE" ]; then
+                echo "::error title=Missing package (${ext^^})::Package '$1' (.$ext) not found (pattern: $pattern)"
+                exit 1
+              fi
+              echo "✓ Package '$1' (.$ext) ok -> $(basename "$FILE")"
+            done
+          }
+
+          for variant in op db; do
+            [ "$PACKAGE_BIN" = "ON" ] && check "mingw64-$NAME-$variant" "$BASE-$variant-*-win64-bin.@ext@"
+            [ "$PACKAGE_LIB" = "ON" ] && check "$LIB-$variant" "$BASE-$variant-*-win64-lib.@ext@"
+            [ "$PACKAGE_DEV" = "ON" ] && [ "$PACKAGE_LIB" = "ON" ] && check "$DEV-$variant" "$DEV-*-win64-headers-$variant.@ext@"
+          done
+          [ "$PACKAGE_DEV" = "ON" ] && check "$DEV" "$DEV-*-win64-headers.@ext@"
+          check "$BASE" "$BASE-*-win64.@ext@"
+
+      - name: Upload compiled packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: compiled-packages-windows
+          path: |
+            build/*.rpm
+            build/*.deb
+          retention-days: 1
+
+  # >>> gh-pages >>> (removed by setup.sh without the gh-pages option: the packages stay as artifacts of the run)
+  sync-online-packages:
+    needs: [build-packages, build-packages-windows]
+    if: needs.build-packages.result == 'success' && needs.build-packages-windows.result == 'success'
+    permissions:
+      contents: write
+
+    runs-on: ${{ vars.RUNNER }}
+    defaults:
+      run:
+        shell: bash
+
+    container:
+      image: ghcr.io/tsukini22/package:latest
+
+    steps:
+      - name: Download compiled packages
+        uses: actions/download-artifact@v7
+        with:
+          pattern: compiled-packages*
+          merge-multiple: true
+          path: build
+
+      - name: Checkout xdesk - gh-pages
+        uses: actions/checkout@v5
+        with:
+          ref: gh-pages
+          path: gh-pages
+          fetch-depth: 1
+
+      - name: Import GPG key
+        run: |
+          set -e
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | base64 -d | gpg --batch --import
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+
+      - name: Sign packages (RPM)
+        run: |
+          set -e
+          # Import public key into RPM before verification
+          gpg --armor --export "${{ secrets.GPG_KEY_ID }}" > /tmp/pubkey.asc
+          rpm --import /tmp/pubkey.asc
+
+          # Configure RPM to use the GPG key and non-interactive signing.
+          cat > ~/.rpmmacros <<EOF
+          %_signature gpg
+          %_gpg_name ${{ secrets.GPG_KEY_ID }}
+          %__gpg $(command -v gpg)
+          %_gpg_sign_cmd_extra_args --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}"
+          EOF
+
+          # Sign RPM packages
+          rpm --addsign build/*.rpm
+
+          # Check of the signature
+          for f in build/*.rpm; do
+            echo "Checking signature: $f"
+            rpm -Kv "$f"
+          done
+
+      - name: Sync files into gh-pages (RPM)
+        run: |
+          set -euo pipefail
+          REPO_DIR="gh-pages/fedora/44/x86_64"
+          mkdir -p "$REPO_DIR" # Security
+          mv build/*.rpm $REPO_DIR/
+
+          # Keep every release, only the 5 last versions of each pre-release package
+          prune_pre() {
+              local dir="$1" ext="$2" keep=5
+              find "$dir" -maxdepth 1 -name "*-pre-[0-9]*.${ext}" -printf '%f\n' \
+                  | sed -E 's/^(.+-pre)-([0-9]+\.[0-9]+\.[0-9]+)-(.+)$/\1 \2 \3/' \
+                  | sort -k1,1 -k3,3 -k2,2V \
+                  | awk -v keep="$keep" '{key = $1 " " $3; n[key]++; f[key, n[key]] = $1 "-" $2 "-" $3} END {for (k in n) for (i = 1; i <= n[k] - keep; i++) print f[k, i]}' \
+                  | while read -r file; do echo "Prune old pre-release: $file"; rm -f "$dir/$file"; done
+          }
+          prune_pre "$REPO_DIR" rpm
+
+      - name: Update metadata and signature (RPM)
+        working-directory: gh-pages/fedora/44/x86_64
+        run: |
+          set -e
+          createrepo_c --update .
+          rm -f repodata/repomd.xml.asc
+          gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --detach-sign --armor repodata/repomd.xml
+
+      - name: Sync files into gh-pages (DEB)
+        run: |
+          set -euo pipefail
+          POOL_DIR="gh-pages/debian/pool/main"
+          mkdir -p "$POOL_DIR"
+          mv build/*.deb "$POOL_DIR/"
+
+          # Keep every release, only the 5 last versions of each pre-release package
+          prune_pre() {
+              local dir="$1" ext="$2" keep=5
+              find "$dir" -maxdepth 1 -name "*-pre-[0-9]*.${ext}" -printf '%f\n' \
+                  | sed -E 's/^(.+-pre)-([0-9]+\.[0-9]+\.[0-9]+)-(.+)$/\1 \2 \3/' \
+                  | sort -k1,1 -k3,3 -k2,2V \
+                  | awk -v keep="$keep" '{key = $1 " " $3; n[key]++; f[key, n[key]] = $1 "-" $2 "-" $3} END {for (k in n) for (i = 1; i <= n[k] - keep; i++) print f[k, i]}' \
+                  | while read -r file; do echo "Prune old pre-release: $file"; rm -f "$dir/$file"; done
+          }
+          prune_pre "$POOL_DIR" deb
+
+      - name: Update metadata and signature (DEB)
+        working-directory: gh-pages/debian
+        run: |
+          set -euo pipefail
+          DIST_DIR="dists/stable/main/binary-amd64"
+          mkdir -p "$DIST_DIR"
+
+          # Generate Packages index
+          dpkg-scanpackages --multiversion pool/main /dev/null > "$DIST_DIR/Packages"
+          gzip -k -f "$DIST_DIR/Packages"
+          xz -k -f "$DIST_DIR/Packages"
+
+          # Generate Release file
+          cat > dists/stable/Release <<EOF
+          Origin: TsukiNi22
+          Label: xdesk
+          Suite: stable
+          Codename: stable
+          Architectures: amd64
+          Components: main
+          Description: xdesk APT repository
+          Date: $(date -Ru)
+          EOF
+
+          apt-ftparchive release dists/stable >> dists/stable/Release
+
+          # Sign the Release file
+          rm -f dists/stable/Release.gpg dists/stable/InRelease
+          gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+            --default-key "${{ secrets.GPG_KEY_ID }}" \
+            --detach-sign --armor -o dists/stable/Release.gpg dists/stable/Release
+          gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+            --default-key "${{ secrets.GPG_KEY_ID }}" \
+            --clearsign -o dists/stable/InRelease dists/stable/Release
+
+      - name: Sync files into gh-pages (Arch)
+        run: |
+          set -euo pipefail
+          REPO_DIR="gh-pages/arch/x86_64"
+          mkdir -p "$REPO_DIR"
+
+          # Sign the packages (detached binary signatures, read by repo-add and pacman)
+          for f in build/*.pkg.tar.zst; do
+            gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+              --default-key "${{ secrets.GPG_KEY_ID }}" --detach-sign --no-armor -o "$f.sig" "$f"
+          done
+          mv build/*.pkg.tar.zst build/*.pkg.tar.zst.sig "$REPO_DIR/"
+
+          # Keep every release, only the 5 last versions of each pre-release package (<name>-pre-<pkgver>-<pkgrel>-<arch>)
+          find "$REPO_DIR" -maxdepth 1 -name "*-pre-[0-9]*.pkg.tar.zst" -printf '%f\n' \
+              | sed -E 's/^(.+-pre)-([0-9.]+-[0-9]+)-([a-z0-9_]+)\.pkg\.tar\.zst$/\1 \2 \3/' \
+              | sort -k1,1 -k2,2V \
+              | awk -v keep=5 '{n[$1]++; f[$1, n[$1]] = $1 "-" $2 "-" $3 ".pkg.tar.zst"} END {for (k in n) for (i = 1; i <= n[k] - keep; i++) print f[k, i]}' \
+              | while read -r file; do echo "Prune old pre-release: $file"; rm -f "${REPO_DIR:?}/${file:?}" "${REPO_DIR:?}/${file:?}.sig"; done
+
+      - name: Update metadata and signature (Arch)
+        working-directory: gh-pages/arch/x86_64
+        run: |
+          set -euo pipefail
+          # Database rebuilt from every package, oldest first (the last version of a package wins)
+          rm -f xdesk.db* xdesk.files*
+          find . -maxdepth 1 -name "*.pkg.tar.zst" -printf '%f\n' | sort -V | xargs repo-add -q --include-sigs xdesk.db.tar.gz
+
+          # GitHub Pages: real files instead of the symbolic links of repo-add, signed databases
+          for db in xdesk.db xdesk.files; do
+            cp --remove-destination "$db.tar.gz" "$db"
+            gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+              --default-key "${{ secrets.GPG_KEY_ID }}" --detach-sign --no-armor -o "$db.sig" "$db"
+            cp "$db.sig" "$db.tar.gz.sig"
+          done
+
+      - name: Commit and push
+        working-directory: gh-pages
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if git diff --cached --quiet; then
+            echo "No changes to sync."
+            exit 0
+          fi
+          git commit -m "chore: sync packages from main (${{ github.sha }})"
+          git push origin gh-pages
+  # <<< gh-pages <<<
