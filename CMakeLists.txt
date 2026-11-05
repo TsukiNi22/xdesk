@@ -87,8 +87,8 @@ if(UNIX AND NOT APPLE)
     if(Qt6DBus_FOUND)
         set(XDESK_HAS_DBUS ON)
     endif()
-    pkg_check_modules(PIPEWIRE QUIET IMPORTED_TARGET libpipewire-0.3) # Wayland real time capture
-    if(PIPEWIRE_FOUND AND XDESK_HAS_DBUS)
+    # Wayland real time capture: PipeWire headers vendored (third_party/pipewire), libpipewire loaded at run time
+    if(XDESK_HAS_DBUS)
         set(XDESK_HAS_PIPEWIRE ON)
     endif()
     pkg_check_modules(XTEST QUIET IMPORTED_TARGET xtst x11) # X11 input injection (uinput otherwise)
@@ -381,6 +381,9 @@ add_custom_target(package_release
 # =========================
 foreach(target ${COMPILED_TARGETS})
     target_include_directories(${target} PRIVATE include/exception third_party)
+    if(XDESK_HAS_PIPEWIRE)
+        target_include_directories(${target} SYSTEM PRIVATE third_party/pipewire) # <pipewire/...>, <spa/...>
+    endif()
     add_dependencies(${target} generated_external_exception_header)
 endforeach()
 if(XDESK_PACKAGE_LIB)
@@ -402,7 +405,7 @@ if(XDESK_HAS_DBUS)
     list(APPEND XDESK_LIBS Qt6::DBus)
 endif()
 if(XDESK_HAS_PIPEWIRE)
-    list(APPEND XDESK_LIBS PkgConfig::PIPEWIRE)
+    list(APPEND XDESK_LIBS ${CMAKE_DL_LIBS}) # dlopen of libpipewire-0.3.so.0
 endif()
 if(XDESK_HAS_XTEST)
     list(APPEND XDESK_LIBS PkgConfig::XTEST)

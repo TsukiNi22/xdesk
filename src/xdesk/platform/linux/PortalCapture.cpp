@@ -19,6 +19,8 @@ File Description:
 \**************************************************************/
 
 #define _Attribute
+#define _Exception
+#define _Encapsulation
 #include <utils/utils.hpp>
 #include "xdesk/platform/linux/PortalCapture.hpp"
 #include "xdesk/security/Crypto.hpp"
@@ -44,10 +46,19 @@ File Description:
 #include <QDir>
 #ifdef XDESK_HAS_PIPEWIRE
     #include <spa/param/video/format-utils.h>
-    #include <spa/param/video/type-info.h>
+    #include <pipewire/thread-loop.h>
+    #include <pipewire/properties.h>
     #include <spa/param/buffers.h>
-    #include <pipewire/pipewire.h>
-    #include <spa/debug/types.h>
+    #include <pipewire/context.h>
+    #include <pipewire/stream.h>
+    #include <pipewire/core.h>
+    #include <pipewire/keys.h>
+    #include <QStringList>
+    #ifdef __clang__
+        // The SPA builder macros are C (compound literals, statement expressions): fine in clang and gcc
+        #pragma clang diagnostic ignored "-Wc99-extensions"
+        #pragma clang diagnostic ignored "-Wgnu-statement-expression-from-macro-expansion"
+    #endif
 #endif
 
 //----------------------------------------------------------------//
@@ -63,6 +74,7 @@ File Description:
 #define FIRST_FRAME_TIMEOUT 5000 // ms
 #define FRAME_WAIT 8 // ms waited in grab for a fresh frame
 #define SCREENSHOT_INTERVAL 1000 // ms between two screenshots (fallback)
+#define PIPEWIRE_LIBRARY "libpipewire-0.3.so.0"
 
 //----------------------------------------------------------------//
 /* CLASS */
@@ -82,6 +94,31 @@ class PortalRequest: public QObject {
 };
 
 #ifdef XDESK_HAS_PIPEWIRE
+    // libpipewire loaded at run time: no build dependency (vendored headers), xdesk still starts where PipeWire is missing
+    struct PipeWireApi {
+        void (*init)(int*, char***) = nullptr; // pw_init (pipewire.h not included: it pulls the whole API)
+        decltype(&::pw_thread_loop_new) threadLoopNew = nullptr;
+        decltype(&::pw_thread_loop_get_loop) threadLoopGetLoop = nullptr;
+        decltype(&::pw_thread_loop_start) threadLoopStart = nullptr;
+        decltype(&::pw_thread_loop_stop) threadLoopStop = nullptr;
+        decltype(&::pw_thread_loop_lock) threadLoopLock = nullptr;
+        decltype(&::pw_thread_loop_unlock) threadLoopUnlock = nullptr;
+        decltype(&::pw_thread_loop_destroy) threadLoopDestroy = nullptr;
+        decltype(&::pw_context_new) contextNew = nullptr;
+        decltype(&::pw_context_connect_fd) contextConnectFd = nullptr;
+        decltype(&::pw_context_destroy) contextDestroy = nullptr;
+        decltype(&::pw_core_disconnect) coreDisconnect = nullptr;
+        decltype(&::pw_properties_new) propertiesNew = nullptr;
+        decltype(&::pw_stream_new) streamNew = nullptr;
+        decltype(&::pw_stream_add_listener) streamAddListener = nullptr;
+        decltype(&::pw_stream_connect) streamConnect = nullptr;
+        decltype(&::pw_stream_update_params) streamUpdateParams = nullptr;
+        decltype(&::pw_stream_dequeue_buffer) streamDequeueBuffer = nullptr;
+        decltype(&::pw_stream_queue_buffer) streamQueueBuffer = nullptr;
+        decltype(&::pw_stream_destroy) streamDestroy = nullptr;
+        QString error = ""; // "" = every symbol found and pw_init done
+    };
+
     // PipeWire objects and the latest frame (written by the PipeWire thread, read by the capture thread)
     struct xdesk::platform::PipeWireState {
         pw_thread_loop* loop = nullptr;
@@ -158,6 +195,57 @@ _cold static QString token_path(void)
 }
 
 #ifdef XDESK_HAS_PIPEWIRE
+    #define PW_SYMBOL(field, symbol) \
+        try { \
+            loaded.field = library->loadFunction<decltype(loaded.field)>(#symbol); \
+        } catch (const utils::exception::IException&) { \
+            missing.append(#symbol); \
+        }
+
+    // Loaded once, kept until the end of the process (the PipeWire threads may outlive a capture)
+    _cold static const PipeWireApi& pipewire(void)
+    {
+        static std::unique_ptr<utils::encapsulation::SharedObject> library = nullptr;
+        static const PipeWireApi api = [](void) {
+            PipeWireApi loaded;
+            QStringList missing;
+
+            try {
+                library = std::make_unique<utils::encapsulation::SharedObject>(PIPEWIRE_LIBRARY);
+            } catch (const utils::exception::IException&) {
+                loaded.error = PIPEWIRE_LIBRARY " not found (package pipewire-libs / libpipewire-0.3-0)";
+                return loaded;
+            }
+            PW_SYMBOL(init, pw_init)
+            PW_SYMBOL(threadLoopNew, pw_thread_loop_new)
+            PW_SYMBOL(threadLoopGetLoop, pw_thread_loop_get_loop)
+            PW_SYMBOL(threadLoopStart, pw_thread_loop_start)
+            PW_SYMBOL(threadLoopStop, pw_thread_loop_stop)
+            PW_SYMBOL(threadLoopLock, pw_thread_loop_lock)
+            PW_SYMBOL(threadLoopUnlock, pw_thread_loop_unlock)
+            PW_SYMBOL(threadLoopDestroy, pw_thread_loop_destroy)
+            PW_SYMBOL(contextNew, pw_context_new)
+            PW_SYMBOL(contextConnectFd, pw_context_connect_fd)
+            PW_SYMBOL(contextDestroy, pw_context_destroy)
+            PW_SYMBOL(coreDisconnect, pw_core_disconnect)
+            PW_SYMBOL(propertiesNew, pw_properties_new)
+            PW_SYMBOL(streamNew, pw_stream_new)
+            PW_SYMBOL(streamAddListener, pw_stream_add_listener)
+            PW_SYMBOL(streamConnect, pw_stream_connect)
+            PW_SYMBOL(streamUpdateParams, pw_stream_update_params)
+            PW_SYMBOL(streamDequeueBuffer, pw_stream_dequeue_buffer)
+            PW_SYMBOL(streamQueueBuffer, pw_stream_queue_buffer)
+            PW_SYMBOL(streamDestroy, pw_stream_destroy)
+            if (!missing.isEmpty()) {
+                loaded.error = "libpipewire too old, missing: " + missing.join(", ");
+                return loaded;
+            }
+            loaded.init(nullptr, nullptr);
+            return loaded;
+        }();
+        return api;
+    }
+
     static void on_state_changed(void* data, enum pw_stream_state, enum pw_stream_state state, const char* error)
     {
         xdesk::platform::PipeWireState* pw = static_cast<xdesk::platform::PipeWireState*>(data);
@@ -189,18 +277,19 @@ _cold static QString token_path(void)
             SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(4, 2, 8),
             SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1),
             SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int((1 << SPA_DATA_MemPtr) | (1 << SPA_DATA_MemFd))));
-        (void)pw_stream_update_params(pw->stream, params, 1);
+        (void)pipewire().streamUpdateParams(pw->stream, params, 1);
     }
 
     static void on_process(void* data)
     {
         xdesk::platform::PipeWireState* pw = static_cast<xdesk::platform::PipeWireState*>(data);
+        const PipeWireApi& api = pipewire();
         pw_buffer* buffer = nullptr;
         pw_buffer* next = nullptr;
 
         // Only the newest buffer matters: older ones are given back at once
-        while ((next = pw_stream_dequeue_buffer(pw->stream)) != nullptr) {
-            if (buffer) (void)pw_stream_queue_buffer(pw->stream, buffer);
+        while ((next = api.streamDequeueBuffer(pw->stream)) != nullptr) {
+            if (buffer) (void)api.streamQueueBuffer(pw->stream, buffer);
             buffer = next;
         }
         if (!buffer) return;
@@ -223,14 +312,22 @@ _cold static QString token_path(void)
                 pw->fresh.notify_all();
             }
         }
-        (void)pw_stream_queue_buffer(pw->stream, buffer);
+        (void)api.streamQueueBuffer(pw->stream, buffer);
     }
 
     static const pw_stream_events STREAM_EVENTS = {
         .version = PW_VERSION_STREAM_EVENTS,
+        .destroy = nullptr,
         .state_changed = on_state_changed,
+        .control_info = nullptr,
+        .io_changed = nullptr,
         .param_changed = on_param_changed,
+        .add_buffer = nullptr,
+        .remove_buffer = nullptr,
         .process = on_process,
+        .drained = nullptr,
+        .command = nullptr,
+        .trigger_done = nullptr,
     };
 #endif
 
@@ -254,8 +351,10 @@ bool xdesk::platform::PortalCapture::start(void)
         return false;
     }
     #ifdef XDESK_HAS_PIPEWIRE
-        if (this->startScreenCast_()) return true;
-        if (this->_error.contains("cancelled")) return false; // the user said no: never fall back silently
+        if (pipewire().error.isEmpty()) {
+            if (this->startScreenCast_()) return true;
+            if (this->_error.contains("cancelled")) return false; // the user said no: never fall back silently
+        } else this->_error = pipewire().error;
     #endif
     return this->startScreenshot_();
 }
@@ -338,7 +437,7 @@ bool xdesk::platform::PortalCapture::startScreenCast_(void)
 bool xdesk::platform::PortalCapture::startPipeWire_(const int fd)
 {
     #ifdef XDESK_HAS_PIPEWIRE
-        static std::once_flag initialized;
+        const PipeWireApi& api = pipewire();
         uint8_t buffer[1024];
         spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
         const spa_pod* params[1];
@@ -350,23 +449,22 @@ bool xdesk::platform::PortalCapture::startPipeWire_(const int fd)
         spa_fraction maxRate = SPA_FRACTION(240, 1);
 
         if (fd < 0) {this->_error = "invalid PipeWire fd"; return false;}
-        std::call_once(initialized, [](void) {pw_init(nullptr, nullptr);});
         this->_pw = std::make_unique<PipeWireState>();
         PipeWireState* pw = this->_pw.get();
-        pw->loop = pw_thread_loop_new("xdesk-capture", nullptr);
+        pw->loop = api.threadLoopNew("xdesk-capture", nullptr);
         if (!pw->loop) {::close(fd); this->_error = "pw_thread_loop_new failed"; return false;}
-        pw->context = pw_context_new(pw_thread_loop_get_loop(pw->loop), nullptr, 0);
-        if (!pw->context || pw_thread_loop_start(pw->loop) < 0) {::close(fd); this->_error = "PipeWire context failed"; return false;}
+        pw->context = api.contextNew(api.threadLoopGetLoop(pw->loop), nullptr, 0);
+        if (!pw->context || api.threadLoopStart(pw->loop) < 0) {::close(fd); this->_error = "PipeWire context failed"; return false;}
 
-        pw_thread_loop_lock(pw->loop);
-        pw->core = pw_context_connect_fd(pw->context, fd, nullptr, 0); // takes the fd
+        api.threadLoopLock(pw->loop);
+        pw->core = api.contextConnectFd(pw->context, fd, nullptr, 0); // takes the fd
         if (!pw->core) {
-            pw_thread_loop_unlock(pw->loop);
+            api.threadLoopUnlock(pw->loop);
             this->_error = "PipeWire connection refused";
             return false;
         }
-        pw->stream = pw_stream_new(pw->core, "xdesk", pw_properties_new(PW_KEY_MEDIA_TYPE, "Video", PW_KEY_MEDIA_CATEGORY, "Capture", PW_KEY_MEDIA_ROLE, "Screen", nullptr));
-        pw_stream_add_listener(pw->stream, &pw->streamListener, &STREAM_EVENTS, pw);
+        pw->stream = api.streamNew(pw->core, "xdesk", api.propertiesNew(PW_KEY_MEDIA_TYPE, "Video", PW_KEY_MEDIA_CATEGORY, "Capture", PW_KEY_MEDIA_ROLE, "Screen", nullptr));
+        api.streamAddListener(pw->stream, &pw->streamListener, &STREAM_EVENTS, pw);
         params[0] = static_cast<const spa_pod*>(spa_pod_builder_add_object(&builder,
             SPA_TYPE_OBJECT_Format, SPA_PARAM_EnumFormat,
             SPA_FORMAT_mediaType, SPA_POD_Id(SPA_MEDIA_TYPE_video),
@@ -374,8 +472,8 @@ bool xdesk::platform::PortalCapture::startPipeWire_(const int fd)
             SPA_FORMAT_VIDEO_format, SPA_POD_CHOICE_ENUM_Id(5, SPA_VIDEO_FORMAT_BGRx, SPA_VIDEO_FORMAT_BGRx, SPA_VIDEO_FORMAT_BGRA, SPA_VIDEO_FORMAT_RGBx, SPA_VIDEO_FORMAT_RGBA),
             SPA_FORMAT_VIDEO_size, SPA_POD_CHOICE_RANGE_Rectangle(&defaultSize, &minSize, &maxSize),
             SPA_FORMAT_VIDEO_framerate, SPA_POD_CHOICE_RANGE_Fraction(&defaultRate, &minRate, &maxRate)));
-        const int connected = pw_stream_connect(pw->stream, PW_DIRECTION_INPUT, this->_node, static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS), params, 1);
-        pw_thread_loop_unlock(pw->loop);
+        const int connected = api.streamConnect(pw->stream, PW_DIRECTION_INPUT, this->_node, static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS), params, 1);
+        api.threadLoopUnlock(pw->loop);
         if (connected < 0) {this->_error = "pw_stream_connect failed"; return false;}
 
         // First frame (gives the size)
@@ -456,12 +554,13 @@ void xdesk::platform::PortalCapture::stop(void)
 {
     #ifdef XDESK_HAS_PIPEWIRE
         if (this->_pw) {
+            const PipeWireApi& api = pipewire();
             PipeWireState* pw = this->_pw.get();
-            if (pw->loop) pw_thread_loop_stop(pw->loop);
-            if (pw->stream) pw_stream_destroy(pw->stream);
-            if (pw->core) pw_core_disconnect(pw->core);
-            if (pw->context) pw_context_destroy(pw->context);
-            if (pw->loop) pw_thread_loop_destroy(pw->loop);
+            if (pw->loop) api.threadLoopStop(pw->loop);
+            if (pw->stream) api.streamDestroy(pw->stream);
+            if (pw->core) api.coreDisconnect(pw->core);
+            if (pw->context) api.contextDestroy(pw->context);
+            if (pw->loop) api.threadLoopDestroy(pw->loop);
             this->_pw.reset();
         }
     #endif
