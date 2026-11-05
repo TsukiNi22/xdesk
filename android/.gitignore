@@ -1,0 +1,3 @@
+# Produced by scripts/build_apk.sh (never committed: the signing key is local / a CI secret)
+/build/
+/release.jks

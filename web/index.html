@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#2f5bd3">
+    <title>xdesk</title>
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="stylesheet" href="/vendor/xterm.css">
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <a class="skip" href="#main" data-i18n="skip">Skip to content</a>
+
+    <header class="bar">
+        <a class="brand" href="/" aria-label="xdesk">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="3" y="5" width="26" height="17" rx="2.5" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M11 27h10M16 22v5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M14 9.5l7 4-3.2.9 1.9 3.2-1.6.9-1.9-3.2-2.2 2.4z" fill="currentColor"/></svg>
+            <span>xdesk</span>
+            <span class="ver" id="hostName"></span>
+        </a>
+        <span class="pill" id="status" data-state="idle">offline</span>
+        <span class="spacer"></span>
+        <div class="top-actions">
+            <button class="lang" id="langBtn" type="button" aria-label="Language">EN</button>
+            <button class="icon-btn" id="themeBtn" type="button" aria-label="Theme">
+                <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+            </button>
+        </div>
+    </header>
+
+    <div class="banner" id="apkBanner" hidden>
+        <span data-i18n="apkText">Install the xdesk app for Android: full screen, keyboard, automatic updates.</span>
+        <a class="btn primary" id="apkLink" href="/app/xdesk.apk" download data-i18n="apkInstall">Install the app</a>
+        <button class="btn ghost" id="apkClose" type="button" data-i18n="dismiss">Later</button>
+    </div>
+
+    <main id="main">
+        <!-- Connect -->
+        <section class="screen center" id="connectView">
+            <form class="card connect" id="connectForm" autocomplete="off">
+                <div class="eyebrow" data-i18n="connectEyebrow">Remote access</div>
+                <h1 data-i18n="connectTitle">Connect to this computer</h1>
+                <p class="lead" data-i18n="connectLead">Enter the code shown on the host screen. The connection is end-to-end encrypted (TLS 1.3, post-quantum key exchange).</p>
+
+                <label for="codeInput" data-i18n="codeLabel">Connection code</label>
+                <input class="code" id="codeInput" inputmode="text" autocapitalize="characters" spellcheck="false" maxlength="14" placeholder="XXX-XXX-XXX" aria-describedby="codeHelp">
+                <small id="codeHelp" class="muted" data-i18n="codeHelp">Not needed for a trusted device.</small>
+
+                <label for="nameInput" data-i18n="nameLabel">Name of this device</label>
+                <input id="nameInput" maxlength="64">
+
+                <label class="check"><input type="checkbox" id="rememberInput" checked> <span data-i18n="remember">Remember this device (trusted after approval)</span></label>
+
+                <div class="fp" id="fpBox" hidden>
+                    <span class="muted" data-i18n="fpLabel">Host fingerprint (compare with the host screen)</span>
+                    <code id="fpText"></code>
+                </div>
+
+                <div class="callout warn" id="connectError" role="alert" hidden></div>
+
+                <div class="row">
+                    <button class="btn primary" type="submit" id="connectBtn" data-i18n="connect">Connect</button>
+                    <button class="btn ghost" type="button" id="forgetBtn" hidden data-i18n="forget">Forget this device</button>
+                </div>
+            </form>
+        </section>
+
+        <!-- Pending / closed -->
+        <section class="screen center" id="waitView" hidden>
+            <div class="card state">
+                <div class="spinner" id="waitSpinner" aria-hidden="true"></div>
+                <h1 id="waitTitle">Waiting</h1>
+                <p class="lead" id="waitText"></p>
+                <div class="row">
+                    <button class="btn primary" type="button" id="reconnectBtn" hidden data-i18n="reconnect">Reconnect</button>
+                    <button class="btn ghost" type="button" id="backBtn" data-i18n="back">Back</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Session -->
+        <section class="screen session" id="sessionView" hidden>
+            <div class="toolbar" role="toolbar" aria-label="Session">
+                <nav class="tabs" id="tabs" aria-label="Views">
+                    <button class="tab active" type="button" data-tab="screen" data-i18n="screen">Screen</button>
+                    <button class="tab add" type="button" id="newTermBtn" title="New terminal" data-i18n-title="newTerminal">+ <span data-i18n="terminal">Terminal</span></button>
+                </nav>
+                <span class="spacer"></span>
+                <div class="group" id="screenTools">
+                    <div class="seg" role="group" aria-label="Mode">
+                        <button type="button" id="modeView" class="on" data-i18n="view">View</button>
+                        <button type="button" id="modeControl" data-i18n="control">Control</button>
+                    </div>
+                    <select id="fitSelect" aria-label="Zoom">
+                        <option value="fit" data-i18n="fit">Fit</option>
+                        <option value="1" data-i18n="actual">1:1</option>
+                    </select>
+                    <label class="slider" title="Quality"><span data-i18n="quality">Quality</span> <input type="range" id="qualityInput" min="10" max="95" step="5" value="70"></label>
+                    <select id="fpsSelect" aria-label="FPS">
+                        <option value="15">15 fps</option>
+                        <option value="30" selected>30 fps</option>
+                        <option value="60">60 fps</option>
+                    </select>
+                    <button class="btn" type="button" id="cadBtn" title="Ctrl+Alt+Del">Ctrl+Alt+Del</button>
+                    <button class="icon-btn" type="button" id="kbdBtn" aria-label="Keyboard" title="Keyboard">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 10h1M10 10h1M14 10h1M18 10h0M7 14h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                    </button>
+                    <button class="icon-btn" type="button" id="fullBtn" aria-label="Fullscreen" title="Fullscreen">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                    </button>
+                </div>
+                <div class="stats" id="stats" aria-live="off"><span id="statLatency">-- ms</span><span id="statFps">0 fps</span><span id="statKbps">0 kb/s</span></div>
+                <button class="btn danger" type="button" id="disconnectBtn" data-i18n="disconnect">Disconnect</button>
+            </div>
+
+            <div class="pane" id="screenPane">
+                <div class="viewport" id="viewport">
+                    <div class="stage" id="stage">
+                        <canvas id="screen" width="16" height="9" tabindex="0" aria-label="Remote screen"></canvas>
+                        <div class="cursor" id="cursor" hidden></div>
+                    </div>
+                </div>
+                <div class="notice" id="noView" hidden data-i18n="noView">The host did not give the screen right to this session.</div>
+                <input class="hidden-kbd" id="kbdInput" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Keyboard input">
+            </div>
+            <div class="pane terms" id="termPane" hidden></div>
+            <div class="toast" id="toast" role="status" hidden></div>
+        </section>
+    </main>
+
+    <script src="/vendor/xterm.js"></script>
+    <script src="/vendor/addon-fit.js"></script>
+    <script src="/app.js"></script>
+</body>
+</html>
