@@ -1,0 +1,6 @@
+[xdesk]
+name=xdesk repository
+baseurl=https://tsukini22.github.io/external-desktop/fedora/$releasever/$basearch
+enabled=1
+gpgcheck=1
+gpgkey=https://tsukini22.github.io/external-desktop/RPM-GPG-KEY-tsukini

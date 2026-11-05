@@ -1,0 +1,122 @@
+name: Sync Packages (CD)
+
+on:
+  push:
+    branches: [gh-pages]
+
+jobs:
+  sync-packages:
+    if: github.event.head_commit.author.email != 'github-actions[bot]@users.noreply.github.com' && !contains(github.event.head_commit.message, '[ignore]') && !startsWith(github.event.head_commit.message, 'Merge') && !startsWith(github.event.head_commit.message, 'docs(pages)')
+    permissions:
+      contents: write
+
+    runs-on: ${{ vars.RUNNER }}
+    defaults:
+      run:
+        shell: bash
+
+    container:
+      image: ghcr.io/tsukini22/package:latest
+
+    steps:
+      - name: Checkout repository - gh-pages
+        uses: actions/checkout@v5
+        with:
+          ref: gh-pages
+          path: gh-pages
+          fetch-depth: 1
+
+      - name: Import GPG key
+        run: |
+          set -e
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | base64 -d | gpg --batch --import
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+
+      - name: Update metadata and signature (RPM)
+        run: |
+          set -e
+          mkdir -p gh-pages/fedora/44/x86_64
+          cd gh-pages/fedora/44/x86_64
+          createrepo_c --update .
+          rm -f repodata/repomd.xml.asc
+          gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" --detach-sign --armor repodata/repomd.xml
+
+      - name: Update metadata and signature (DEB)
+        run: |
+          set -euo pipefail
+          mkdir -p gh-pages/debian/pool/main
+          cd gh-pages/debian
+          DIST_DIR="dists/stable/main/binary-amd64"
+          mkdir -p "$DIST_DIR"
+
+          # Generate Packages index
+          dpkg-scanpackages --multiversion pool/main /dev/null > "$DIST_DIR/Packages"
+          gzip -k -f "$DIST_DIR/Packages"
+          xz -k -f "$DIST_DIR/Packages"
+
+          # Generate Release file
+          cat > dists/stable/Release <<EOF
+          Origin: TsukiNi22
+          Label: xdesk
+          Suite: stable
+          Codename: stable
+          Architectures: amd64
+          Components: main
+          Description: xdesk APT repository
+          Date: $(date -Ru)
+          EOF
+
+          apt-ftparchive release dists/stable >> dists/stable/Release
+
+          # Sign the Release file
+          rm -f dists/stable/Release.gpg dists/stable/InRelease
+          gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+            --default-key "${{ secrets.GPG_KEY_ID }}" \
+            --detach-sign --armor -o dists/stable/Release.gpg dists/stable/Release
+          gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+            --default-key "${{ secrets.GPG_KEY_ID }}" \
+            --clearsign -o dists/stable/InRelease dists/stable/Release
+
+      - name: Update metadata and signature (Arch)
+        run: |
+          set -euo pipefail
+          REPO_DIR="gh-pages/arch/x86_64"
+          if ! compgen -G "$REPO_DIR/*.pkg.tar.zst" > /dev/null; then
+            echo "No Arch package to index."
+            exit 0
+          fi
+          cd "$REPO_DIR"
+
+          # Signature of the packages added by hand (detached binary signatures)
+          for f in *.pkg.tar.zst; do
+            [ -f "$f.sig" ] && continue
+            gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+              --default-key "${{ secrets.GPG_KEY_ID }}" --detach-sign --no-armor -o "$f.sig" "$f"
+          done
+
+          # Database rebuilt from every package, oldest first (the last version of a package wins)
+          rm -f xdesk.db* xdesk.files*
+          find . -maxdepth 1 -name "*.pkg.tar.zst" -printf '%f\n' | sort -V | xargs repo-add -q --include-sigs xdesk.db.tar.gz
+
+          # GitHub Pages: real files instead of the symbolic links of repo-add, signed databases
+          for db in xdesk.db xdesk.files; do
+            cp --remove-destination "$db.tar.gz" "$db"
+            gpg --batch --yes --pinentry-mode loopback --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+              --default-key "${{ secrets.GPG_KEY_ID }}" --detach-sign --no-armor -o "$db.sig" "$db"
+            cp "$db.sig" "$db.tar.gz.sig"
+          done
+
+      - name: Commit and push
+        working-directory: gh-pages
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if git diff --cached --quiet; then
+            echo "No changes to sync."
+            exit 0
+          fi
+          git commit -m "chore: sync packages from update (${{ github.sha }})"
+          git push origin gh-pages
