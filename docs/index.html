@@ -1,0 +1,1197 @@
+<!doctype html>
+<html lang="en" data-page="technical" data-storage-key="xdesk" data-repo="TsukiNi22/external-desktop">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>xdesk · Technical documentation</title>
+<style>
+/* Visual system of the user's HTML pages (source: html-doc/templates/technical.html, R-Type doc colors +
+   context-forge layout). Inlined in each page by scripts/new_page.py: pages stay self-contained. */
+:root {
+  color-scheme: light; /* the fields, the scrollbars and the rest drawn by the browser follow the theme */
+  accent-color: var(--accent);
+  --bg: #efede8;
+  --surface: #f7f5f0;
+  --text: #1d1f23;
+  --muted: #5d636e;
+  --border: #dad6cd;
+  --accent: #2f5bd3;
+  --accent-soft: #e6ecfb;
+  --warn: #a8540a;
+  --warn-soft: #fbefe3;
+  --ok: #1f7a4a;
+  --ok-soft: #e3f4ea;
+  --code-bg: #e9e6df;
+  --node: #f7f5f0;
+  --node-alt: #eef1f8;
+  --line: #868c97;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15171b;
+    --surface: #1d2025;
+    --text: #e6e7ea;
+    --muted: #9aa0ab;
+    --border: #30343b;
+    --accent: #7d9cf0;
+    --accent-soft: #232c45;
+    --warn: #f0a868;
+    --warn-soft: #3a2a1b;
+    --ok: #6fcf97;
+    --ok-soft: #1b3326;
+    --code-bg: #24272d;
+    --node: #23262c;
+    --node-alt: #283043;
+    --line: #747a85;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15171b;
+  --surface: #1d2025;
+  --text: #e6e7ea;
+  --muted: #9aa0ab;
+  --border: #30343b;
+  --accent: #7d9cf0;
+  --accent-soft: #232c45;
+  --warn: #f0a868;
+  --warn-soft: #3a2a1b;
+  --ok: #6fcf97;
+  --ok-soft: #1b3326;
+  --code-bg: #24272d;
+  --node: #23262c;
+  --node-alt: #283043;
+  --line: #747a85;
+}
+/* scrollbars: thin, a transparent track, a rounded thumb in the theme (never the wide grey bar of the browser on hover) */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--line) 55%, transparent) transparent; }
+*:hover { scrollbar-color: var(--line) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--line) 55%, transparent); background-clip: padding-box; border: 3px solid transparent; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--line); background-clip: padding-box; border-width: 2px; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 40px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+main { min-width: 0; }
+header h1 { font-size: 34px; line-height: 1.2; margin: 0 0 8px; }
+header p { color: var(--muted); margin: 0 0 32px; max-width: 70ch; }
+section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  scroll-margin-top: 72px;
+}
+h2 { font-size: 22px; margin: 0 0 16px; }
+h3 { font-size: 17px; margin: 28px 0 10px; }
+/* What a page may hold without a class of its own: never a default of the browser. :where(): any rule of a component wins */
+:where(h4) { font-size: 15.5px; margin: 22px 0 8px; }
+:where(h5) { font-size: 14.5px; margin: 18px 0 6px; }
+:where(h6) { font-size: 13px; margin: 16px 0 6px; color: var(--muted); }
+:where(hr) { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
+:where(blockquote) { margin: 16px 0; padding: 4px 0 4px 16px; border-left: 3px solid var(--border); color: var(--muted); }
+:where(kbd) { font: 0.82em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+:where(mark) { background: color-mix(in srgb, var(--warn) 28%, transparent); color: var(--text); border-radius: 3px; padding: 0 3px; }
+:where(samp) { font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+:where(abbr[title]) { text-decoration: underline dotted var(--muted); cursor: help; }
+:where(small) { font-size: 13px; }
+:where(sub, sup) { line-height: 0; }
+:where(details) { margin: 12px 0; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; }
+:where(summary) { cursor: pointer; font-weight: 600; }
+:where(details[open] > summary) { margin-bottom: 8px; }
+:where(dl) { margin: 12px 0; }
+:where(dt) { font-weight: 600; }
+:where(dd) { margin: 0 0 8px 16px; }
+:where(caption) { caption-side: top; text-align: left; color: var(--muted); font-size: 13px; padding-bottom: 6px; }
+:where(fieldset) { margin: 12px 0; padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+:where(legend) { padding: 0 6px; color: var(--muted); font-size: 13px; font-weight: 600; }
+:where(input:not([type=checkbox], [type=radio], [type=range], [type=color], [type=file]), select, textarea) { font: inherit; font-size: 14.5px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; max-width: 100%; }
+:where(input, select, textarea)::placeholder { color: var(--muted); opacity: 1; }
+:where(input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+:where(button:not([class])) { font: inherit; font-size: 14px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+:where(button:not([class])):hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+:where(button:not([class])):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:where(button:disabled) { opacity: .55; cursor: not-allowed; }
+:where(progress, meter) { max-width: 100%; }
+p, li { max-width: 75ch; }
+a { color: var(--accent); }
+code {
+  font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font: 13.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+pre code { background: none; padding: 0; }
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+td pre { margin: 0; }
+td > :first-child { margin-top: 0; }
+td > :last-child { margin-bottom: 0; }
+th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+.callout {
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  padding: 12px 16px;
+  border-radius: 0 6px 6px 0;
+  margin: 16px 0;
+}
+.callout.warn { background: var(--warn-soft); border-left-color: var(--warn); }
+.callout.ok { background: var(--ok-soft); border-left-color: var(--ok); }
+.callout > :first-child { margin-top: 0; }
+.callout > :last-child { margin-bottom: 0; }
+figure { margin: 20px 0; }
+figure svg { width: 100%; height: auto; display: block; }
+figcaption { color: var(--muted); font-size: 13px; margin-top: 6px; }
+:where(main, figure, .stepper, .diagram) svg text { fill: var(--text); } /* any text of a drawing: the theme's colour, no weight (every class below wins) */
+svg .box { fill: var(--node); stroke: var(--line); stroke-width: 1.2; }
+svg .box-alt { fill: var(--node-alt); stroke: var(--accent); stroke-width: 1.2; }
+svg .group { fill: none; stroke: var(--border); stroke-width: 1.5; stroke-dasharray: 5 4; }
+svg .lbl { fill: var(--text); font: 13px system-ui, sans-serif; }
+svg .small { fill: var(--muted); font: 11.5px system-ui, sans-serif; }
+svg .title { fill: var(--muted); font: 600 12px system-ui, sans-serif; letter-spacing: .05em; }
+svg .mono { fill: var(--text); font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; } /* values, code, file content */
+svg .mono-s { fill: var(--text); font: 11.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+svg .edge { stroke: var(--line); stroke-width: 1.4; fill: none; }
+svg .edge-accent { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+svg .dash { stroke-dasharray: 4 4; }
+svg .arrow { fill: var(--line); }
+svg .arrow-accent { fill: var(--accent); }
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 56px; padding: 0 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.tabs { display: flex; gap: 4px; margin-left: 8px; overflow-x: auto; }
+.tabs[hidden] { display: none; }
+.tabs a {
+  padding: 6px 12px; border-radius: 6px;
+  color: var(--muted); text-decoration: none; font-size: 14px; white-space: nowrap;
+}
+.tabs a:hover { color: var(--text); background: var(--code-bg); }
+.tabs a.current { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.topbar .spacer { flex: 1; }
+.topbar .tabs { scrollbar-width: none; } /* a long name squeezes the tabs: they scroll, no bar in the bar */
+.topbar .tabs::-webkit-scrollbar { display: none; }
+.topbar .top-actions { margin-left: auto; } /* on the right even when no tab or spacer pushes them (small screens) */
+.icon-btn {
+  display: grid; place-items: center;
+  width: 36px; height: 36px; padding: 0;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 50%;
+  cursor: pointer; text-decoration: none;
+  transition: border-color .15s, color .15s;
+}
+.icon-btn:hover { color: var(--accent); border-color: var(--accent); }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.icon-btn svg { width: 18px; height: 18px; }
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; padding: 24px 16px 60px; gap: 16px; }
+  .topbar { gap: 10px; padding: 0 12px; }
+  .brand .ver { display: none; }
+  .menu-btn { display: grid; }
+  .sidebar { position: fixed; top: 56px; left: 0; bottom: 0; z-index: 25; width: min(300px, 85vw); max-height: none; padding: 16px 10px; background: var(--bg); border-right: 1px solid var(--border); transform: translateX(-105%); transition: transform .2s; }
+  .sidebar.open { transform: none; box-shadow: 0 10px 40px rgba(0, 0, 0, .25); }
+  section { padding: 20px 16px; }
+  header h1 { font-size: 27px; }
+}
+/* Language switch (EN / FR pill) */
+.lang-switch {
+  display: inline-flex; align-items: center; gap: 2px; padding: 3px;
+  border: 1.5px solid var(--border); border-radius: 999px; background: var(--surface);
+}
+.lang-switch button {
+  border: 0; background: none; color: var(--text); cursor: pointer;
+  font: 600 12.5px system-ui, sans-serif; letter-spacing: .03em;
+  padding: 4px 11px; border-radius: 999px; transition: background .2s, color .2s;
+}
+.lang-switch button.on { background: var(--accent); color: var(--surface); }
+.lang-switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Theme switch: blue track + sun (light), black track + moon and stars (dark) */
+.theme-switch {
+  position: relative; width: 58px; height: 30px; flex: none; padding: 0; border: 0; border-radius: 999px;
+  background: #2196f3; cursor: pointer; transition: background .3s;
+}
+.theme-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.theme-switch .knob {
+  position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center; transition: transform .3s, background .3s;
+}
+.theme-switch .knob svg { width: 22px; height: 22px; }
+.theme-switch .sun { display: block; }
+.theme-switch .moon, .theme-switch .stars { display: none; }
+.theme-switch .stars { position: absolute; inset: 0; }
+.theme-switch .stars i { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #fff; }
+.theme-switch .stars i:nth-child(1) { left: 9px; top: 9px; }
+.theme-switch .stars i:nth-child(2) { left: 16px; top: 18px; width: 1.5px; height: 1.5px; }
+.theme-switch .stars i:nth-child(3) { left: 21px; top: 8px; width: 1.5px; height: 1.5px; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-switch { background: #0b0b0d; box-shadow: inset 0 0 0 1px #2a2c31; }
+  :root:not([data-theme="light"]) .theme-switch .knob { transform: translateX(28px); background: #ffffff; }
+  :root:not([data-theme="light"]) .theme-switch .sun { display: none; }
+  :root:not([data-theme="light"]) .theme-switch .moon, :root:not([data-theme="light"]) .theme-switch .stars { display: block; }
+}
+:root[data-theme="dark"] .theme-switch { background: #0b0b0d; box-shadow: inset 0 0 0 1px #2a2c31; }
+:root[data-theme="dark"] .theme-switch .knob { transform: translateX(28px); background: #ffffff; }
+:root[data-theme="dark"] .theme-switch .sun { display: none; }
+:root[data-theme="dark"] .theme-switch .moon, :root[data-theme="dark"] .theme-switch .stars { display: block; }
+/* Bilingual content: only the active language is shown */
+:root[lang="en"] [data-lang="fr"], :root[lang="fr"] [data-lang="en"] { display: none !important; }
+/* ---------- Header: logo + version badge, mobile menu ---------- */
+.brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; font-weight: 700; white-space: nowrap; }
+.brand .logo { width: 26px; height: 26px; flex: none; color: var(--accent); object-fit: contain; }
+.brand { min-width: 0; }
+.brand .repo-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.brand .ver { font-size: 12px; color: var(--muted); font-weight: 500; padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px; }
+.brand .ver:empty { display: none; } /* no version: the name alone */
+.menu-btn { display: none; }
+/* ---------- Sidebar tree (pages > sections of the current page) ---------- */
+.sidebar { position: sticky; top: 80px; align-self: start; max-height: calc(100vh - 100px); overflow-y: auto; font-size: 14px; }
+@media (max-width: 860px) { .sidebar { position: fixed; top: 56px; max-height: none; } } /* off-canvas menu: out of the flow */
+.sidebar p { margin: 0 0 8px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-size: 12px; }
+.sidebar a { display: block; padding: 5px 10px; color: var(--muted); text-decoration: none; border-left: 2px solid var(--border); }
+.sidebar a:hover, .sidebar a.active { color: var(--accent); border-left-color: var(--accent); }
+/* ---------- Page header: eyebrow + title + lead ---------- */
+.page-eyebrow { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--accent); margin-bottom: 6px; }
+header .lead { font-size: 17px; color: var(--muted); margin: 0 0 32px; max-width: 70ch; }
+/* ---------- Heading anchors ---------- */
+h2 .anchor, h3 .anchor { margin-left: 8px; color: var(--muted); font-weight: 400; text-decoration: none; opacity: 0; transition: opacity .15s; }
+h2:hover .anchor, h3:hover .anchor, .anchor:focus { opacity: 1; }
+/* ---------- Code blocks: title bar + copy button ---------- */
+pre { position: relative; }
+pre[data-title]::before {
+  content: attr(data-title); display: block; margin: -14px -16px 12px; padding: 6px 16px;
+  font: 12px system-ui, sans-serif; color: var(--muted); border-bottom: 1px solid var(--border);
+  background: var(--surface); border-radius: 7px 7px 0 0;
+}
+pre .copy {
+  position: absolute; top: 8px; right: 8px; font: 12px system-ui, sans-serif; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  border-radius: 6px; padding: 3px 8px; opacity: 0; transition: opacity .15s;
+}
+pre[data-title] .copy { top: 5px; }
+pre[data-title]::before { white-space: normal; overflow-wrap: anywhere; padding-right: 72px; } /* a long title wraps: never under the Copy button, never past the block */
+.figure-scroll { overflow-x: auto; } /* a drawing on a small screen scrolls in its box (base.js), its labels stay readable */
+.figure-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+pre:hover .copy, pre .copy:focus { opacity: 1; }
+pre .copy:hover { color: var(--text); }
+/* ---------- Content tabs ---------- */
+.ctabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin: 12px 0; }
+.ctabs button { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 8px 12px; cursor: pointer; color: var(--muted); font: 500 14px system-ui, sans-serif; }
+.ctabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+.ctab-panel { display: none; }
+.ctab-panel.active { display: block; }
+/* ---------- Previous / next page ---------- */
+.pager { display: flex; justify-content: space-between; gap: 16px; margin-top: 32px; }
+.pager a { flex: 1; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); text-decoration: none; }
+.pager a:hover { border-color: var(--accent); }
+.pager a span { display: block; font-size: 12px; color: var(--muted); }
+.pager a.next { text-align: right; }
+.pager:empty { display: none; }
+/* ---------- Footer ---------- */
+/* RGAA 12.7: skip link, first focusable element of the page (visible only when focused); the target is the main region */
+.skip-link { position: absolute; left: 8px; top: -64px; z-index: 1000; padding: 10px 14px; border-radius: 8px; background: var(--accent); color: var(--surface); font-weight: 600; text-decoration: none; }
+.skip-link:focus, .skip-link:focus-visible { top: 8px; outline: 2px solid var(--text); outline-offset: 2px; }
+.skip-link code { color: var(--surface); }
+main:focus { outline: none; }
+/* RGAA 7.3: a block that scrolls (code, table) is reached and scrolled with the keyboard */
+pre:focus-visible, .table-wrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+footer.site { max-width: 1180px; margin: 0 auto; padding: 22px 24px 30px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+footer.site a { color: var(--accent); }
+@media (max-width: 860px) {
+  .menu-btn { display: grid; }
+  footer.site { padding: 20px 16px; }
+  .topbar .tabs { display: none; } /* the sidebar (menu) gives the navigation on mobile */
+}
+.topbar .icon-btn, .topbar .lang-switch, .topbar .theme-switch { flex: none; }
+.topbar .tabs { min-width: 0; }
+@media (max-width: 860px) {
+  .topbar .spacer { display: none; }
+  .topbar .tabs { flex: 1 1 auto; }
+  .topbar .icon-btn { width: 32px; height: 32px; }
+}
+@media (max-width: 480px) {
+  .topbar { gap: 8px; padding: 0 10px; }
+  .topbar a.icon-btn[href] { display: none; } /* GitHub link: also in the footer / graph panel */
+  .lang-switch button { padding: 4px 9px; }
+}
+@media (min-width: 1340px) {
+  .layout { grid-template-columns: minmax(0, 1fr) minmax(0, 880px) minmax(0, 1fr); max-width: none; }
+  .layout > .sidebar { grid-column: 1; justify-self: end; width: 230px; }
+  .layout > main { grid-column: 2; }
+  footer.site { max-width: 880px; }
+}
+/* ---------- No scroll beyond the page ---------- */
+html, body { overscroll-behavior: none; }
+/* ---------- Top right actions: same height, grouped, divider ---------- */
+.top-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.top-actions .divider { width: 1px; height: 22px; background: var(--border); margin: 0 2px; }
+.top-actions .icon-btn { width: 34px; height: 34px; }
+.top-actions .lang-switch { height: 34px; padding: 3px; background: var(--code-bg); border: 1px solid var(--border); }
+.top-actions .lang-switch button { height: 26px; padding: 0 10px; font-size: 12px; }
+.top-actions .theme-switch { width: 56px; height: 30px; border: 1px solid transparent; }
+.top-actions .theme-switch .knob { top: 2px; left: 2px; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .top-actions .theme-switch { border-color: var(--border); box-shadow: none; }
+  :root:not([data-theme="light"]) .top-actions .theme-switch .knob { transform: translateX(26px); }
+}
+:root[data-theme="dark"] .top-actions .theme-switch { border-color: var(--border); box-shadow: none; }
+:root[data-theme="dark"] .top-actions .theme-switch .knob { transform: translateX(26px); }
+@media (max-width: 480px) { .top-actions .divider { display: none; } }
+/* ---------- Responsive: phones, tablets, touch screens, notches, TVs, print ---------- */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+img, video, canvas, svg { max-width: 100%; }
+img, video { height: auto; }
+main, footer.site, .sidebar { overflow-wrap: break-word; }
+code { overflow-wrap: anywhere; }
+pre, pre code { overflow-wrap: normal; }
+td code, th code { overflow-wrap: inherit; } /* base.js: a cell that keeps its words whole unless one is too long for any column */
+.sidebar { max-height: calc(100vh - 100px); max-height: calc(100dvh - 100px); overscroll-behavior: contain; }
+/* Notches and rounded corners (viewport-fit=cover): the content stays inside the safe area */
+.topbar { padding-left: max(20px, env(safe-area-inset-left)); padding-right: max(20px, env(safe-area-inset-right)); }
+.layout { padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); }
+footer.site { padding-bottom: max(30px, env(safe-area-inset-bottom)); }
+/* Very large screens (TV, 4K): a bigger base so the page stays readable at a distance */
+@media (min-width: 1900px) { body { font-size: 18px; } }
+@media (min-width: 2600px) { body { font-size: 21px; } }
+/* Tablets and small laptops: tighter column gap */
+@media (min-width: 861px) and (max-width: 1100px) { .layout { gap: 24px; grid-template-columns: 210px minmax(0, 1fr); } }
+@media (max-width: 860px) {
+  .topbar { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+  .layout { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  .sidebar { top: 56px; bottom: 0; height: auto; align-self: stretch; max-height: none; padding-bottom: max(16px, env(safe-area-inset-bottom)); overflow-y: auto; } /* the menu down to the bottom of the screen, not the height of its links */
+  input, select, textarea { font-size: 16px; } /* under 16px iOS zooms the page on focus */
+  table { font-size: 13.5px; }
+  th, td { padding: 6px 8px; }
+  pre { font-size: 12.5px; padding: 12px; }
+  pre[data-title]::before { margin: -12px -12px 12px; padding-left: 12px; } /* the padding of the block: else its title bar is wider than it and it scrolls for nothing */
+  .formula { flex-direction: column; align-items: flex-start; gap: 6px; }
+}
+@media (max-width: 600px) {
+  .pager { flex-direction: column; }
+  .pager a.next { text-align: left; }
+  section { border-radius: 8px; }
+  h2 { font-size: 20px; }
+  .ctabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .ctabs button { white-space: nowrap; flex: none; }
+}
+@media (max-width: 480px) {
+  .layout { padding-top: 16px; }
+  header h1 { font-size: 24px; }
+  header .lead { font-size: 16px; }
+  .callout { padding: 10px 12px; }
+}
+/* Phone held sideways: little height, keep the bar slim */
+@media (max-height: 480px) and (orientation: landscape) {
+  .topbar { height: 48px; }
+  .sidebar { top: 48px; }
+  section { scroll-margin-top: 56px; }
+}
+/* Touch (no hover): what only showed on hover is always there, and targets are finger sized */
+@media (hover: none) {
+  pre .copy { opacity: 1; }
+  pre:not([data-title]):not([data-nocopy]) { padding-top: 40px; } /* the Copy button always there: above the code, not over it */
+  h2 .anchor, h3 .anchor { opacity: 1; }
+  dfn[data-def] { cursor: pointer; }
+}
+@media (pointer: coarse) {
+  .icon-btn { width: 44px; height: 44px; }
+  .topbar .icon-btn { width: 40px; height: 40px; } /* over the size of a small screen: a finger first */
+  pre:not([data-title]):not([data-nocopy]) { padding-top: 50px; }
+  .top-actions .icon-btn { width: 40px; height: 40px; }
+  .tabs a, .ctabs button, .sidebar a { min-height: 44px; display: flex; align-items: center; }
+  .sidebar a { padding-top: 0; padding-bottom: 0; }
+  .lang-switch button, .top-actions .lang-switch button { min-height: 32px; min-width: 38px; }
+  pre .copy { padding: 8px 12px; font-size: 13px; }
+  summary { min-height: 44px; padding-block: 10px; } /* still a list item: its marker kept, a long word wraps */
+  .pager a, .btn { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+@media (forced-colors: active) {
+  .theme-switch, .lang-switch, .icon-btn { border: 1px solid ButtonText; }
+  .tabs a.current, .ctabs button.active, .lang-switch button.on { outline: 2px solid Highlight; }
+}
+@media print {
+  :root, :root[data-theme="dark"], :root:not([data-theme="light"]) {
+    color-scheme: light;
+    --bg: #ffffff; --surface: #ffffff; --text: #1d1f23; --muted: #5d636e; --border: #dad6cd; --accent: #2f5bd3; --accent-soft: #e6ecfb;
+    --warn: #a8540a; --warn-soft: #fbefe3; --ok: #1f7a4a; --ok-soft: #e3f4ea; --code-bg: #e9e6df; --node: #f7f5f0; --node-alt: #eef1f8; --line: #868c97;
+  }
+  .table-wrap, .figure-scroll { overflow: visible; }
+  td, th { white-space: normal !important; min-width: 0 !important; } /* base.js fits a table to the screen, not to the paper */
+  .topbar, .sidebar, .pager, .menu-btn, pre .copy, .top-actions, .h-anchor, .anchor { display: none !important; }
+  .layout { display: block; max-width: none; padding: 0; }
+  section { break-inside: avoid-page; border: 0; padding: 0 0 12px; background: none; }
+  pre { white-space: pre-wrap; overflow: visible; }
+  body { background: var(--bg); color: var(--text); }
+  a { color: inherit; }
+}
+/* ---------- Additions of this page to html-style/templates/style.css ---------- */
+/* ---------- End of the additions ---------- */
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main" data-i18n>Skip to the content</a>
+<header class="topbar">
+  <button class="icon-btn menu-btn" type="button" id="menuBtn" aria-label="Open the navigation" data-i18n-aria-label><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="index.html"><svg class="logo" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="xdesk"><rect x="2" y="2" width="60" height="60" rx="14" fill="#3f63f2"/><path d="M62 22 L62 48 Q62 62 48 62 L22 62 Z" fill="#6d8bff"/><g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round"><rect x="13" y="15" width="38" height="26" rx="4" stroke-width="4"/><line x1="26" y1="49" x2="38" y2="49" stroke-width="4"/><line x1="25" y1="23" x2="39" y2="33" stroke-width="3.5"/><line x1="39" y1="23" x2="25" y2="33" stroke-width="3.5"/></g></svg><span class="repo-name">xdesk</span><span class="ver repo-version">v1.0.0</span></a>
+  <nav class="tabs" aria-label="Pages">
+    <a href="index.html" class="current" aria-current="page" data-i18n>Technical</a>
+    <a href="graph.html" data-i18n>Graph</a>
+  </nav>
+  <span class="spacer"></span>
+  <div class="top-actions">
+  <a class="icon-btn repo-link" href="https://github.com/TsukiNi22/external-desktop" title="GitHub repository" data-i18n-title aria-label="GitHub repository" data-i18n-aria-label>
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.71 1.23 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+  </a>
+  <span class="divider" aria-hidden="true"></span>
+  <div class="lang-switch" role="group" aria-label="Language">
+    <button type="button" data-set-lang="en" class="on">EN</button>
+    <button type="button" data-set-lang="fr">FR</button>
+  </div>
+  <button class="theme-switch" type="button" id="themeToggle" role="switch" aria-checked="false" aria-label="Toggle theme" data-i18n-aria-label title="Toggle theme" data-i18n-title>
+    <span class="stars" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="knob" aria-hidden="true">
+      <svg class="sun" viewBox="0 0 24 24" fill="#ffffff"><circle cx="12" cy="12" r="5.2"/><g stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"><path d="M12 1.8v2.6M12 19.6v2.6M1.8 12h2.6M19.6 12h2.6M4.8 4.8l1.8 1.8M17.4 17.4l1.8 1.8M4.8 19.2l1.8-1.8M17.4 6.6l1.8-1.8"/></g></svg>
+      <svg class="moon" viewBox="0 0 24 24"><path d="M15.6 4.2a8 8 0 1 0 4.2 11.6A7 7 0 0 1 15.6 4.2z" fill="#f6c343"/></svg>
+    </span>
+  </button>
+  </div>
+</header>
+<div class="layout">
+<aside class="sidebar" id="sidebar" aria-label="Contents" data-i18n-aria-label>
+  <p data-i18n>Contents</p>
+  <a href="#overview"><span data-lang="en">1. Overview</span><span data-lang="fr">1. Vue d'ensemble</span></a>
+  <a href="#install"><span data-lang="en">2. Install & build</span><span data-lang="fr">2. Installation & build</span></a>
+  <a href="#usage"><span data-lang="en">3. Usage</span><span data-lang="fr">3. Utilisation</span></a>
+  <a href="#security"><span data-lang="en">4. Security</span><span data-lang="fr">4. Sécurité</span></a>
+  <a href="#protocol"><span data-lang="en">5. Protocol</span><span data-lang="fr">5. Protocole</span></a>
+  <a href="#host"><span data-lang="en">6. Host internals</span><span data-lang="fr">6. Fonctionnement de l'hôte</span></a>
+  <a href="#exposure"><span data-lang="en">7. Exposure</span><span data-lang="fr">7. Exposition</span></a>
+  <a href="#platforms"><span data-lang="en">8. Platforms & limits</span><span data-lang="fr">8. Plateformes & limites</span></a>
+</aside>
+
+<main id="main" tabindex="-1">
+<header>
+  <div class="page-eyebrow" data-i18n>Technical documentation</div>
+  <h1><span data-lang="en">xdesk: remote desktop & terminal</span><span data-lang="fr">xdesk : bureau et terminal à distance</span></h1>
+  <p class="lead"><span data-lang="en">One binary for Windows and Unix: share a PC with a one time code, see / control it from a Qt viewer, a terminal, a browser or the Android app, every connection end to end TLS 1.3 with a post-quantum key exchange.</span><span data-lang="fr">Un seul binaire pour Windows et Unix : partager un PC avec un code à usage unique, le voir / contrôler depuis un viewer Qt, un terminal, un navigateur ou l'application Android, chaque connexion chiffrée de bout en bout en TLS 1.3 avec un échange de clés post-quantique.</span></p>
+</header>
+
+<!-- 1 -->
+<section id="overview">
+  <h2><span data-lang="en">1. Overview</span><span data-lang="fr">1. Vue d'ensemble</span></h2>
+  <p><span data-lang="en"><code>xdesk</code> is <strong>one binary</strong> that shares a PC (host) or connects to one (client). The host serves, on a single TLS port, the web client, the Android application and the websocket used by every client; the clients see the screen, send the keyboard / mouse and open terminals, with the rights the host gives them.</span><span data-lang="fr"><code>xdesk</code> est <strong>un seul binaire</strong> qui partage un PC (hôte) ou s'y connecte (client). L'hôte sert, sur un seul port TLS, le client web, l'application Android et le websocket utilisé par tous les clients ; les clients voient l'écran, envoient clavier / souris et ouvrent des terminaux, selon les droits donnés par l'hôte.</span></p>
+  <figure>
+    <svg viewBox="0 0 760 300" role="img" aria-label="Host and clients of xdesk">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrow" d="M0 0L10 5L0 10z"/></marker>
+        <marker id="arr-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrow-accent" d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+      <rect class="group" x="20" y="20" width="330" height="260" rx="12"/>
+      <text class="title" x="40" y="48">xdesk host</text>
+      <rect id="cap" class="box" x="40" y="66" width="135" height="50" rx="8"/><text class="lbl" x="107" y="96" text-anchor="middle">Stream</text>
+      <rect id="inj" class="box" x="195" y="66" width="135" height="50" rx="8"/><text class="lbl" x="262" y="96" text-anchor="middle">Input</text>
+      <rect id="pty" class="box" x="40" y="136" width="135" height="50" rx="8"/><text class="lbl" x="107" y="166" text-anchor="middle">Terminals</text>
+      <rect id="guard" class="box" x="195" y="136" width="135" height="50" rx="8"/><text class="lbl" x="262" y="166" text-anchor="middle">Guard</text>
+      <rect id="srv" class="box-alt" x="40" y="210" width="290" height="50" rx="8"/><text class="lbl" x="185" y="240" text-anchor="middle">Server (HTTPS + WSS)</text>
+      <rect id="qt" class="box" x="530" y="30" width="200" height="50" rx="8"/><text class="lbl" x="630" y="60" text-anchor="middle">Qt viewer</text>
+      <rect id="tty" class="box" x="530" y="95" width="200" height="50" rx="8"/><text class="lbl" x="630" y="125" text-anchor="middle">Terminal client</text>
+      <rect id="web" class="box" x="530" y="160" width="200" height="50" rx="8"/><text class="lbl" x="630" y="190" text-anchor="middle">Browser</text>
+      <rect id="apk" class="box" x="530" y="225" width="200" height="50" rx="8"/><text class="lbl" x="630" y="255" text-anchor="middle">Android app</text>
+      <path id="e1" class="edge-accent" data-from="srv" data-to="qt" marker-end="url(#arr-acc)"/>
+      <path id="e2" class="edge-accent" data-from="srv" data-to="tty" marker-end="url(#arr-acc)"/>
+      <path id="e3" class="edge" data-from="srv" data-to="web" marker-end="url(#arr)"/>
+      <path id="e4" class="edge" data-from="srv" data-to="apk" marker-end="url(#arr)"/>
+    </svg>
+    <figcaption><span data-lang="en">Figure 1: one host, four kinds of clients on the same TLS 1.3 port (accent: post-quantum only).</span><span data-lang="fr">Figure 1 : un hôte, quatre types de clients sur le même port TLS 1.3 (accent : post-quantique seulement).</span></figcaption>
+  </figure>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col"><span data-lang="en">Module</span><span data-lang="fr">Module</span></th><th scope="col"><span data-lang="en">Role</span><span data-lang="fr">Rôle</span></th></tr></thead>
+    <tbody>
+<tr><td><code>core</code></td><td><span data-lang="en"><code>Config</code> (settings, folders), <code>AuditLog</code> (jsonl per day, live feed)</span><span data-lang="fr"><code>Config</code> (réglages, dossiers), <code>AuditLog</code> (jsonl par jour, flux en direct)</span></td></tr>
+<tr><td><code>security</code></td><td><span data-lang="en"><code>Crypto</code>, <code>Certificate</code>, <code>PairingCode</code>, <code>DeviceRegistry</code>, <code>IntegrityGuard</code></span><span data-lang="fr"><code>Crypto</code>, <code>Certificate</code>, <code>PairingCode</code>, <code>DeviceRegistry</code>, <code>IntegrityGuard</code></span></td></tr>
+<tr><td><code>net</code></td><td><span data-lang="en"><code>Protocol</code>, <code>WebSocket</code> (RFC 6455 over TLS), <code>Server</code>, <code>Exposure</code></span><span data-lang="fr"><code>Protocol</code>, <code>WebSocket</code> (RFC 6455 sur TLS), <code>Server</code>, <code>Exposure</code></span></td></tr>
+<tr><td><code>host</code></td><td><span data-lang="en"><code>Host</code> (auth, rights, bans, terminals, tamper reaction), <code>Session</code>, <code>Stream</code> (capture thread)</span><span data-lang="fr"><code>Host</code> (auth, droits, bans, terminaux, réaction aux modifications), <code>Session</code>, <code>Stream</code> (thread de capture)</span></td></tr>
+<tr><td><code>client</code></td><td><span data-lang="en"><code>Client</code>: pinning, proof, tile decoding, inputs, terminals</span><span data-lang="fr"><code>Client</code> : épinglage, preuve, décodage des tuiles, entrées, terminaux</span></td></tr>
+<tr><td><code>platform</code></td><td><span data-lang="en">Capture, input injection, pseudo terminals, <code>FrameEncoder</code>, <code>Keymap</code></span><span data-lang="fr">Capture, injection d'entrées, pseudo-terminaux, <code>FrameEncoder</code>, <code>Keymap</code></span></td></tr>
+<tr><td><code>ui</code></td><td><span data-lang="en"><code>gui/</code> (Qt Widgets: panel, viewer, VT emulator), <code>tty/</code> (panel and client in the terminal)</span><span data-lang="fr"><code>gui/</code> (Qt Widgets : panneau, viewer, émulateur VT), <code>tty/</code> (panneau et client dans le terminal)</span></td></tr>
+<tr><td><code>web/</code>, <code>android/</code></td><td><span data-lang="en">Web client (embedded with <code>qrc</code>), WebView application</span><span data-lang="fr">Client web (embarqué via <code>qrc</code>), application WebView</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 2 -->
+<section id="install">
+  <h2><span data-lang="en">2. Install & build</span><span data-lang="fr">2. Installation & build</span></h2>
+  <div class="ctabs" data-tabs="install">
+    <button type="button" data-tab="linux">Linux / macOS</button>
+    <button type="button" data-tab="win">Windows</button>
+    <button type="button" data-tab="apk">Android</button>
+    <button type="button" data-tab="src"><span data-lang="en">From the sources</span><span data-lang="fr">Depuis les sources</span></button>
+  </div>
+  <div class="ctab-panel" data-tabs="install" data-tab="linux">
+<pre data-title="install.sh"><code>git clone https://github.com/TsukiNi22/external-desktop.git && cd external-desktop
+scripts/install.sh --deps --apk --uinput   # dependencies, libutils, android app, remote control on Wayland
+scripts/install.sh --autostart             # host panel at login</code></pre>
+  </div>
+  <div class="ctab-panel" data-tabs="install" data-tab="win">
+<pre data-title="PowerShell"><code>scripts/bundle_windows.sh                                  # on Fedora: dist/xdesk-windows-x64.zip
+powershell -ExecutionPolicy Bypass -File install.ps1      # on Windows, from the extracted zip</code></pre>
+  </div>
+  <div class="ctab-panel" data-tabs="install" data-tab="apk">
+<pre data-title="APK"><code>scripts/build_apk.sh   # android/build/xdesk.apk, embedded in the binary at the next build
+# phones download it from https://&lt;host&gt;:47800/app/xdesk.apk (the web page proposes it)</code></pre>
+  </div>
+  <div class="ctab-panel" data-tabs="install" data-tab="src">
+<pre data-title="CMake"><code>cmake -S . -B build -DCMAKE_BUILD_TYPE=Optimized
+cmake --build build --parallel $(nproc)          # ./xdesk
+cmake -S . -B build -DBUILD_TESTS=ON && cmake --build build && ./unit_tests</code></pre>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col"><span data-lang="en">Dependency</span><span data-lang="fr">Dépendance</span></th><th scope="col"><span data-lang="en">Why</span><span data-lang="fr">Pourquoi</span></th></tr></thead>
+    <tbody>
+<tr><td>Qt 6 (Core Gui Widgets Network, DBus)</td><td><span data-lang="en">interfaces, sockets, TLS backend, portal</span><span data-lang="fr">interfaces, sockets, backend TLS, portail</span></td></tr>
+<tr><td>OpenSSL &gt;= 3.5</td><td><span data-lang="en">ML-KEM hybrid groups, Argon2id, certificate generation</span><span data-lang="fr">groupes hybrides ML-KEM, Argon2id, génération du certificat</span></td></tr>
+<tr><td>libjpeg-turbo</td><td><span data-lang="en">tile encoding / decoding</span><span data-lang="fr">encodage / décodage des tuiles</span></td></tr>
+<tr><td>libutils</td><td><span data-lang="en">exceptions, arguments, attributes</span><span data-lang="fr">exceptions, arguments, attributs</span></td></tr>
+<tr><td>PipeWire, XTest</td><td><span data-lang="en">optional: Wayland real time capture, X11 input</span><span data-lang="fr">optionnels : capture temps réel Wayland, entrées X11</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 3 -->
+<section id="usage">
+  <h2><span data-lang="en">3. Usage</span><span data-lang="fr">3. Utilisation</span></h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col"><span data-lang="en">Command</span><span data-lang="fr">Commande</span></th><th scope="col"><span data-lang="en">Effect</span><span data-lang="fr">Effet</span></th></tr></thead>
+    <tbody>
+<tr><td><code>xdesk</code></td><td><span data-lang="en">share this PC (Qt panel, terminal panel without display)</span><span data-lang="fr">partager ce PC (panneau Qt, panneau terminal sans affichage)</span></td></tr>
+<tr><td><code>xdesk host --tty</code></td><td><span data-lang="en">terminal panel (sessions, approvals, devices, logs)</span><span data-lang="fr">panneau terminal (sessions, approbations, appareils, logs)</span></td></tr>
+<tr><td><code>xdesk connect &lt;address&gt; -c &lt;code&gt;</code></td><td><span data-lang="en">Qt viewer (<code>--tty</code>: remote shell, <code>--screen</code>: screen in half blocks)</span><span data-lang="fr">viewer Qt (<code>--tty</code> : shell distant, <code>--screen</code> : écran en demi-blocs)</span></td></tr>
+<tr><td><code>xdesk viewer</code></td><td><span data-lang="en">viewer with its connect page, LAN scan, known hosts</span><span data-lang="fr">viewer avec sa page de connexion, scan LAN, hôtes connus</span></td></tr>
+<tr><td><code>xdesk scan</code> / <code>devices</code> / <code>paths</code></td><td><span data-lang="en">LAN hosts / devices and bans / folders</span><span data-lang="fr">hôtes du LAN / appareils et bans / dossiers</span></td></tr>
+<tr><td><code>xdesk unban &lt;id|address&gt;</code></td><td><span data-lang="en">local unban: host stopped, a person typing a confirmation</span><span data-lang="fr">débannissement local : hôte arrêté, une personne tape une confirmation</span></td></tr>
+<tr><td><code>-p</code>, <code>-e</code>, <code>-v</code>, <code>--view-only</code>, <code>--regen-cert</code></td><td><span data-lang="en">port, exposure, verbose, never send inputs, new host identity</span><span data-lang="fr">port, exposition, verbosité, ne jamais envoyer d'entrées, nouvelle identité de l'hôte</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout"><p><span data-lang="en">The TTY client keys: <code>ctrl+]</code> then <code>q</code> quit, <code>s</code> screen / terminal, <code>c</code> control on / off.</span><span data-lang="fr">Touches du client TTY : <code>ctrl+]</code> puis <code>q</code> quitter, <code>s</code> écran / terminal, <code>c</code> contrôle on / off.</span></p></div>
+</section>
+
+<!-- 4 -->
+<section id="security">
+  <h2><span data-lang="en">4. Security</span><span data-lang="fr">4. Sécurité</span></h2>
+  <h3><span data-lang="en">4.1 Layers</span><span data-lang="fr">4.1 Couches</span></h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col"><span data-lang="en">Layer</span><span data-lang="fr">Couche</span></th><th scope="col"><span data-lang="en">Mechanism</span><span data-lang="fr">Mécanisme</span></th></tr></thead>
+    <tbody>
+<tr><td><span data-lang="en">Transport</span><span data-lang="fr">Transport</span></td><td><span data-lang="en">TLS 1.3 only, <code>X25519MLKEM768</code> first; native clients only accept post-quantum groups</span><span data-lang="fr">TLS 1.3 seulement, <code>X25519MLKEM768</code> en premier ; les clients natifs n'acceptent que les groupes post-quantiques</span></td></tr>
+<tr><td><span data-lang="en">Identity</span><span data-lang="fr">Identité</span></td><td><span data-lang="en">self-signed ECDSA P-256 certificate, sha256 fingerprint pinned on first use (<code>known_hosts.json</code>)</span><span data-lang="fr">certificat ECDSA P-256 auto-signé, empreinte sha256 épinglée à la première connexion (<code>known_hosts.json</code>)</span></td></tr>
+<tr><td><span data-lang="en">Code</span><span data-lang="fr">Code</span></td><td><span data-lang="en">9 characters of Crockford base32 (45 bits), one time, rotated, Argon2id (64 MiB, 3 passes) salted per code</span><span data-lang="fr">9 caractères base32 Crockford (45 bits), à usage unique, renouvelé, Argon2id (64 Mio, 3 passes) salé par code</span></td></tr>
+<tr><td><span data-lang="en">Proof</span><span data-lang="fr">Preuve</span></td><td><span data-lang="en"><code>HMAC-SHA256(key, "xdesk-auth-v1|client" + nonces + sha256(cert))</code>, the host answers with the role <code>server</code></span><span data-lang="fr"><code>HMAC-SHA256(clé, "xdesk-auth-v1|client" + nonces + sha256(cert))</code>, l'hôte répond avec le rôle <code>server</code></span></td></tr>
+<tr><td><span data-lang="en">Devices</span><span data-lang="fr">Appareils</span></td><td><span data-lang="en">256 bits secret per trusted device, <code>devices.json</code> signed by <code>registry.key</code></span><span data-lang="fr">secret 256 bits par appareil de confiance, <code>devices.json</code> signé par <code>registry.key</code></span></td></tr>
+<tr><td><span data-lang="en">Brute force</span><span data-lang="fr">Force brute</span></td><td><span data-lang="en"><code>maxAuthFailures</code> per address -> 1 h ban + new code</span><span data-lang="fr"><code>maxAuthFailures</code> par adresse -> ban 1 h + nouveau code</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout ok"><p><span data-lang="en">A man in the middle with its own certificate cannot relay the proof (the transcript holds the certificate the client sees) nor brute force it offline (Argon2id per guess, 45 bits).</span><span data-lang="fr">Un intermédiaire avec son propre certificat ne peut ni relayer la preuve (le transcript contient le certificat vu par le client) ni la casser hors ligne (Argon2id par essai, 45 bits).</span></p></div>
+  <h3><span data-lang="en">4.2 Tamper protection</span><span data-lang="fr">4.2 Protection contre la modification</span></h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col"><span data-lang="en">Watch</span><span data-lang="fr">Surveillance</span></th><th scope="col"><span data-lang="en">Reaction</span><span data-lang="fr">Réaction</span></th></tr></thead>
+    <tbody>
+<tr><td><span data-lang="en">binary, <code>config.json</code>, <code>devices.json</code>, <code>registry.key</code>, certificate: hashed every 3 s + file watcher</span><span data-lang="fr">binaire, <code>config.json</code>, <code>devices.json</code>, <code>registry.key</code>, certificat : hachés toutes les 3 s + surveillance des fichiers</span></td><td><span data-lang="en">changed while sessions control the PC / have a terminal -> those sessions banned</span><span data-lang="fr">modifiés pendant que des sessions contrôlent le PC / ont un terminal -> ces sessions bannies</span></td></tr>
+<tr><td><span data-lang="en">each line typed in a remote terminal (paths, <code>xdesk</code>, host pid with <code>kill</code>...)</span><span data-lang="fr">chaque ligne tapée dans un terminal distant (chemins, <code>xdesk</code>, pid de l'hôte avec <code>kill</code>...)</span></td><td><span data-lang="en">checked before its Enter reaches the shell: dropped, session banned</span><span data-lang="fr">vérifiée avant que son Entrée n'atteigne le shell : ignorée, session bannie</span></td></tr>
+<tr><td><span data-lang="en">processes started from the terminals (Linux: cmdline, open files)</span><span data-lang="fr">processus lancés depuis les terminaux (Linux : cmdline, fichiers ouverts)</span></td><td><span data-lang="en">session banned</span><span data-lang="fr">session bannie</span></td></tr>
+<tr><td><span data-lang="en">host killed during a session (<code>running.json</code>)</span><span data-lang="fr">hôte tué pendant une session (<code>running.json</code>)</span></td><td><span data-lang="en">devices and addresses banned at the next start</span><span data-lang="fr">appareils et adresses bannis au démarrage suivant</span></td></tr>
+<tr><td><span data-lang="en">host process</span><span data-lang="fr">processus hôte</span></td><td><span data-lang="en">Linux <code>PR_SET_DUMPABLE 0</code>, Windows DACL without terminate / memory / thread rights</span><span data-lang="fr">Linux <code>PR_SET_DUMPABLE 0</code>, Windows DACL sans droits terminate / mémoire / thread</span></td></tr>
+<tr><td><span data-lang="en">local panel focused</span><span data-lang="fr">panneau local au premier plan</span></td><td><span data-lang="en">remote input ignored; Windows: panel excluded from the capture</span><span data-lang="fr">entrées distantes ignorées ; Windows : panneau exclu de la capture</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout warn"><p><span data-lang="en">Unban, trust and settings: refused while a session has control or a terminal, and a random code must be typed on the PC. A remote shell runs with the rights of the user: these checks block the usual ways, not every way.</span><span data-lang="fr">Débannir, faire confiance, réglages : refusés tant qu'une session a le contrôle ou un terminal, et un code aléatoire doit être tapé sur le PC. Un shell distant a les droits de l'utilisateur : ces vérifications bloquent les moyens habituels, pas tous.</span></p></div>
+</section>
+
+<!-- 5 -->
+<section id="protocol">
+  <h2><span data-lang="en">5. Protocol</span><span data-lang="fr">5. Protocole</span></h2>
+  <p><span data-lang="en">Port <code>47800</code>: HTTPS (<code>/</code>, <code>/api/info</code>, <code>/app/xdesk.apk</code>, <code>/app/version</code>) and the websocket <code>/ws</code>. Text frames are JSON <code>{"t": type}</code>, binary frames are <code>[u8 type][payload]</code> big endian.</span><span data-lang="fr">Port <code>47800</code> : HTTPS (<code>/</code>, <code>/api/info</code>, <code>/app/xdesk.apk</code>, <code>/app/version</code>) et le websocket <code>/ws</code>. Les trames texte sont du JSON <code>{"t": type}</code>, les trames binaires <code>[u8 type][payload]</code> en big endian.</span></p>
+  <figure>
+    <svg viewBox="0 0 760 250" role="img" aria-label="Handshake">
+      <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrow" d="M0 0L10 5L0 10z"/></marker></defs>
+      <rect id="hc1" class="box" x="30" y="20" width="230" height="40" rx="8"/><text class="lbl" x="145" y="45" text-anchor="middle">hello (nonce, device)</text>
+      <rect id="hs1" class="box-alt" x="500" y="20" width="230" height="40" rx="8"/><text class="lbl" x="615" y="45" text-anchor="middle">challenge (nonce, salt)</text>
+      <rect id="hc2" class="box" x="30" y="105" width="230" height="40" rx="8"/><text class="lbl" x="145" y="130" text-anchor="middle">auth (proof)</text>
+      <rect id="hs2" class="box-alt" x="500" y="105" width="230" height="40" rx="8"/><text class="lbl" x="615" y="130" text-anchor="middle">pending (approval)</text>
+      <rect id="hs3" class="box-alt" x="500" y="190" width="230" height="40" rx="8"/><text class="lbl" x="615" y="215" text-anchor="middle">welcome (perms, proof)</text>
+      <rect id="hc3" class="box" x="30" y="190" width="230" height="40" rx="8"/><text class="lbl" x="145" y="215" text-anchor="middle">frames / inputs / terminals</text>
+      <path id="h1" class="edge" data-from="hc1" data-to="hs1" marker-end="url(#arr2)"/>
+      <path id="h2" class="edge" data-from="hs1" data-to="hc2" marker-end="url(#arr2)"/>
+      <path id="h3" class="edge" data-from="hc2" data-to="hs2" marker-end="url(#arr2)"/>
+      <path id="h4" class="edge dash" data-from="hs2" data-to="hs3" marker-end="url(#arr2)"/>
+      <path id="h5" class="edge" data-from="hs3" data-to="hc3" marker-end="url(#arr2)"/>
+    </svg>
+    <figcaption><span data-lang="en">Figure 2: handshake (client left, host right); pending only when a local approval is needed.</span><span data-lang="fr">Figure 2 : handshake (client à gauche, hôte à droite) ; pending seulement si une approbation locale est nécessaire.</span></figcaption>
+  </figure>
+  <h3><span data-lang="en">5.1 JSON messages</span><span data-lang="fr">5.1 Messages JSON</span></h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col"><code>t</code></th><th scope="col"><span data-lang="en">Direction</span><span data-lang="fr">Sens</span></th><th scope="col"><span data-lang="en">Fields</span><span data-lang="fr">Champs</span></th></tr></thead>
+    <tbody>
+<tr><td><code>hello</code></td><td>C → S</td><td><code>v kind name os device nonce</code></td></tr>
+<tr><td><code>challenge</code></td><td>S → C</td><td><code>host version nonce salt kdf known</code></td></tr>
+<tr><td><code>auth</code></td><td>C → S</td><td><span data-lang="en"><code>method</code> = <code>code</code> (web) | <code>proof</code> | <code>device</code>, <code>remember</code></span><span data-lang="fr"><code>method</code> = <code>code</code> (web) | <code>proof</code> | <code>device</code>, <code>remember</code></span></td></tr>
+<tr><td><code>pending</code> / <code>welcome</code> / <code>denied</code></td><td>S → C</td><td><code>session perms screen capture device proof</code> / <code>reason</code></td></tr>
+<tr><td><code>ping</code> / <code>pong</code></td><td>↔</td><td><code>ts</code></td></tr>
+<tr><td><code>quality</code> / <code>mode</code> / <code>refresh</code></td><td>C → S</td><td><code>quality scale fps</code> / <code>view|control</code></td></tr>
+<tr><td><code>term_open</code> / <code>term_resize</code> / <code>term_close</code> / <code>term_exit</code></td><td>↔</td><td><code>id cols rows code</code></td></tr>
+<tr><td><code>perms</code> / <code>screen</code> / <code>info</code> / <code>bye</code> / <code>clip</code></td><td>S → C (<code>clip</code> ↔)</td><td><code>perms</code>, <code>w h</code>, <code>text</code>, <code>reason banned</code></td></tr>
+    </tbody>
+  </table></div>
+  <h3><span data-lang="en">5.2 Binary messages</span><span data-lang="fr">5.2 Messages binaires</span></h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col"><span data-lang="en">Type</span><span data-lang="fr">Type</span></th><th scope="col"><span data-lang="en">Direction</span><span data-lang="fr">Sens</span></th><th scope="col"><span data-lang="en">Payload</span><span data-lang="fr">Contenu</span></th></tr></thead>
+    <tbody>
+<tr><td><code>0x10</code> Frame</td><td>S → C</td><td><span data-lang="en"><code>u32 id, u16 w, u16 h, u16 n</code>, n × <code>u16 x y w h, u8 enc</code> (1 jpeg <code>u32 len</code> + data, 2 solid <code>u8 r g b</code>)</span><span data-lang="fr"><code>u32 id, u16 w, u16 h, u16 n</code>, n × <code>u16 x y w h, u8 enc</code> (1 jpeg <code>u32 len</code> + données, 2 uni <code>u8 r g b</code>)</span></td></tr>
+<tr><td><code>0x11</code> FrameAck</td><td>C → S</td><td><code>u32 id</code></td></tr>
+<tr><td><code>0x12</code> Cursor</td><td>S → C</td><td><code>i16 x, i16 y, u8 visible</code></td></tr>
+<tr><td><code>0x20</code> / <code>0x21</code> / <code>0x22</code></td><td>C → S</td><td><span data-lang="en">mouse move <code>u16 x y</code>, button <code>u8 b, u8 down</code>, wheel <code>i16 dx dy</code> (120 / notch)</span><span data-lang="fr">souris <code>u16 x y</code>, bouton <code>u8 b, u8 down</code>, molette <code>i16 dx dy</code> (120 / cran)</span></td></tr>
+<tr><td><code>0x23</code> Key / <code>0x24</code> Text</td><td>C → S</td><td><span data-lang="en"><code>u8 down, u8 len</code> + <code>KeyboardEvent.code</code> / utf8</span><span data-lang="fr"><code>u8 down, u8 len</code> + <code>KeyboardEvent.code</code> / utf8</span></td></tr>
+<tr><td><code>0x31</code> TermData</td><td>↔</td><td><code>u8 id</code> + bytes</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 6 -->
+<section id="host">
+  <h2><span data-lang="en">6. Host internals</span><span data-lang="fr">6. Fonctionnement de l'hôte</span></h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col"><span data-lang="en">Part</span><span data-lang="fr">Partie</span></th><th scope="col"><span data-lang="en">How</span><span data-lang="fr">Comment</span></th></tr></thead>
+    <tbody>
+<tr><td><span data-lang="en">Stream</span><span data-lang="fr">Flux</span></td><td><span data-lang="en">capture thread, 4 ms tick; a session gets a frame when its FPS allows it and it has less than 2 frames not acked: no queue, so no lag builds up</span><span data-lang="fr">thread de capture, tick de 4 ms ; une session reçoit une trame quand son FPS le permet et qu'elle a moins de 2 trames non acquittées : pas de file, donc pas de retard accumulé</span></td></tr>
+<tr><td><span data-lang="en">Encoder</span><span data-lang="fr">Encodeur</span></td><td><span data-lang="en">per session: 64×64 tiles hashed, only the changed ones sent, solid tiles as 3 bytes, a dirty row merged in one JPEG (libjpeg-turbo)</span><span data-lang="fr">par session : tuiles 64×64 hachées, seules les modifiées envoyées, tuiles unies en 3 octets, une ligne modifiée fusionnée en un JPEG (libjpeg-turbo)</span></td></tr>
+<tr><td><span data-lang="en">Inputs</span><span data-lang="fr">Entrées</span></td><td><span data-lang="en"><code>TCP_NODELAY</code>, coordinates in frame pixels rescaled by the host, physical key codes</span><span data-lang="fr"><code>TCP_NODELAY</code>, coordonnées en pixels de trame remises à l'échelle par l'hôte, codes de touches physiques</span></td></tr>
+<tr><td><span data-lang="en">Rights</span><span data-lang="fr">Droits</span></td><td><span data-lang="en">view, control (also the <code>mode</code> asked by the client), terminal (max 4), clipboard; changed live from the panels</span><span data-lang="fr">voir, contrôle (et le <code>mode</code> demandé par le client), terminal (4 max), presse-papiers ; modifiables en direct</span></td></tr>
+<tr><td><span data-lang="en">Logs</span><span data-lang="fr">Journaux</span></td><td><span data-lang="en"><code>logs/audit-&lt;day&gt;.jsonl</code>: <code>ts level cat session msg</code> + data; terminal transcripts with the typed bytes</span><span data-lang="fr"><code>logs/audit-&lt;jour&gt;.jsonl</code> : <code>ts level cat session msg</code> + données ; transcripts des terminaux avec les octets tapés</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 7 -->
+<section id="exposure">
+  <h2><span data-lang="en">7. Exposure</span><span data-lang="fr">7. Exposition</span></h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col"><span data-lang="en">Mode</span><span data-lang="fr">Mode</span></th><th scope="col"><span data-lang="en">Tool</span><span data-lang="fr">Outil</span></th><th scope="col"><span data-lang="en">End to end</span><span data-lang="fr">De bout en bout</span></th></tr></thead>
+    <tbody>
+<tr><td><code>lan</code></td><td><span data-lang="en">interfaces + UDP discovery <code>47801</code></span><span data-lang="fr">interfaces + découverte UDP <code>47801</code></span></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
+<tr><td><code>tailscale</code></td><td><span data-lang="en">tailnet address (100.64.0.0/10)</span><span data-lang="fr">adresse du tailnet (100.64.0.0/10)</span></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
+<tr><td><code>upnp</code></td><td><code>upnpc -r</code></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
+<tr><td><code>bore</code> / <code>ngrok</code></td><td><span data-lang="en">TCP tunnel</span><span data-lang="fr">tunnel TCP</span></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
+<tr><td><code>cloudflared</code></td><td><span data-lang="en">HTTPS tunnel (browsers)</span><span data-lang="fr">tunnel HTTPS (navigateurs)</span></td><td><span data-lang="en">no: the relay terminates TLS</span><span data-lang="fr">non : le relais termine TLS</span></td></tr>
+<tr><td><code>manual</code></td><td><span data-lang="en">port forward + <code>publicHost</code></span><span data-lang="fr">redirection de port + <code>publicHost</code></span></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 8 -->
+<section id="platforms">
+  <h2><span data-lang="en">8. Platforms & limits</span><span data-lang="fr">8. Plateformes & limites</span></h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th scope="col"><span data-lang="en">Platform</span><span data-lang="fr">Plateforme</span></th><th scope="col"><span data-lang="en">Capture</span><span data-lang="fr">Capture</span></th><th scope="col"><span data-lang="en">Input</span><span data-lang="fr">Entrées</span></th><th scope="col"><span data-lang="en">Terminal</span><span data-lang="fr">Terminal</span></th></tr></thead>
+    <tbody>
+<tr><td>Windows 10+</td><td>DXGI Desktop Duplication</td><td><code>SendInput</code></td><td>ConPTY</td></tr>
+<tr><td>Linux X11</td><td>Qt (<code>QScreen</code>)</td><td><span data-lang="en">XTest or <code>uinput</code></span><span data-lang="fr">XTest ou <code>uinput</code></span></td><td><code>forkpty</code></td></tr>
+<tr><td>Linux Wayland</td><td><span data-lang="en">portal ScreenCast + PipeWire (screenshot portal without PipeWire)</span><span data-lang="fr">portail ScreenCast + PipeWire (portail screenshot sans PipeWire)</span></td><td><code>uinput</code></td><td><code>forkpty</code></td></tr>
+<tr><td>macOS</td><td>Qt</td><td><span data-lang="en">planned</span><span data-lang="fr">prévu</span></td><td><code>forkpty</code></td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout warn"><p><span data-lang="en">Implemented and tested on Linux (Fedora, GNOME Wayland): TLS / auth / terminals / bans / web / APK. Windows: code checked with MinGW, not yet run on Windows. macOS input injection is planned.</span><span data-lang="fr">Implémenté et testé sous Linux (Fedora, GNOME Wayland) : TLS / auth / terminaux / bans / web / APK. Windows : code vérifié avec MinGW, pas encore lancé sous Windows. L'injection d'entrées macOS est prévue.</span></p></div>
+</section>
+
+<nav class="pager" aria-label="Pages">
+  <a class="next" href="graph.html"><span data-i18n>Next</span><b data-i18n>Graph</b></a>
+</nav>
+</main>
+</div>
+<footer class="site"><span data-lang="en"><span class="repo-name">xdesk</span> documentation · generated from the <a class="repo-link" href="https://github.com/TsukiNi22/external-desktop">repository</a> (<span class="repo-version">v1.0.0</span>, <span class="repo-license">MIT</span>)</span><span data-lang="fr">Documentation de <span class="repo-name">xdesk</span> · générée depuis le <a class="repo-link" href="https://github.com/TsukiNi22/external-desktop">dépôt</a> (<span class="repo-version">v1.0.0</span>, <span class="repo-license">MIT</span>)</span></footer>
+<script>
+// French texts of the page (English text -> French text), extend it with the page content
+window.DOC_FR = {
+  "Guide": "Guide",
+  "Technical": "Technique",
+  "Graph": "Graphe",
+  "GitHub repository": "Dépôt GitHub",
+  "Toggle theme": "Changer de thème",
+  "Contents": "Sommaire",
+  "Language": "Langue",
+  "Pages": "Pages",
+  "Copy": "Copier",
+  "Copied": "Copié",
+  "Select & copy": "Sélectionner et copier",
+  "Link to this section": "Lien vers cette section",
+  "Navigation": "Navigation",
+  "Open the navigation": "Ouvrir la navigation",
+  "User guide": "Guide utilisateur",
+  "Developer guide": "Guide développeur",
+  "Technical documentation": "Documentation technique",
+  "Previous": "Précédent",
+  "Next": "Suivant",
+  "Skip to the content": "Aller au contenu"
+};
+</script>
+<script>
+// Behaviour shared by the user's HTML pages (from html-doc): theme switch, optional EN / FR switch, copy buttons
+// on the code blocks, heading anchors, content tabs, mobile menu. Inlined in each page by scripts/new_page.py.
+
+// Language (only when the page has a .lang-switch): [data-i18n] elements and [data-i18n-<attr>] attributes are
+// translated with window.DOC_FR (English text -> French text), [data-lang] blocks are shown for their language only.
+(function () {
+  var root = document.documentElement;
+  var key = (root.getAttribute('data-storage-key') || 'page') + '-lang';
+  var FR = window.DOC_FR || {};
+  var listeners = [];
+  function tr(s) { return root.lang === 'fr' && Object.prototype.hasOwnProperty.call(FR, s) ? FR[s] : s; }
+  function apply() {
+    document.querySelectorAll('[data-i18n]').forEach(function (el) {
+      if (el.dataset.i18nEn === undefined) el.dataset.i18nEn = el.innerHTML.trim();
+      el.innerHTML = tr(el.dataset.i18nEn);
+    });
+    ['aria-label', 'title', 'placeholder'].forEach(function (attr) {
+      document.querySelectorAll('[data-i18n-' + attr + ']').forEach(function (el) {
+        var store = 'i18nEn' + attr.replace(/-(\w)/g, function (m, c) { return c.toUpperCase(); });
+        if (el.dataset[store] === undefined) el.dataset[store] = el.getAttribute(attr) || '';
+        el.setAttribute(attr, tr(el.dataset[store]));
+      });
+    });
+    document.querySelectorAll('[data-set-lang]').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.setLang === root.lang);
+      b.setAttribute('aria-pressed', b.dataset.setLang === root.lang ? 'true' : 'false');
+    });
+  }
+  function set(lang) {
+    root.lang = lang === 'fr' ? 'fr' : 'en';
+    try { localStorage.setItem(key, root.lang); } catch (e) { /* storage unavailable */ }
+    apply();
+    listeners.forEach(function (f) { f(root.lang); });
+  }
+  var saved = null;
+  if (document.querySelector('.lang-switch')) {
+    try { saved = localStorage.getItem(key); } catch (e) { /* storage unavailable */ }
+  }
+  // Choice carried by a link of the site (?lang=): pages opened from file:// don't share their storage
+  var askedLang = new URLSearchParams(location.search).get('lang');
+  if (askedLang === 'en' || askedLang === 'fr') { saved = askedLang; try { localStorage.setItem(key, askedLang); } catch (e) { /* storage unavailable */ } }
+  root.lang = saved === 'fr' ? 'fr' : (root.lang || 'en');
+  window.docI18n = { tr: tr, set: set, apply: apply, onChange: function (f) { listeners.push(f); }, lang: function () { return root.lang; } };
+  document.querySelectorAll('[data-set-lang]').forEach(function (b) {
+    b.addEventListener('click', function () { set(b.dataset.setLang); });
+  });
+  apply();
+})();
+
+// Links between the pages of the site carry the language, theme and level (?lang=fr&theme=dark&level=technical):
+// the choice applies to every page, also from file:// where each page has its own storage
+(function () {
+  var root = document.documentElement;
+  function carry(e) {
+    var a = e.target.closest && e.target.closest('a[href]');
+    if (!a || a.target === '_blank') return;
+    var href = a.getAttribute('href');
+    if (!/^[^:?#\/]+\.html(#.*)?$/.test(href) && !/^\.\/[^:?#\/]+\.html(#.*)?$/.test(href)) return; // pages of the same folder only
+    var u = new URL(a.href);
+    u.searchParams.set('lang', root.lang || 'en');
+    if (root.getAttribute('data-theme')) u.searchParams.set('theme', root.getAttribute('data-theme'));
+    if (root.getAttribute('data-level')) u.searchParams.set('level', root.getAttribute('data-level'));
+    a.href = u.href;
+  }
+  document.addEventListener('click', carry, true);
+  document.addEventListener('auxclick', carry, true);
+})();
+
+// Theme: sun / moon switch, choice saved, default = system preference
+(function () {
+  var root = document.documentElement;
+  var key = (root.getAttribute('data-storage-key') || 'page') + '-theme';
+  var btn = document.getElementById('themeToggle');
+  try { var saved = localStorage.getItem(key); if (saved) root.setAttribute('data-theme', saved); } catch (e) { /* storage unavailable */ }
+  var askedTheme = new URLSearchParams(location.search).get('theme'); // carried by a link of the site
+  if (askedTheme === 'dark' || askedTheme === 'light') { root.setAttribute('data-theme', askedTheme); try { localStorage.setItem(key, askedTheme); } catch (e) { /* storage unavailable */ } }
+  function isDark() {
+    return root.getAttribute('data-theme') === 'dark' ||
+      (!root.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+  if (!btn) return;
+  btn.setAttribute('aria-checked', isDark() ? 'true' : 'false');
+  btn.addEventListener('click', function () {
+    var next = isDark() ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    btn.setAttribute('aria-checked', next === 'dark' ? 'true' : 'false');
+    try { localStorage.setItem(key, next); } catch (e) { /* storage unavailable */ }
+    document.dispatchEvent(new CustomEvent('themechange', { detail: next }));
+  });
+})();
+
+// Figures: an SVG is never drawn larger than its viewBox (its text would grow with the screen)
+document.querySelectorAll('figure svg[viewBox]').forEach(function (svg) {
+  var w = +svg.getAttribute('viewBox').split(/[\s,]+/)[2];
+  if (w && !svg.style.maxWidth) { svg.style.maxWidth = w + 'px'; svg.style.marginInline = 'auto'; }
+});
+
+// A drawing on a small screen: never under 72 % of its size (labels of 13 px stay readable), it scrolls in a box of its own, its caption stays.
+// Pages drawing their figures themselves are left alone (explain-doc: data-page="explain", protocol-doc: a min-width of their own)
+if (document.documentElement.getAttribute('data-page') !== 'explain') document.querySelectorAll('figure > svg[viewBox]').forEach(function (svg) {
+  var width = +svg.getAttribute('viewBox').split(/[\s,]+/)[2];
+  if (!(width > 400) || svg.style.minWidth) return;
+  var box = document.createElement('div');
+  box.className = 'figure-scroll';
+  svg.parentNode.insertBefore(box, svg);
+  box.appendChild(svg);
+  svg.style.minWidth = Math.round(width * 0.72) + 'px';
+  function mark() { // a block that scrolls is reached and scrolled with the keyboard
+    if (box.scrollWidth > box.clientWidth + 1) {
+      box.setAttribute('tabindex', '0');
+      box.setAttribute('role', 'region');
+      box.setAttribute('aria-label', svg.getAttribute('aria-label') || 'Figure');
+    } else ['tabindex', 'role', 'aria-label'].forEach(function (name) { box.removeAttribute(name); });
+  }
+  mark();
+  if ('ResizeObserver' in window) new ResizeObserver(mark).observe(box);
+  else window.addEventListener('resize', mark);
+});
+
+// Diagram links: an arrow is computed from the shapes it joins instead of typed coordinates, so it always touches
+// them. <path class="edge" data-from="a" data-to="b" marker-end="url(#arr)"/>: a / b = id of a rect, circle, ellipse
+// (or a <g> holding one). Options: data-from="a:right" (side: top, bottom, left, right), data-bend="0.2" (curve, +/-
+// fraction of the length), data-gap="2" (space before the shape). A label <text data-label-for="pathId"
+// data-offset="-8"> is placed on the middle of the path. Geometry is read from the attributes (works while hidden).
+window.docDiagram = (function () {
+  function translateOf(el, svg) {
+    var x = 0, y = 0;
+    for (var n = el; n && n !== svg; n = n.parentNode) {
+      var t = n.getAttribute && n.getAttribute('transform');
+      var m = t && t.match(/translate\(\s*(-?[\d.]+)[\s,]*(-?[\d.]+)?\s*\)/);
+      if (m) { x += +m[1]; y += +(m[2] || 0); }
+    }
+    return [x, y];
+  }
+  function shape(svg, id) {
+    var el = svg.querySelector('[id="' + id + '"]');
+    if (el && el.tagName.toLowerCase() === 'g') el = el.querySelector('rect, circle, ellipse');
+    if (!el) return null;
+    var o = translateOf(el, svg), num = function (a) { return +(el.getAttribute(a) || 0); };
+    var tag = el.tagName.toLowerCase();
+    if (tag === 'rect') return { kind: 'rect', x: num('x') + o[0], y: num('y') + o[1], w: num('width'), h: num('height') };
+    if (tag === 'circle') return { kind: 'ellipse', cx: num('cx') + o[0], cy: num('cy') + o[1], rx: num('r'), ry: num('r') };
+    return { kind: 'ellipse', cx: num('cx') + o[0], cy: num('cy') + o[1], rx: num('rx'), ry: num('ry') };
+  }
+  function center(s) { return s.kind === 'rect' ? [s.x + s.w / 2, s.y + s.h / 2] : [s.cx, s.cy]; }
+  function side(s, name) {
+    var c = center(s), hw = s.kind === 'rect' ? s.w / 2 : s.rx, hh = s.kind === 'rect' ? s.h / 2 : s.ry;
+    return { top: [c[0], c[1] - hh], bottom: [c[0], c[1] + hh], left: [c[0] - hw, c[1]], right: [c[0] + hw, c[1]] }[name];
+  }
+  // Point of the border of s in the direction of p, moved back by gap
+  function border(s, p, gap) {
+    var c = center(s), dx = p[0] - c[0], dy = p[1] - c[1], len = Math.hypot(dx, dy) || 1, k;
+    if (s.kind === 'rect') k = Math.min(dx ? (s.w / 2) / Math.abs(dx) : Infinity, dy ? (s.h / 2) / Math.abs(dy) : Infinity);
+    else k = 1 / Math.sqrt((dx * dx) / (s.rx * s.rx) + (dy * dy) / (s.ry * s.ry));
+    return [c[0] + dx * k + dx / len * gap, c[1] + dy * k + dy / len * gap];
+  }
+  // Point of the border of s for an arrow coming from / going to toward; off spreads several arrows of the same
+  // shape along its side (instead of all reaching the same point)
+  function end(s, spec, toward, gap, off) {
+    var name = spec.split(':')[1], p;
+    if (name) p = side(s, name);
+    else if (off && s.kind === 'rect') {
+        var c = center(s), dx = toward[0] - c[0], dy = toward[1] - c[1];
+        if (Math.abs(dy) * s.w >= Math.abs(dx) * s.h) p = [c[0] + off * s.w, c[1] + (dy < 0 ? -1 : 1) * s.h / 2];
+        else p = [c[0] + (dx < 0 ? -1 : 1) * s.w / 2, c[1] + off * s.h];
+    } else p = border(s, toward, 0);
+    var vx = toward[0] - p[0], vy = toward[1] - p[1], len = Math.hypot(vx, vy) || 1;
+    return [p[0] + vx / len * gap, p[1] + vy / len * gap];
+  }
+  // Slot (-0.3 .. 0.3 of the side) of each arrow end sharing a shape, ordered by where the other end is
+  function slots(items) {
+    var groups = {};
+    items.forEach(function (it) { if (!it.spec.split(':')[1]) (groups[it.id] = groups[it.id] || []).push(it); });
+    Object.keys(groups).forEach(function (id) {
+      var g = groups[id], s = g[0].shape, c = center(s);
+      if (g.length < 2) return;
+      g.forEach(function (it) {
+        var dx = it.toward[0] - c[0], dy = it.toward[1] - c[1];
+        it.vertical = s.kind === 'rect' && Math.abs(dy) * s.w >= Math.abs(dx) * s.h;
+        it.key = it.vertical ? dx : dy;
+      });
+      [true, false].forEach(function (v) {
+        var sub = g.filter(function (it) { return it.vertical === v; }).sort(function (a, b) { return a.key - b.key; });
+        if (sub.length > 1) sub.forEach(function (it, i) { it.off = ((i + 1) / (sub.length + 1) - 0.5) * 0.6; });
+      });
+    });
+  }
+  function layout(svg) {
+    var items = [], links = [];
+    svg.querySelectorAll('[data-from][data-to]').forEach(function (path) {
+      var fa = path.dataset.from, ta = path.dataset.to;
+      var a = shape(svg, fa.split(':')[0]), b = shape(svg, ta.split(':')[0]);
+      if (!a || !b) { console.warn('diagram link: unknown shape', fa, ta); return; }
+      var gap = +(path.dataset.gap || 2), bend = +(path.dataset.bend || 0);
+      var ca = fa.indexOf(':') > 0 ? side(a, fa.split(':')[1]) : center(a);
+      var cb = ta.indexOf(':') > 0 ? side(b, ta.split(':')[1]) : center(b);
+      var mx = (ca[0] + cb[0]) / 2, my = (ca[1] + cb[1]) / 2, len = Math.hypot(cb[0] - ca[0], cb[1] - ca[1]) || 1;
+      var ctrl = [mx - (cb[1] - ca[1]) / len * bend * len, my + (cb[0] - ca[0]) / len * bend * len];
+      var ea = { spec: fa, id: fa.split(':')[0], shape: a, toward: bend ? ctrl : cb, off: 0 };
+      var eb = { spec: ta, id: ta.split(':')[0], shape: b, toward: bend ? ctrl : ca, off: 0 };
+      items.push(ea, eb);
+      links.push({ path: path, gap: gap, bend: bend, ctrl: ctrl, ea: ea, eb: eb });
+    });
+    slots(items);
+    links.forEach(function (l) {
+      var path = l.path, gap = l.gap, bend = l.bend, ctrl = l.ctrl;
+      var p1 = end(l.ea.shape, l.ea.spec, l.ea.toward, gap, l.ea.off), p2 = end(l.eb.shape, l.eb.spec, l.eb.toward, gap, l.eb.off);
+      var f = function (p) { return p[0].toFixed(1) + ' ' + p[1].toFixed(1); };
+      path.setAttribute('d', bend ? 'M' + f(p1) + ' Q' + f(ctrl) + ' ' + f(p2) : 'M' + f(p1) + ' L' + f(p2));
+      var mid = bend ? [(p1[0] + 2 * ctrl[0] + p2[0]) / 4, (p1[1] + 2 * ctrl[1] + p2[1]) / 4] : [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+      if (path.id) svg.querySelectorAll('[data-label-for="' + path.id + '"]').forEach(function (t) {
+        var off = +(t.dataset.offset || -8), dx = p2[0] - p1[0], dy = p2[1] - p1[1], l = Math.hypot(dx, dy) || 1;
+        var nx = -dy / l, ny = dx / l;
+        if (ny > 0) { nx = -nx; ny = -ny; } // a negative offset is always above the path
+        t.setAttribute('x', (mid[0] - nx * off).toFixed(1));
+        t.setAttribute('y', (mid[1] - ny * off).toFixed(1));
+        if (!t.getAttribute('text-anchor')) t.setAttribute('text-anchor', 'middle');
+      });
+    });
+  }
+  document.querySelectorAll('svg').forEach(layout);
+  return { layout: layout };
+})();
+
+// Tables: each one in a box of its own (it scrolls there, never the page); a short cell stays on one line next to a long sentence
+// (never a word per line) as long as the table fits, a word too long for any column may break. Measured again when its box changes
+// (the width of the screen, a tab or a <details> opened) and with the language.
+window.docTables = (function () {
+  var LIMITS = [40, 28, 20, 14], WORD_KEPT = 32, CELLS_MAX = 3000;
+  var tables = [];
+  function crushed(item) { // a cell of three words or more, one word per line
+    if (item.size === Infinity) return false;
+    var words = (item.cell.innerText || '').trim().split(/\s+/).length;
+    if (words < 3 || item.cell.offsetWidth >= 150) return false; // wider: long names, one a line, nothing to pair them
+    var range = document.createRange(), lines = 0, last = -1e9;
+    range.selectNodeContents(item.cell);
+    Array.prototype.slice.call(range.getClientRects()).sort(function (a, b) { return a.top - b.top; }).forEach(function (rect) {
+      var middle = (rect.top + rect.bottom) / 2;
+      if (middle - last > Math.max(4, rect.height * 0.6)) { lines++; last = middle; }
+    });
+    return lines >= words || (lines >= 10 && words / lines < 3); // or a sentence squeezed: better a table that scrolls
+  }
+  function fit(table) {
+    var box = table.closest('.table-wrap');
+    if (!box || !box.clientWidth) return; // hidden: done when it is shown
+    var cells = table.querySelectorAll('th, td');
+    if (cells.length > CELLS_MAX) return;
+    var items = [];
+    cells.forEach(function (cell) {
+      var blocks = cell.querySelector('p, ul, ol, pre, table, div, dl, blockquote');
+      var text = (cell.innerText || '').trim();
+      var longest = text.split(/\s+/).reduce(function (most, word) { return Math.max(most, word.length); }, 0);
+      cell.style.overflowWrap = longest > WORD_KEPT ? 'anywhere' : '';
+      cell.style.minWidth = longest > WORD_KEPT ? '18ch' : ''; // broken where it must, not four letters a line
+      items.push({ cell: cell, size: blocks || text.indexOf('\n') >= 0 ? Infinity : text.length });
+    });
+    var keep = function (limit) { items.forEach(function (item) { item.cell.style.whiteSpace = item.size <= limit ? 'nowrap' : ''; }); };
+    var fits = false;
+    for (var at = 0; at < LIMITS.length && !fits; at++) {
+      keep(LIMITS[at]);
+      fits = table.offsetWidth <= box.clientWidth + 1 && !items.some(crushed); // three words on three lines is not fitting
+    }
+    if (!fits) { // it scrolls whatever is done: its short cells on one line, its sentences with some width
+      keep(LIMITS[1]);
+      items.forEach(function (item) { if (item.size > LIMITS[1]) item.cell.style.minWidth = '16em'; });
+    }
+    var scrolls = box.scrollWidth > box.clientWidth + 1;
+    if (scrolls && !box.hasAttribute('tabindex')) { // reached and scrolled with the keyboard
+      box.setAttribute('tabindex', '0');
+      box.setAttribute('role', 'region');
+      if (!box.getAttribute('aria-label')) box.setAttribute('aria-label', (table.caption && table.caption.textContent.trim()) || 'Table');
+    }
+  }
+  function fitAll() { tables.forEach(fit); }
+  function watch(table) {
+    if (table.closest('pre, svg, .no-fit')) return;
+    var box = table.closest('.table-wrap');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'table-wrap';
+      table.parentNode.insertBefore(box, table);
+      box.appendChild(table);
+    }
+    tables.push(table);
+    if ('ResizeObserver' in window) {
+      var width = -1;
+      new ResizeObserver(function () {
+        if (box.clientWidth === width) return;
+        width = box.clientWidth;
+        fit(table);
+      }).observe(box);
+    }
+  }
+  document.querySelectorAll('main table').forEach(watch);
+  fitAll();
+  if (!('ResizeObserver' in window)) window.addEventListener('resize', fitAll);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitAll);
+  if (window.docI18n) window.docI18n.onChange(fitAll);
+  return { fit: fitAll, watch: function (table) { watch(table); fit(table); } };
+})();
+
+// Sidebar (mobile) + visible section, copy buttons, heading anchors, content tabs
+(function () {
+  var tr = function (s) { return window.docI18n ? window.docI18n.tr(s) : s; };
+  var menu = document.getElementById('menuBtn'), side = document.getElementById('sidebar');
+  if (menu && side) {
+    menu.addEventListener('click', function () { side.classList.toggle('open'); });
+    side.addEventListener('click', function (e) { if (e.target.closest('a')) side.classList.remove('open'); }); // a tapped entry closes the menu
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') side.classList.remove('open'); });
+    document.addEventListener('click', function (e) { if (!side.contains(e.target) && !menu.contains(e.target)) side.classList.remove('open'); });
+  }
+  var links = document.querySelectorAll('.sidebar a[href^="#"]');
+  if (links.length && 'IntersectionObserver' in window) {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        links.forEach(function (a) { a.classList.toggle('active', a.getAttribute('href') === '#' + entry.target.id); });
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    document.querySelectorAll('main section[id]').forEach(function (s) { observer.observe(s); });
+  }
+  document.querySelectorAll('main pre').forEach(function (pre) {
+    if (pre.dataset.nocopy !== undefined) return;
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'copy'; b.textContent = tr('Copy');
+    b.addEventListener('click', function () {
+      var code = pre.querySelector('code') || pre;
+      var done = function () { b.textContent = tr('Copied'); setTimeout(function () { b.textContent = tr('Copy'); }, 1400); };
+      if (navigator.clipboard) navigator.clipboard.writeText(code.innerText).then(done, function () { b.textContent = tr('Select & copy'); });
+      else b.textContent = tr('Select & copy');
+    });
+    pre.appendChild(b);
+  });
+  document.querySelectorAll('main h2[id], main h3[id], main section[id] > h2').forEach(function (h) {
+    var id = h.id || h.parentElement.id;
+    if (!id || h.querySelector('.anchor')) return;
+    var a = document.createElement('a');
+    a.className = 'anchor'; a.href = '#' + id; a.textContent = '#';
+    a.setAttribute('aria-label', tr('Link to this section'));
+    h.appendChild(a);
+  });
+  document.querySelectorAll('.ctabs').forEach(function (bar) {
+    var group = bar.dataset.tabs;
+    var buttons = bar.querySelectorAll('button');
+    var panels = document.querySelectorAll('.ctab-panel[data-tabs="' + group + '"]');
+    function show(name) {
+      buttons.forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
+      panels.forEach(function (p) { p.classList.toggle('active', p.dataset.tab === name); });
+    }
+    buttons.forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.tab); }); });
+    if (buttons.length) show(buttons[0].dataset.tab);
+  });
+  if (window.docI18n) window.docI18n.onChange(function () {
+    document.querySelectorAll('main pre .copy').forEach(function (b) { b.textContent = tr('Copy'); });
+    document.querySelectorAll('.anchor').forEach(function (a) { a.setAttribute('aria-label', tr('Link to this section')); });
+  });
+})();
+</script>
+<script>
+</script>
+<script>
+// Project data from the linked GitHub repository (<html data-repo="owner/repo">): name, latest version, license and
+// URL are fetched (cached 1 h) and replace the written values in .repo-name / .repo-version / .repo-license /
+// .repo-link and in the page title. Offline, private repository or API limit: the written values stay.
+(function () {
+  var root = document.documentElement, repo = root.getAttribute('data-repo') || '';
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return;
+  var key = (root.getAttribute('data-storage-key') || 'doc') + '-repo', TTL = 3600 * 1000;
+  function apply(info) {
+    if (!info) return;
+    var oldName = (document.querySelector('.repo-name') || {}).textContent;
+    if (info.name) document.querySelectorAll('.repo-name').forEach(function (e) { e.textContent = info.name; });
+    if (info.version) document.querySelectorAll('.repo-version').forEach(function (e) { e.textContent = info.version; });
+    if (info.license) document.querySelectorAll('.repo-license').forEach(function (e) { e.textContent = info.license; });
+    if (info.url) document.querySelectorAll('a.repo-link').forEach(function (e) { e.href = info.url; });
+    if (info.name && oldName && document.title.indexOf(oldName) === 0) document.title = info.name + document.title.slice(oldName.length);
+  }
+  var cached = null;
+  try { cached = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { /* storage unavailable */ }
+  if (cached && cached.repo === repo) apply(cached);
+  // A language change rewrites the translated texts from their original: apply the fetched data again
+  if (window.docI18n) window.docI18n.onChange(function () { var c = null; try { c = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { /* storage unavailable */ } apply(window.docRepoInfo || c); });
+  if (cached && cached.repo === repo && Date.now() - cached.time < TTL) return;
+  var api = 'https://api.github.com/repos/' + repo;
+  var get = function (u) { return fetch(u, { headers: { Accept: 'application/vnd.github+json' } }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }); };
+  get(api).then(function (r) {
+    var info = { repo: repo, time: Date.now(), name: r.name, url: r.html_url, license: r.license && r.license.spdx_id && r.license.spdx_id !== 'NOASSERTION' ? r.license.spdx_id : '' };
+    return get(api + '/releases/latest').then(function (rel) { info.version = rel.tag_name; return info; })
+      .catch(function () { return get(api + '/tags?per_page=1').then(function (tags) { if (tags[0]) info.version = tags[0].name; return info; }); })
+      .catch(function () { return info; });
+  }).then(function (info) {
+    window.docRepoInfo = info;
+    apply(info);
+    try { localStorage.setItem(key, JSON.stringify(info)); } catch (e) { /* storage unavailable */ }
+  }).catch(function () { /* keep the written values */ });
+})();
+</script>
+<script>
+// Hide the tabs of the pages that don't exist, and the whole bar when a single page remains
+// (online: HEAD request; file://: the page is loaded as a hidden script, a missing file fails to load)
+(function () {
+  var nav = document.querySelector('nav.tabs');
+  if (!nav) return;
+  function showCurrent() { // a narrow bar scrolls its tabs: the current one in sight
+    var current = nav.querySelector('a.current');
+    if (current) nav.scrollLeft = current.offsetLeft - nav.offsetLeft;
+  }
+  function done(a, ok) {
+    if (!ok) a.remove();
+    if (nav.querySelectorAll('a').length < 2) nav.hidden = true;
+    showCurrent();
+  }
+  nav.querySelectorAll('a:not(.current)').forEach(function (a) {
+    if (/^https?:$/.test(location.protocol)) {
+      fetch(a.href, { method: 'HEAD' }).then(function (r) { done(a, r.ok); }).catch(function () {});
+      return;
+    }
+    var s = document.createElement('script');
+    var mute = function (e) { if (e.filename === s.src) { e.preventDefault(); e.stopImmediatePropagation(); } }; // an HTML page is not JS
+    window.addEventListener('error', mute, true);
+    s.src = a.href;
+    s.onload = function () { window.removeEventListener('error', mute, true); s.remove(); done(a, true); };
+    s.onerror = function () { window.removeEventListener('error', mute, true); s.remove(); done(a, false); };
+    document.head.appendChild(s);
+  });
+  if (nav.querySelectorAll('a').length < 2) nav.hidden = true;
+  showCurrent();
+})();
+</script>
+</body>
+</html>
