@@ -38,7 +38,7 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 | Tamper protection | A session touching xdesk (its binary, config, data, process) is banned at once (see [Security](#security)) |
 | Audit log | `jsonl` per day (connections, decisions, inputs, terminal commands) + full terminal transcripts |
 | Screen | Dirty 64x64 tiles (JPEG via libjpeg-turbo or solid color), max 2 frames in flight (latency over throughput), remote cursor |
-| Capture | Windows DXGI Desktop Duplication, X11 / macOS through Qt, Wayland through the xdg-desktop-portal (PipeWire) |
+| Capture | Windows DXGI Desktop Duplication, X11 / macOS through Qt, Wayland through the xdg-desktop-portal ScreenCast + PipeWire video stream (no screenshots: no flash, no shutter sound, only the changed tiles sent) |
 | Input | Windows `SendInput` (scancodes + unicode), Linux `uinput` (Wayland and X11) or XTest, physical key codes (layout of the host) |
 | Terminals | Linux / macOS `forkpty`, Windows ConPTY; up to 4 per session, resizable, `xterm-256color` |
 | Clients | Qt viewer (fit / 1:1 / full screen, terminals in tabs), terminal client (shell passthrough or the screen in truecolor half blocks), web client, Android APK |
@@ -71,7 +71,7 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 ## Dependencies
 
 > [!CAUTION]
-> The MIT license of this project ([LICENSE](LICENSE)) only applies to the code of `xdesk` itself, not to its dependencies (Qt 6: LGPLv3, OpenSSL: Apache 2.0, libjpeg-turbo: BSD-style, xterm.js: MIT, jsQR: Apache 2.0, qrcodegen: MIT).
+> The MIT license of this project ([LICENSE](LICENSE)) only applies to the code of `xdesk` itself, not to its dependencies (Qt 6: LGPLv3, OpenSSL: Apache 2.0, libjpeg-turbo: BSD-style, xterm.js: MIT, jsQR: Apache 2.0, qrcodegen: MIT, PipeWire headers: MIT).
 
 | Name + Link | Status | Last Update |
 | ----------- | ------ | ----------- |
@@ -85,7 +85,7 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 | Qt 6 (Core Gui Widgets Network) | `>= 6.4` | `qt6-qtbase-devel` | `qt6-base-dev` | `qt6-base` |
 | OpenSSL | `>= 3.2` (`3.5` for ML-KEM) | `openssl-devel` | `libssl-dev` | `openssl` |
 | libjpeg-turbo | any | `libjpeg-turbo-devel` | `libjpeg-turbo8-dev` | `libjpeg-turbo` |
-| PipeWire **[OPTIONAL]** | `0.3` | `pipewire-devel` | `libpipewire-0.3-dev` | `pipewire` |
+| PipeWire (run time, Wayland) | `0.3` / `1.x` | `pipewire-libs` | `libpipewire-0.3-0` | `pipewire` |
 | XTest **[OPTIONAL]** | any | `libXtst-devel` | `libxtst-dev` | `libxtst` |
 | GoogleTest (tests only) | any | `gtest-devel` | `libgtest-dev` | `gtest` |
 | MinGW-w64 (Windows only) | GCC `>= 13` | `mingw64-gcc-c++ mingw64-qt6-qtbase mingw64-openssl mingw64-libjpeg-turbo mingw64-libutils` | - | - |
@@ -93,7 +93,7 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 | `ccache` **[OPTIONAL]** | any | `ccache` | `ccache` | `ccache` |
 
 > [!NOTE]
-> The optional backends are detected by CMake (`xdesk backends: dbus=... pipewire=... xtest=...`): without PipeWire, a Wayland host captures through the portal screenshot API (a few frames per second); without XTest, the input goes through `uinput`.
+> The optional backends are detected by CMake (`xdesk backends: dbus=... pipewire=... xtest=...`). PipeWire needs nothing at build time: its headers are vendored (`third_party/pipewire`) and `libpipewire-0.3.so.0` is loaded at run time (only a system without it falls back to the portal screenshots, about one frame per second). Without XTest, the input goes through `uinput`.
 
 ## Quick Setup - 0 (scripts)
 
@@ -268,6 +268,7 @@ cmake --build $BUILD_DIR --target get_unregistered_files  # .cpp files missing f
 | `web/` | Web client (embedded in the binary), xterm.js and jsQR in `web/vendor/` |
 | `android/` | Android application (WebView with certificate pinning and auto update, `assets/scan.html` QR code scanner) |
 | `third_party/qrcodegen/` | QR code encoder of the host panel (Nayuki, MIT) |
+| `third_party/pipewire/` | PipeWire / SPA headers used by the Wayland capture (MIT, the library is loaded at run time) |
 | `scripts/` | `install.sh`, `install.ps1`, `bundle_windows.sh`, `build_apk.sh` |
 | `include/xdesk/` | Headers (same tree) |
 | `tests/xdesk/` | Unit tests (one file per module) |
@@ -301,15 +302,18 @@ path it closes. The panel shows, for each path, who can use it and its address.
 > [!NOTE]
 > The tools (`upnpc`, `bore`, `cloudflared`, `ngrok`, `tailscale`) are used only when installed; the panel shows the state of the tunnel and every address (copy and QR code buttons on each one).
 
-> [!WARNING]
-> Every `*.ts.net` name is on the HSTS preload list of the browsers: a self-signed certificate is refused there **without any way to accept it** (`MOZILLA_PKIX_ERROR_SELF_SIGNED_CERT`, no exception button). That is why the browser address of the Tailscale path is its `100.x.y.z` IP; the native clients pin the certificate and keep using the name.
+> [!IMPORTANT]
+> Every `*.ts.net` name is on the HSTS preload list of the browsers: a self-signed certificate is refused there **without any way to accept it** (`MOZILLA_PKIX_ERROR_SELF_SIGNED_CERT`). So the Tailscale path gets a real certificate with `tailscale cert` (renewed by xdesk, kept in `<data>/tailscale/`), and the server picks it from the name the browser asks (SNI): `https://<pc>.<tailnet>.ts.net:<port>` opens without any warning. The native clients send no name and keep the pinned self-signed certificate, the app links of the QR code use the `100.x.y.z` address.
+>
+> Needs, once: HTTPS enabled in the Tailscale admin console (DNS page; the name is then published in the public certificate logs) and the right to run `tailscale cert` (`sudo tailscale set --operator=$USER`). Without them the browser address stays the `100.x.y.z` IP and the panel says why.
 
 ## Phone & browser
 
 - Scan the **QR code** of the panel (Overview, QR code, or the button of an address) with the camera: the xdesk app or the browser opens with the code filled in.
 - Open `https://<host>:<port>` (shown in the panel): the web client asks the code (or scans it: Scan the QR code of the host), then shows the screen (touch: tap = click, long press = right click, two fingers = scroll, keyboard button) and terminals (xterm.js).
 - On Android the page proposes the **xdesk app** (`/app/xdesk.apk`): full screen, certificate pinned on first use (or from the QR code), a QR code scanner (camera asked when it opens), and an update offered as soon as the host serves a newer version.
-- The certificate is self-signed: the browser asks to accept it once (compare the fingerprint with the host panel), or use a Tailscale address / tunnel with a real certificate.
+- The certificate is self-signed: the browser asks to accept it once (compare the fingerprint with the host panel), or use the Tailscale name (real certificate, see above) / a tunnel with a real certificate.
+- LAN addresses use the `<pc>.local` name when avahi / Bonjour publishes it for that address, the IP otherwise.
 
 ## Windows (cross compilation)
 > Build for Windows (x86_64) from Linux with the MinGW-w64 toolchain (libutils: `mingw64-libutils` packages in the MinGW sysroot)
@@ -346,7 +350,7 @@ cmake --build build --parallel $(nproc)                       # ./unit_tests at 
 ## Known limits
 
 > [!WARNING]
-> - Wayland: the real time capture needs `pipewire-devel` at build time (else portal screenshots, a few FPS); the capture only starts with the first viewer (the portal asks the screen share then, once: it remembers it) and stops 15 s after the last one; the remote control needs `/dev/uinput` (`scripts/install.sh --uinput`), else the panel shows `Input: unavailable` and the sessions stay view only.
+> - Wayland: the real time capture uses the PipeWire library of the system (loaded at run time; without it: portal screenshots, about 1 FPS); the capture only starts with the first viewer (the portal asks the screen share then, once: it remembers it) and stops 15 s after the last one; the remote control needs `/dev/uinput` (`scripts/install.sh --uinput`), else the panel shows `Input: unavailable` and the sessions stay view only.
 > - Windows: the build needs `mingw64-qt6-qtbase` (`scripts/bundle_windows.sh`); the code is checked with MinGW but not yet run on a real Windows.
 > - The web client cannot read the certificate: it sends the code inside TLS (no Argon2id binding) - prefer the native clients on untrusted networks.
 

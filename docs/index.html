@@ -583,7 +583,7 @@ cmake -S . -B build -DBUILD_TESTS=ON && cmake --build build && ./unit_tests</cod
 <tr><td>OpenSSL &gt;= 3.5</td><td><span data-lang="en">ML-KEM hybrid groups, Argon2id, certificate generation</span><span data-lang="fr">groupes hybrides ML-KEM, Argon2id, génération du certificat</span></td></tr>
 <tr><td>libjpeg-turbo</td><td><span data-lang="en">tile encoding / decoding</span><span data-lang="fr">encodage / décodage des tuiles</span></td></tr>
 <tr><td>libutils</td><td><span data-lang="en">exceptions, arguments, attributes</span><span data-lang="fr">exceptions, arguments, attributs</span></td></tr>
-<tr><td>PipeWire, XTest</td><td><span data-lang="en">optional: Wayland real time capture, X11 input</span><span data-lang="fr">optionnels : capture temps réel Wayland, entrées X11</span></td></tr>
+<tr><td>PipeWire, XTest</td><td><span data-lang="en">Wayland real time capture (headers vendored in <code>third_party/pipewire</code>, <code>libpipewire-0.3.so.0</code> loaded at run time), optional X11 input</span><span data-lang="fr">capture temps réel Wayland (en-têtes embarqués dans <code>third_party/pipewire</code>, <code>libpipewire-0.3.so.0</code> chargée à l'exécution), entrées X11 optionnelles</span></td></tr>
     </tbody>
   </table></div>
 </section>
@@ -709,7 +709,7 @@ cmake -S . -B build -DBUILD_TESTS=ON && cmake --build build && ./unit_tests</cod
     <thead><tr><th scope="col"><span data-lang="en">Mode</span><span data-lang="fr">Mode</span></th><th scope="col"><span data-lang="en">Tool</span><span data-lang="fr">Outil</span></th><th scope="col"><span data-lang="en">End to end</span><span data-lang="fr">De bout en bout</span></th></tr></thead>
     <tbody>
 <tr><td><code>lan</code></td><td><span data-lang="en">interfaces + UDP discovery <code>47801</code></span><span data-lang="fr">interfaces + découverte UDP <code>47801</code></span></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
-<tr><td><code>tailscale</code></td><td><span data-lang="en">tailnet IP for the browsers and the app (every <code>*.ts.net</code> name is HSTS preloaded: a self-signed certificate is refused there), MagicDNS name (<code>tailscale status --json</code>) for <code>xdesk connect</code></span><span data-lang="fr">IP du tailnet pour les navigateurs et l'application (chaque nom <code>*.ts.net</code> est en HSTS préchargé : un certificat auto-signé y est refusé), nom MagicDNS (<code>tailscale status --json</code>) pour <code>xdesk connect</code></span></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
+<tr><td><code>tailscale</code></td><td><span data-lang="en">MagicDNS name for the browsers with a <code>tailscale cert</code> certificate, picked by the server from the SNI (every <code>*.ts.net</code> name is HSTS preloaded: a self-signed certificate is refused there); the tailnet IP when HTTPS is off on the tailnet and for the app links; the native clients send no SNI and keep the pinned certificate</span><span data-lang="fr">nom MagicDNS pour les navigateurs avec un certificat <code>tailscale cert</code>, choisi par le serveur d'après le SNI (chaque nom <code>*.ts.net</code> est en HSTS préchargé : un certificat auto-signé y est refusé) ; l'IP du tailnet quand HTTPS est désactivé sur le tailnet et pour les liens de l'application ; les clients natifs n'envoient pas de SNI et gardent le certificat épinglé</span></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
 <tr><td><code>upnp</code></td><td><code>upnpc -r</code></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
 <tr><td><code>bore</code> / <code>ngrok</code></td><td><span data-lang="en">TCP tunnel</span><span data-lang="fr">tunnel TCP</span></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
 <tr><td><code>cloudflared</code></td><td><span data-lang="en">HTTPS tunnel (browsers)</span><span data-lang="fr">tunnel HTTPS (navigateurs)</span></td><td><span data-lang="en">no: the relay terminates TLS</span><span data-lang="fr">non : le relais termine TLS</span></td></tr>
@@ -728,7 +728,7 @@ cmake -S . -B build -DBUILD_TESTS=ON && cmake --build build && ./unit_tests</cod
     <tbody>
 <tr><td>Windows 10+</td><td>DXGI Desktop Duplication</td><td><code>SendInput</code></td><td>ConPTY</td></tr>
 <tr><td>Linux X11</td><td>Qt (<code>QScreen</code>)</td><td><span data-lang="en">XTest or <code>uinput</code></span><span data-lang="fr">XTest ou <code>uinput</code></span></td><td><code>forkpty</code></td></tr>
-<tr><td>Linux Wayland</td><td><span data-lang="en">portal ScreenCast + PipeWire (screenshot portal without PipeWire)</span><span data-lang="fr">portail ScreenCast + PipeWire (portail screenshot sans PipeWire)</span></td><td><code>uinput</code></td><td><code>forkpty</code></td></tr>
+<tr><td>Linux Wayland</td><td><span data-lang="en">portal ScreenCast + PipeWire video stream (screenshot portal only when <code>libpipewire</code> is missing)</span><span data-lang="fr">portail ScreenCast + flux vidéo PipeWire (portail screenshot seulement sans <code>libpipewire</code>)</span></td><td><code>uinput</code></td><td><code>forkpty</code></td></tr>
 <tr><td>macOS</td><td>Qt</td><td><span data-lang="en">planned</span><span data-lang="fr">prévu</span></td><td><code>forkpty</code></td></tr>
     </tbody>
   </table></div>
