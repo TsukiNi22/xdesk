@@ -233,16 +233,21 @@
     // ---------------------------------------------------------------- //
     // Theme
 
+    // auto (follows the system) -> light -> dark -> auto
+    const THEME_NEXT = {auto: "light", light: "dark", dark: "auto"};
+    const THEME_LABEL = {auto: "Theme: auto (follows the system)", light: "Theme: light", dark: "Theme: dark"};
+
     function applyTheme(theme) {
-        if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
-        else delete document.documentElement.dataset.theme;
+        const choice = (theme === "light" || theme === "dark") ? theme : "auto";
+        if (choice === "auto") delete document.documentElement.dataset.theme;
+        else document.documentElement.dataset.theme = choice;
+        document.documentElement.dataset.choice = choice;
+        $("themeBtn").title = THEME_LABEL[choice];
+        $("themeBtn").setAttribute("aria-label", THEME_LABEL[choice]);
     }
 
     $("themeBtn").addEventListener("click", () => {
-        const dark = document.documentElement.dataset.theme
-            ? document.documentElement.dataset.theme === "dark"
-            : matchMedia("(prefers-color-scheme: dark)").matches;
-        const next = dark ? "light" : "dark";
+        const next = THEME_NEXT[document.documentElement.dataset.choice || "auto"];
         applyTheme(next);
         save("theme", next);
     });
@@ -977,7 +982,7 @@
             fontSize: window.innerWidth < 600 ? 12 : 14,
             scrollback: 5000,
             allowProposedApi: false,
-            theme: {background: "#101114", foreground: "#e6e7ea", cursor: "#7d9cf0", selectionBackground: "#2f5bd366"},
+            theme: {background: "#0b0d0f", foreground: "#e4e7e9", cursor: "#3ddc97", selectionBackground: "#3ddc9755"},
         });
         const fit = new FitAddon.FitAddon();
         term.loadAddon(fit);

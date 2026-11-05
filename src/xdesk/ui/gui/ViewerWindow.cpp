@@ -25,6 +25,7 @@ File Description:
 #include "xdesk/net/Exposure.hpp"
 #include "xdesk/ui/gui/Theme.hpp"
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QApplication>
 #include <QMessageBox>
 #include <QHBoxLayout>
@@ -38,6 +39,7 @@ File Description:
 #include <QThread>
 #include <QAction>
 #include <QFile>
+#include <QDir>
 
 //----------------------------------------------------------------//
 // Screen view
@@ -237,6 +239,34 @@ bool xdesk::ui::gui::ScreenView::event(QEvent* event)
 //----------------------------------------------------------------//
 // Window
 
+// The viewer keeps its theme next to the known hosts (config.json belongs to the host)
+static void save_viewer_theme(const QString& theme)
+{
+    QFile file(xdesk::core::Config::configDir() + "/viewer.json");
+
+    (void)QDir().mkpath(xdesk::core::Config::configDir());
+    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) (void)file.write(QJsonDocument(QJsonObject{{"theme", theme}}).toJson());
+}
+
+void xdesk::ui::gui::ViewerWindow::retheme_(void)
+{
+    for (QPushButton* button: this->findChildren<QPushButton*>()) {
+        const QString icon = button->property("icon").toString();
+        if (!icon.isEmpty()) button->setIcon(Theme::icon(icon, button->property("kind").toString() == "primary" ? Theme::palette().accentText : QColor()));
+    }
+    for (QAction* action: this->findChildren<QAction*>()) {
+        const QString icon = action->property("icon").toString();
+        if (!icon.isEmpty()) action->setIcon(Theme::icon(icon));
+    }
+    for (QAction* action: this->_toolbar ? this->_toolbar->actions() : QList<QAction*>()) {
+        const QString text = action->text();
+        if (text == "Ctrl+Alt+Del") action->setIcon(Theme::icon("keyboard"));
+        else if (text == "Terminal") action->setIcon(Theme::icon("terminal"));
+        else if (text == "Disconnect") action->setIcon(Theme::icon("power"));
+    }
+    this->loadRecent_();
+}
+
 xdesk::ui::gui::ViewerWindow::ViewerWindow(QWidget* parent)
 : QMainWindow(parent)
 {
@@ -337,9 +367,12 @@ QWidget* xdesk::ui::gui::ViewerWindow::buildConnect_(void)
     QLabel* hint = new QLabel("Ask the person in front of the PC for its address and its code (xdesk panel, Overview).");
     QHBoxLayout* foundHead = new QHBoxLayout();
     QPushButton* scan = new QPushButton(Theme::icon("scan"), "Scan the LAN");
+    QWidget* themes = Theme::switcher(save_viewer_theme);
 
     card->setObjectName("card");
+    card->setProperty("accent", true);
     card->setMaximumWidth(520);
+    scan->setProperty("icon", "scan");
     layout->setContentsMargins(30, 26, 30, 26);
     layout->setSpacing(12);
     logo->setPixmap(Theme::logo(44));
@@ -372,14 +405,19 @@ QWidget* xdesk::ui::gui::ViewerWindow::buildConnect_(void)
     layout->addWidget(this->_connectError);
     this->_connect = new QPushButton(Theme::icon("screen", Theme::palette().accentText), "Connect");
     this->_connect->setProperty("kind", "primary");
+    this->_connect->setProperty("icon", "screen");
     layout->addWidget(this->_connect);
-    foundHead->addWidget(new QLabel("Hosts"));
+    QLabel* hosts = new QLabel("HOSTS");
+    hosts->setObjectName("subtitle");
+    foundHead->addWidget(hosts);
     foundHead->addStretch();
     foundHead->addWidget(scan);
     layout->addLayout(foundHead);
     this->_found = new QListWidget();
     this->_found->setMaximumHeight(150);
     layout->addWidget(this->_found);
+    layout->addSpacing(6);
+    layout->addWidget(themes);
     QVBoxLayout* column = new QVBoxLayout();
     column->addStretch();
     column->addWidget(card);
@@ -452,11 +490,14 @@ QWidget* xdesk::ui::gui::ViewerWindow::buildViewer_(void)
     this->_toolbar->setIconSize(QSize(18, 18));
     this->_toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     this->_controlAction = this->_toolbar->addAction(Theme::icon("control"), "Control");
+    this->_controlAction->setProperty("icon", "control");
     this->_controlAction->setCheckable(true);
     fit = this->_toolbar->addAction(Theme::icon("fit"), "Fit");
+    fit->setProperty("icon", "fit");
     fit->setCheckable(true);
     fit->setChecked(true);
     fullscreen = this->_toolbar->addAction(Theme::icon("fullscreen"), "Full screen");
+    fullscreen->setProperty("icon", "fullscreen");
     this->_toolbar->addAction(Theme::icon("keyboard"), "Ctrl+Alt+Del", this, [this]() {
         for (const QString& code: {"ControlLeft", "AltLeft", "Delete"})
             this->_client.key(code, true);

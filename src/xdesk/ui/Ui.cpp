@@ -32,11 +32,14 @@ File Description:
 #include "xdesk/ui/Ui.hpp"
 #include <QCoreApplication>
 #include <QGuiApplication>
+#include <QJsonDocument>
 #include <QApplication>
 #include <QMessageBox>
+#include <QJsonObject>
 #include <iostream>
 #include <memory>
 #include <QTimer>
+#include <QFile>
 
 // XDESK_SNAPSHOT=<file.png>: save the window after 2 s and quit (screenshots of the docs, ui checks)
 static void snapshot_if_asked(QWidget* window)
@@ -108,18 +111,28 @@ int xdesk::ui::run_host_tty(int& argc, char** argv, core::Config& config)
     return code;
 }
 
+// Theme chosen in the viewer (viewer.json), else the one of the settings
+static QString viewer_theme(const QString& fallback)
+{
+    QFile file(xdesk::core::Config::configDir() + "/viewer.json");
+
+    if (!file.open(QIODevice::ReadOnly)) return fallback;
+    return QJsonDocument::fromJson(file.readAll()).object().value("theme").toString(fallback);
+}
+
 int xdesk::ui::run_viewer_gui(int& argc, char** argv, const client::Options& options)
 {
     QApplication app(argc, argv);
-    gui::ViewerWindow window;
+    std::unique_ptr<gui::ViewerWindow> window;
     core::Config config;
 
     QApplication::setApplicationName("xdesk");
     config.load();
-    gui::Theme::apply(app, config.settings().theme);
-    window.show();
-    if (!options.host.isEmpty()) window.connectNow(options);
-    snapshot_if_asked(&window);
+    gui::Theme::apply(app, viewer_theme(config.settings().theme)); // before the window: its icons take the colours of the theme
+    window = std::make_unique<gui::ViewerWindow>();
+    window->show();
+    if (!options.host.isEmpty()) window->connectNow(options);
+    snapshot_if_asked(window.get());
     return app.exec();
 }
 

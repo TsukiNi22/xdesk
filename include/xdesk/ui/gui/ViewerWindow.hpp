@@ -126,6 +126,7 @@ class ViewerWindow: public QMainWindow {
         void startConnection_(void);
         void openTerminal_(void);
         void onState_(const client::State state);
+        Q_INVOKABLE void retheme_(void); // icons drawn again in the new colours (called by Theme::apply)
 
     public:
         // ---------- Pre-Function -------- //

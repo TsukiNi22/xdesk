@@ -75,6 +75,7 @@ class HostWindow: public QMainWindow {
         QTableWidget* _endpoints = nullptr;
         QComboBox* _exposure = nullptr;
         QLabel* _exposureStatus = nullptr;
+        QLabel* _identity = nullptr; // name of this PC (and its tailnet name)
         QLabel* _statusCapture = nullptr;
         QLabel* _statusInput = nullptr;
         QLabel* _statusTls = nullptr;
@@ -129,7 +130,6 @@ class HostWindow: public QMainWindow {
         QSpinBox* _setFps = nullptr;
         QSlider* _setQuality = nullptr;
         QDoubleSpinBox* _setScale = nullptr;
-        QComboBox* _setTheme = nullptr;
         QComboBox* _setLanguage = nullptr;
         QCheckBox* _setMinimized = nullptr;
         QPushButton* _settingsSave = nullptr;
@@ -142,6 +142,7 @@ class HostWindow: public QMainWindow {
         _nodiscard QWidget* buildSettings_(void);
         void buildTray_(void);
         void refreshOverview_(void);
+        Q_INVOKABLE void retheme_(void); // icons drawn again in the new colours (called by Theme::apply)
         void refreshSession_(host::Session* session);
         void refreshDetail_(void);
         void refreshDevices_(void);

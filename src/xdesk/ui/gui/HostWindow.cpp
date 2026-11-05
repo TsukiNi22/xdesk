@@ -41,10 +41,12 @@ File Description:
 #include <QVBoxLayout>
 #include <QClipboard>
 #include <QDateTime>
+#include <QHostInfo>
 #include <QSplitter>
 #include <QDialog>
 #include <QAction>
 #include <QMenu>
+#include <QFont>
 #include <QUrl>
 
 //----------------------------------------------------------------//
@@ -60,7 +62,7 @@ static QFrame* make_card(QWidget* parent = nullptr)
 
 static QLabel* make_label(const QString& text, const QString& object = "", QWidget* parent = nullptr)
 {
-    QLabel* label = new QLabel(text, parent);
+    QLabel* label = new QLabel(object == "subtitle" ? text.toUpper() : text, parent); // section labels in small capitals
 
     if (!object.isEmpty()) label->setObjectName(object);
     label->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -73,6 +75,7 @@ static QPushButton* make_button(const QString& text, const QString& kind = "", c
 
     if (!kind.isEmpty()) button->setProperty("kind", kind);
     if (!icon.isEmpty()) button->setIcon(xdesk::ui::gui::Theme::icon(icon, kind == "primary" ? xdesk::ui::gui::Theme::palette().accentText : QColor()));
+    button->setProperty("icon", icon); // drawn again when the theme changes
     button->setCursor(Qt::PointingHandCursor);
     return button;
 }
@@ -88,7 +91,11 @@ static QTableWidget* make_table(const QStringList& headers)
 {
     QTableWidget* table = new QTableWidget(0, static_cast<int>(headers.size()));
 
-    table->setHorizontalHeaderLabels(headers);
+    QStringList upper;
+
+    for (const QString& header: headers)
+        upper.append(header.toUpper());
+    table->setHorizontalHeaderLabels(upper);
     table->verticalHeader()->hide();
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -96,8 +103,31 @@ static QTableWidget* make_table(const QStringList& headers)
     table->setShowGrid(false);
     table->setAlternatingRowColors(true);
     table->horizontalHeader()->setStretchLastSection(true);
+    table->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     return table;
+}
+
+static QComboBox* make_exposure_box(void)
+{
+    QComboBox* box = new QComboBox();
+
+    // The LAN is always open while sharing: each mode only adds one path
+    box->addItem("LAN only", "lan");
+    box->addItem("LAN + Tailscale", "tailscale");
+    box->addItem("LAN + internet (UPnP router port)", "upnp");
+    box->addItem("LAN + internet (bore.pub tunnel)", "bore");
+    box->addItem("LAN + internet (Cloudflare tunnel)", "cloudflared");
+    box->addItem("LAN + internet (ngrok tunnel)", "ngrok");
+    box->addItem("LAN + internet (port forwarded by hand)", "manual");
+    box->setItemData(0, "Only the devices on the same network", Qt::ToolTipRole);
+    box->setItemData(1, "Also your devices signed in to the same tailnet (WireGuard)", Qt::ToolTipRole);
+    box->setItemData(2, "Also anyone on the internet: xdesk asks the router to open the port", Qt::ToolTipRole);
+    box->setItemData(3, "Also anyone on the internet, through bore.pub (TLS stays end to end)", Qt::ToolTipRole);
+    box->setItemData(4, "Also anyone on the internet, through Cloudflare (the relay decrypts the traffic)", Qt::ToolTipRole);
+    box->setItemData(5, "Also anyone on the internet, through ngrok (TLS stays end to end, account needed)", Qt::ToolTipRole);
+    box->setItemData(6, "Also anyone on the internet, through the port you forwarded on the router", Qt::ToolTipRole);
+    return box;
 }
 
 static QString since_text(const qint64 ms)
@@ -141,6 +171,7 @@ xdesk::ui::gui::HostWindow::HostWindow(host::Host& host, QWidget* parent)
     brand->addWidget(logo);
     brand->addWidget(make_label("xdesk", "brand"));
     brand->addStretch();
+    brand->addWidget(make_label(QString("v") + XDESK_VERSION, "version"));
     sideLayout->addLayout(brand);
     sideLayout->addSpacing(14);
     this->_nav = new QListWidget(sidebar);
@@ -150,6 +181,9 @@ xdesk::ui::gui::HostWindow::HostWindow(host::Host& host, QWidget* parent)
     for (const std::pair<QString, QString>& entry: {std::pair<QString, QString>{"Overview", "overview"}, {"Sessions", "sessions"}, {"Devices", "devices"}, {"Logs", "logs"}, {"Settings", "settings"}})
         this->_nav->addItem(new QListWidgetItem(Theme::icon(entry.second), entry.first));
     sideLayout->addWidget(this->_nav, 1);
+    sideLayout->addWidget(make_label("Theme", "subtitle"));
+    sideLayout->addWidget(Theme::switcher([this](const QString& theme) {this->_host.setTheme(theme);}, sidebar));
+    sideLayout->addSpacing(10);
     this->_statusSessions = make_label("No session", "muted");
     sideLayout->addWidget(this->_statusSessions);
     QPushButton* stop = make_button("Stop sharing", "danger", "power");
@@ -245,6 +279,21 @@ void xdesk::ui::gui::HostWindow::changeEvent(QEvent* event)
     QMainWindow::changeEvent(event);
 }
 
+void xdesk::ui::gui::HostWindow::retheme_(void)
+{
+    static const QStringList nav = {"overview", "sessions", "devices", "logs", "settings"};
+
+    // The icons are drawn in the colours of the theme: draw them again
+    for (int i = 0; i < this->_nav->count() && i < nav.size(); ++i)
+        this->_nav->item(i)->setIcon(Theme::icon(nav[i]));
+    for (QPushButton* button: this->findChildren<QPushButton*>()) {
+        const QString icon = button->property("icon").toString();
+        if (!icon.isEmpty()) button->setIcon(Theme::icon(icon, button->property("kind").toString() == "primary" ? Theme::palette().accentText : QColor()));
+    }
+    this->refreshOverview_();
+    this->refreshDevices_();
+}
+
 void xdesk::ui::gui::HostWindow::closeEvent(QCloseEvent* event)
 {
     if (this->_quitting || !this->_tray || !QSystemTrayIcon::isSystemTrayAvailable()) {
@@ -315,11 +364,14 @@ QWidget* xdesk::ui::gui::HostWindow::buildOverview_(void)
 
     layout->setSpacing(16);
     layout->addWidget(make_label("Overview", "title"));
-    layout->addWidget(make_label("Give the code to the person who connects. It works once and changes on its own.", "muted"));
+    this->_identity = make_label("", "muted");
+    layout->addWidget(this->_identity);
 
     // Code
-    codeLayout->setContentsMargins(24, 20, 24, 20);
+    codeCard->setProperty("accent", true);
+    codeLayout->setContentsMargins(22, 18, 22, 18);
     codeLayout->addWidget(make_label("Connection code", "subtitle"));
+    codeLayout->addWidget(make_label("Give it to the person who connects: it works once, then changes", "muted"));
     this->_code = make_label("---", "code");
     codeLayout->addWidget(this->_code);
     this->_codeBar = new QProgressBar(codeCard);
@@ -355,24 +407,29 @@ QWidget* xdesk::ui::gui::HostWindow::buildOverview_(void)
 
     // Endpoints
     endpointsLayout->setContentsMargins(20, 18, 20, 18);
-    exposureRow->addWidget(make_label("Reachable at", "subtitle"));
+    exposureRow->addWidget(make_label("Who can reach this PC", "subtitle"));
     exposureRow->addStretch();
-    exposureRow->addWidget(make_label("Exposure", "muted"));
-    this->_exposure = new QComboBox();
-    this->_exposure->addItems({"lan", "tailscale", "upnp", "bore", "cloudflared", "ngrok", "manual"});
+    exposureRow->addWidget(make_label("Open to", "muted"));
+    this->_exposure = make_exposure_box();
     exposureRow->addWidget(this->_exposure);
     endpointsLayout->addLayout(exposureRow);
     this->_exposureStatus = make_label("", "muted");
+    this->_exposureStatus->setWordWrap(true);
     endpointsLayout->addWidget(this->_exposureStatus);
-    this->_endpoints = make_table({"Where", "Address (browser / phone)", "Native client", "Encryption"});
+    this->_endpoints = make_table({"Path", "Who can use it", "Address"});
+    this->_endpoints->horizontalHeader()->setStretchLastSection(false);
+    this->_endpoints->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    this->_endpoints->setWordWrap(true);
     endpointsLayout->addWidget(this->_endpoints);
-    QObject::connect(this->_endpoints, &QTableWidget::cellDoubleClicked, this, [this](const int row, const int) {
-        QGuiApplication::clipboard()->setText(this->_endpoints->item(row, 1)->text());
-        this->_exposureStatus->setText("Copied " + this->_endpoints->item(row, 1)->text());
+    QObject::connect(this->_endpoints, &QTableWidget::cellDoubleClicked, this, [this](const int row, const int column) {
+        const QTableWidgetItem* item = this->_endpoints->item(row, 2);
+        (void)column;
+        QGuiApplication::clipboard()->setText(item->text());
+        this->_exposureStatus->setText("Copied " + item->text() + "  (xdesk app: " + item->data(Qt::UserRole).toString() + ")");
     });
     QObject::connect(this->_exposure, &QComboBox::activated, this, [this](const int) {
         core::Settings s = this->_host.config().settings();
-        s.exposure = core::exposure_from(this->_exposure->currentText());
+        s.exposure = core::exposure_from(this->_exposure->currentData().toString());
         if (!this->_host.applySettings(s)) QMessageBox::warning(this, "Locked", "Settings cannot change while a remote session controls this PC or has a terminal.");
         this->loadSettings_();
     });
@@ -394,19 +451,31 @@ void xdesk::ui::gui::HostWindow::refreshOverview_(void)
     this->_codeBar->setValue(std::max(0, left));
     this->_codeTimer->setText(left >= 0 ? "Changes in " + QString::number(left / 60) + ":" + QString::number(left % 60).rightJustified(2, '0') + ", and after each use" : "Changes after each use");
     this->_fingerprint->setText("Host identity " + security::fingerprint_short(this->_host.certificate().fingerprint()) + "  (the native clients show the same one)");
-    this->_statusCapture->setText(this->_host.captureBackend().isEmpty() ? "starting..." : this->_host.captureBackend());
-    set_tone(this->_statusCapture, this->_host.captureBackend().startsWith("none") ? "danger" : "success");
-    this->_statusInput->setText(this->_host.inputBackend());
-    set_tone(this->_statusInput, this->_host.inputBackend() == "none" ? "warning" : "success");
-    this->_exposure->setCurrentText(core::exposure_name(this->_host.exposure().mode()));
-    this->_exposureStatus->setText(this->_host.exposure().status() + "  ·  double click an address to copy it");
+    this->_statusCapture->setText(this->_host.captureBackend().isEmpty() ? QString("idle, starts with the first viewer") : this->_host.captureBackend());
+    set_tone(this->_statusCapture, this->_host.captureBackend().startsWith("none") ? "danger" : (this->_host.captureBackend().isEmpty() ? "muted" : "success"));
+    this->_statusInput->setText(!this->_host.inputError().isEmpty() ? "unavailable" : (this->_host.captureBackend().isEmpty() ? QString("idle") : this->_host.inputBackend()));
+    this->_statusInput->setToolTip(this->_host.inputError());
+    set_tone(this->_statusInput, !this->_host.inputError().isEmpty() ? "warning" : (this->_host.inputBackend() == "none" ? "muted" : "success"));
+    const net::Tailnet& tailnet = this->_host.exposure().tailnet();
+    QString identity = "This PC is <b>" + QHostInfo::localHostName().toHtmlEscaped() + "</b>";
+    if (this->_host.exposure().mode() == core::Exposure::Tailscale && tailnet.up && !tailnet.dns.isEmpty())
+        identity += "  ·  on Tailscale it is <b>" + tailnet.dns.section('.', 0, 0).toHtmlEscaped() + "</b> (" + tailnet.dns.toHtmlEscaped() + ")";
+    this->_identity->setText(identity);
+    this->_exposure->setCurrentIndex(std::max(0, this->_exposure->findData(core::exposure_name(this->_host.exposure().mode()))));
+    this->_exposureStatus->setText(this->_host.exposure().status() + ".  Open the address in a browser or a phone, or give it to the xdesk app. Double click to copy.");
     this->_endpoints->setRowCount(static_cast<int>(endpoints.size()));
     for (int i = 0; i < endpoints.size(); ++i) {
         const net::Endpoint& e = endpoints[i];
-        this->_endpoints->setItem(i, 0, new QTableWidgetItem(e.label));
-        this->_endpoints->setItem(i, 1, new QTableWidgetItem(e.url));
-        this->_endpoints->setItem(i, 2, new QTableWidgetItem("xdesk connect " + e.host + (e.port != XDESK_DEFAULT_PORT ? " --port " + QString::number(e.port) : "")));
-        this->_endpoints->setItem(i, 3, new QTableWidgetItem(e.endToEnd ? "end to end (TLS 1.3 + ML-KEM)" : "relay sees the traffic"));
+        const QString command = "xdesk connect " + e.host + (e.port != XDESK_DEFAULT_PORT ? " -p " + QString::number(e.port) : "");
+        const QString tip = command + "\n" + (e.ip.isEmpty() ? QString() : "IP address " + e.ip + "\n") + (e.endToEnd ? "Encrypted end to end (TLS 1.3 + ML-KEM)" : "The relay decrypts the traffic: prefer another path for sensitive work");
+        QTableWidgetItem* items[3] = {new QTableWidgetItem(e.label), new QTableWidgetItem(e.reach), new QTableWidgetItem(e.url)};
+        items[2]->setData(Qt::UserRole, command);
+        items[2]->setFont(QFont(Theme::monospaceFamily(), 9));
+        for (int c = 0; c < 3; ++c) {
+            items[c]->setToolTip(tip);
+            this->_endpoints->setItem(i, c, items[c]);
+        }
+        if (!e.endToEnd) items[1]->setForeground(Theme::palette().warning);
     }
     for (const host::Session* s: this->_host.sessions())
         active += s->state() == host::State::Active;
@@ -866,8 +935,7 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     this->_setPort = new QSpinBox();
     this->_setPort->setRange(1, 65535);
     this->_setBind = new QLineEdit();
-    this->_setExposure = new QComboBox();
-    this->_setExposure->addItems({"lan", "tailscale", "upnp", "bore", "cloudflared", "ngrok", "manual"});
+    this->_setExposure = make_exposure_box();
     this->_setPublicHost = new QLineEdit();
     this->_setPublicHost->setPlaceholderText("my.domain.tld (manual exposure)");
     this->_setDiscovery = new QCheckBox("Announce on the LAN (xdesk scan)");
@@ -887,15 +955,12 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     this->_setScale = new QDoubleSpinBox();
     this->_setScale->setRange(0.25, 1.0);
     this->_setScale->setSingleStep(0.05);
-    this->_setTheme = new QComboBox();
-    this->_setTheme->addItems({"system", "dark", "light"});
     this->_setLanguage = new QComboBox();
     this->_setLanguage->addItems({"en", "fr"});
     this->_setMinimized = new QCheckBox("Start in the tray");
     stream->addRow("Max FPS", this->_setFps);
     stream->addRow("JPEG quality", this->_setQuality);
     stream->addRow("Scale", this->_setScale);
-    stream->addRow("Theme", this->_setTheme);
     stream->addRow("Language", this->_setLanguage);
     stream->addRow("", this->_setMinimized);
     left->addWidget(networkCard);
@@ -960,7 +1025,7 @@ void xdesk::ui::gui::HostWindow::loadSettings_(void)
 
     this->_setPort->setValue(s.port);
     this->_setBind->setText(s.bind);
-    this->_setExposure->setCurrentText(core::exposure_name(s.exposure));
+    this->_setExposure->setCurrentIndex(std::max(0, this->_setExposure->findData(core::exposure_name(s.exposure))));
     this->_setPublicHost->setText(s.publicHost);
     this->_setDiscovery->setChecked(s.discovery);
     this->_setCodeLength->setValue(s.codeLength);
@@ -978,7 +1043,6 @@ void xdesk::ui::gui::HostWindow::loadSettings_(void)
     this->_setFps->setValue(s.fps);
     this->_setQuality->setValue(s.quality);
     this->_setScale->setValue(s.scale);
-    this->_setTheme->setCurrentText(s.theme);
     this->_setLanguage->setCurrentText(s.language);
     this->_setMinimized->setChecked(s.startMinimized);
 }
@@ -986,11 +1050,10 @@ void xdesk::ui::gui::HostWindow::loadSettings_(void)
 void xdesk::ui::gui::HostWindow::saveSettings_(void)
 {
     core::Settings s = this->_host.config().settings();
-    const QString theme = s.theme;
 
     s.port = static_cast<std::uint16_t>(this->_setPort->value());
     s.bind = this->_setBind->text().trimmed();
-    s.exposure = core::exposure_from(this->_setExposure->currentText());
+    s.exposure = core::exposure_from(this->_setExposure->currentData().toString());
     s.publicHost = this->_setPublicHost->text().trimmed();
     s.discovery = this->_setDiscovery->isChecked();
     s.codeLength = this->_setCodeLength->value();
@@ -1008,7 +1071,6 @@ void xdesk::ui::gui::HostWindow::saveSettings_(void)
     s.fps = this->_setFps->value();
     s.quality = this->_setQuality->value();
     s.scale = this->_setScale->value();
-    s.theme = this->_setTheme->currentText();
     s.language = this->_setLanguage->currentText();
     s.startMinimized = this->_setMinimized->isChecked();
     if (!this->confirmPresence_("change the settings")) return;
@@ -1018,6 +1080,5 @@ void xdesk::ui::gui::HostWindow::saveSettings_(void)
         QMessageBox::critical(this, "Settings", QString("Could not apply the settings: ") + e.what());
         return;
     }
-    if (theme != s.theme) Theme::apply(*qobject_cast<QApplication*>(QCoreApplication::instance()), s.theme);
     QMessageBox::information(this, "Settings", "Settings saved.");
 }

@@ -74,12 +74,12 @@ public class MainActivity extends Activity {
     private static final int TIMEOUT = 8000; // ms
 
     /* palette (html-style dark tokens) */
-    private static final int BG = Color.parseColor("#15171b");
-    private static final int SURFACE = Color.parseColor("#1d2025");
-    private static final int TEXT = Color.parseColor("#e6e7ea");
-    private static final int MUTED = Color.parseColor("#9aa0ab");
-    private static final int ACCENT = Color.parseColor("#7d9cf0");
-    private static final int WARN = Color.parseColor("#f0a868");
+    private static final int BG = Color.parseColor("#101315");
+    private static final int SURFACE = Color.parseColor("#161a1d");
+    private static final int TEXT = Color.parseColor("#e4e7e9");
+    private static final int MUTED = Color.parseColor("#8d969d");
+    private static final int ACCENT = Color.parseColor("#3ddc97");
+    private static final int WARN = Color.parseColor("#f0a742");
 
     // ---------------------------------------------------------------- //
     // State
@@ -442,7 +442,7 @@ public class MainActivity extends Activity {
 
         Button go = new Button(this);
         go.setText(this.tr("Connect", "Se connecter"));
-        go.setTextColor(Color.parseColor("#0f1320"));
+        go.setTextColor(Color.parseColor("#07130d"));
         go.setBackgroundColor(ACCENT);
         go.setAllCaps(false);
         LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, this.dp(48));
