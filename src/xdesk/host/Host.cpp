@@ -60,11 +60,10 @@ xdesk::host::Host::~Host()
     if (this->_running) this->stop();
 }
 
-void xdesk::host::Host::start(void)
+void xdesk::host::Host::start(const bool share)
 {
     const core::Settings& s = this->_config.settings();
     const QString data = core::Config::dataDir();
-    QSslConfiguration tls = QSslConfiguration::defaultConfiguration();
 
     // Identity, devices, code
     this->_cert.load();
@@ -88,10 +87,7 @@ void xdesk::host::Host::start(void)
     this->_guard.writeMarker({});
     this->_guard.harden();
 
-    // Server
-    tls.setLocalCertificate(this->_cert.certificate());
-    tls.setPrivateKey(this->_cert.key());
-    security::configure_tls(tls);
+    // Server (listens only while sharing)
     this->_server.setFilter([this](const QHostAddress& address) {
         const QString refusal = this->_exposure.refusal(address);
         QString ip = address.toString();
@@ -113,14 +109,53 @@ void xdesk::host::Host::start(void)
             {"fingerprint", security::fingerprint_text(this->_cert.fingerprint())}, {"web", this->_config.settings().allowWeb},
         };
     });
-    this->_server.listen(s.bind, s.port, tls);
-    this->_exposure.start(s, this->_server.port(), QHostInfo::localHostName(), security::fingerprint_short(this->_cert.fingerprint()));
+    this->_running = true;
+    if (share) this->setSharing(true);
+}
 
-    // Capture thread
+void xdesk::host::Host::setSharing(const bool share)
+{
+    const core::Settings& s = this->_config.settings();
+
+    if (!this->_running || share == this->_sharing) return;
+    if (!share) {
+        this->_sharing = false;
+        this->kickAll("The host stopped sharing");
+        this->_exposure.stop();
+        this->_server.stop();
+        this->stopStream_();
+        this->_refused.clear();
+        this->_log.info("server", "", "Sharing stopped");
+        emit this->stateChanged();
+        return;
+    }
+
+    // Server first: a busy port throws before anything else starts
+    this->_server.listen(s.bind, s.port, this->tls_());
+    this->_sharing = true;
+    this->_exposure.start(s, this->_server.port(), QHostInfo::localHostName(), security::fingerprint_short(this->_cert.fingerprint()));
+    this->startStream_();
+    this->_code.rotate(); // a fresh code for each sharing
+    this->_log.info("server", "", "Sharing started on " + s.bind + ":" + QString::number(this->_server.port()) + " (" + core::exposure_name(s.exposure) + ", " + security::tls_summary() + ")");
+    emit this->stateChanged();
+}
+
+QSslConfiguration xdesk::host::Host::tls_(void) const
+{
+    QSslConfiguration tls = QSslConfiguration::defaultConfiguration();
+
+    tls.setLocalCertificate(this->_cert.certificate());
+    tls.setPrivateKey(this->_cert.key());
+    security::configure_tls(tls);
+    return tls;
+}
+
+void xdesk::host::Host::startStream_(void)
+{
     this->_stream = new Stream();
     this->_stream->moveToThread(&this->_streamThread);
-    QObject::connect(&this->_streamThread, &QThread::started, this->_stream, &Stream::start);
-    QObject::connect(&this->_streamThread, &QThread::finished, this->_stream, &QObject::deleteLater);
+    QObject::connect(&this->_streamThread, &QThread::started, this->_stream, &Stream::start, Qt::SingleShotConnection); // a new stream for each sharing
+    QObject::connect(&this->_streamThread, &QThread::finished, this->_stream, &QObject::deleteLater, Qt::SingleShotConnection);
     QObject::connect(this->_stream, &Stream::ready, this, [this](const QSize& size, const QString& backend) {
         this->_screen = size;
         this->_captureBackend = backend;
@@ -163,20 +198,11 @@ void xdesk::host::Host::start(void)
         emit this->stateChanged();
     });
     this->_streamThread.start();
-    this->_running = true;
-    this->_log.info("server", "", "Sharing started on " + s.bind + ":" + QString::number(this->_server.port()) + " (" + core::exposure_name(s.exposure) + ", " + security::tls_summary() + ")");
-    emit this->stateChanged();
 }
 
-void xdesk::host::Host::stop(void)
+void xdesk::host::Host::stopStream_(void)
 {
     QEventLoop loop;
-
-    if (!this->_running) return;
-    this->_running = false;
-    this->kickAll("Host stopped sharing");
-    this->_exposure.stop();
-    this->_server.stop();
 
     // The capture may wait for the ui thread (Qt grab): keep processing events while the thread stops
     if (this->_stream) QMetaObject::invokeMethod(this->_stream, &Stream::stop, Qt::QueuedConnection);
@@ -188,8 +214,14 @@ void xdesk::host::Host::stop(void)
     if (this->_injector) this->_injector->releaseAll();
     this->_injector.reset();
     this->_captureBackend = "";
+}
+
+void xdesk::host::Host::stop(void)
+{
+    if (!this->_running) return;
+    this->setSharing(false);
+    this->_running = false;
     this->_guard.writeMarker({});
-    this->_log.info("server", "", "Sharing stopped");
 }
 
 xdesk::host::Permissions xdesk::host::Host::defaultPermissions_(const Session* session) const
@@ -714,15 +746,11 @@ bool xdesk::host::Host::applySettings(const core::Settings& settings)
     this->_config.save();
     this->_guard.endTrustedWrite();
     if (old.codeLength != settings.codeLength || old.codeLifetime != settings.codeLifetime) this->_code.configure(settings.codeLength, settings.codeLifetime);
-    if (old.port != settings.port || old.bind != settings.bind) {
-        QSslConfiguration tls = QSslConfiguration::defaultConfiguration();
-        tls.setLocalCertificate(this->_cert.certificate());
-        tls.setPrivateKey(this->_cert.key());
-        security::configure_tls(tls);
+    if (this->_sharing && (old.port != settings.port || old.bind != settings.bind)) {
         this->_server.stop();
-        this->_server.listen(settings.bind, settings.port, tls);
+        this->_server.listen(settings.bind, settings.port, this->tls_());
     }
-    if (old.exposure != settings.exposure || old.publicHost != settings.publicHost || old.port != settings.port || old.discovery != settings.discovery) {
+    if (this->_sharing && (old.exposure != settings.exposure || old.publicHost != settings.publicHost || old.port != settings.port || old.discovery != settings.discovery)) {
         QStringList outside;
 
         this->_exposure.start(settings, this->_server.port(), QHostInfo::localHostName(), security::fingerprint_short(this->_cert.fingerprint()));

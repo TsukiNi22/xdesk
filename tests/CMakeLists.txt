@@ -55,6 +55,9 @@ set(SRC
     ## Network (sub-part: net)
     xdesk/net/Protocol.cpp
 
+    ## Host (sub-part: host)
+    xdesk/host/Host.cpp
+
     ## Platform (sub-part: platform)
     xdesk/platform/FrameEncoder.cpp
 )
@@ -63,7 +66,7 @@ add_executable(${TARGET} ${SRC} ${SRC_PROJECT})
 # =========================
 # Dependencies
 # =========================
-target_include_directories(${TARGET} PRIVATE ../include/ ../include/exception/ .)
+target_include_directories(${TARGET} PRIVATE ../include/ ../include/exception/ ../third_party/ .)
 target_link_libraries(${TARGET} PRIVATE ${XDESK_LIBS} GTest::gtest GTest::gtest_main)
 target_compile_definitions(${TARGET} PRIVATE ${XDESK_DEFINITIONS})
 if(XDESK_PACKAGE_LIB)

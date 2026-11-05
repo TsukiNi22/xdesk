@@ -37,6 +37,7 @@ File Description:
 #include <QMessageBox>
 #include <QJsonObject>
 #include <iostream>
+#include <QDialog>
 #include <memory>
 #include <QTimer>
 #include <QFile>
@@ -47,8 +48,13 @@ static void snapshot_if_asked(QWidget* window)
     const QString path = qEnvironmentVariable("XDESK_SNAPSHOT");
 
     if (path.isEmpty()) return;
+    if (qEnvironmentVariableIsSet("XDESK_SNAPSHOT_PAGE")) QMetaObject::invokeMethod(window, "showPage_", Q_ARG(int, qEnvironmentVariableIntValue("XDESK_SNAPSHOT_PAGE")));
+    if (qEnvironmentVariableIsSet("XDESK_SNAPSHOT_QR")) QMetaObject::invokeMethod(window, "showQr_", Q_ARG(int, -1));
     QTimer::singleShot(2000, window, [window, path]() {
-        window->grab().save(path);
+        QWidget* shown = window;
+        for (QWidget* top: QApplication::topLevelWidgets())
+            if (top != window && top->isVisible() && qobject_cast<QDialog*>(top)) shown = top; // a dialog opened for the snapshot
+        shown->grab().save(path);
         QCoreApplication::quit();
     });
 }
@@ -75,11 +81,12 @@ int xdesk::ui::run_host_gui(int& argc, char** argv, core::Config& config)
     gui::Theme::apply(app, config.settings().theme);
     host = std::make_unique<host::Host>(config);
     try {
-        host->start();
+        host->start(false); // sharing off until the person in front of the PC starts it
     } catch (const std::exception& e) {
-        QMessageBox::critical(nullptr, "xdesk", QString("Sharing could not start:\n") + e.what());
+        QMessageBox::critical(nullptr, "xdesk", QString("xdesk could not start:\n") + e.what());
         return 1;
     }
+    if (qEnvironmentVariableIntValue("XDESK_SNAPSHOT_SHARE") == 1) host->setSharing(true); // snapshots of the sharing state
     window = std::make_unique<gui::HostWindow>(*host);
     if (!config.settings().startMinimized) window->show();
     snapshot_if_asked(window.get());
@@ -98,9 +105,9 @@ int xdesk::ui::run_host_tty(int& argc, char** argv, core::Config& config)
 
     if (!tty::Terminal::isTty()) {std::cerr << "xdesk: the terminal panel needs a terminal (use the graphical panel or run it in a terminal)" << std::endl; return 1;}
     try {
-        host->start();
+        host->start(false); // sharing off until s is pressed
     } catch (const std::exception& e) {
-        std::cerr << "xdesk: sharing could not start: " << e.what() << std::endl;
+        std::cerr << "xdesk: could not start: " << e.what() << std::endl;
         return 1;
     }
     panel = std::make_unique<tty::HostTui>(*host);

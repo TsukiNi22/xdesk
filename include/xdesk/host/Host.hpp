@@ -38,6 +38,7 @@ File Description:
     #include "../net/Server.hpp"                        // xdesk::net::Server
     #include "Session.hpp"                              // xdesk::host::Session, Permissions
     #include "Stream.hpp"                               // xdesk::host::Stream
+    #include <QSslConfiguration>                        // QSslConfiguration
     #include <QStringList>                              // QStringList
     #include <QJsonObject>                              // QJsonObject
     #include <QThread>                                  // QThread
@@ -96,7 +97,8 @@ class Host: public QObject {
         QHash<QString, bool> _remember; // session id -> the client asked to be remembered
         qint64 _lastMoveLog = 0; // throttle of the mouse moves in the activity feed
         bool _panelFocused = false; // the local panel has the focus: remote input paused
-        bool _running = false;
+        bool _running = false; // identity, registry and guard loaded
+        bool _sharing = false; // server, exposure and capture on
 
         // ---------- Pre-Function -------- //
         void onSocket_(net::WebSocket* ws, const QString& userAgent);
@@ -114,12 +116,16 @@ class Host: public QObject {
         void terminalInput_(Terminal& terminal, const QByteArray& data);
         void updateMarker_(void);
         void openInjector_(void); // input backend for the captured screen (logs once why it fails)
+        void startStream_(void); // capture thread (a new stream for each sharing)
+        void stopStream_(void);
+        _cold _nodiscard QSslConfiguration tls_(void) const; // certificate + post-quantum groups
         _cold _nodiscard Permissions defaultPermissions_(const Session* session) const;
 
     public:
         // ---------- Pre-Function -------- //
-        void start(void); // certificate, registry, server, exposure, capture, guard (throws Network / Certificate)
-        void stop(void); // every session closed (bye), clean marker
+        void start(const bool share = true); // certificate, registry, guard, then the sharing when asked (throws Network / Certificate)
+        void stop(void); // sharing off, clean marker
+        void setSharing(const bool share); // server + exposure + capture on / off, the app keeps running (throws Network)
 
         /* sessions */
         _cold _nodiscard QList<Session*> sessions(void) const;
@@ -156,6 +162,7 @@ class Host: public QObject {
         _cold _nodiscard inline QString inputBackend(void) const                     {return this->_injector ? this->_injector->name() : QString("none");};
         _cold _nodiscard inline const QString& inputError(void) const                {return this->_inputError;};
         _cold _nodiscard inline bool isRunning(void) const                           {return this->_running;};
+        _cold _nodiscard inline bool isSharing(void) const                           {return this->_sharing;};
 
         // ------------ Operator ---------- //
         Host& operator=(const Host& other) = delete;

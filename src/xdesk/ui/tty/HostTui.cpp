@@ -113,6 +113,13 @@ void xdesk::ui::tty::HostTui::onInput_(const QByteArray& data)
         if (this->_quitAsked) {emit this->quit(); return;}
         this->_quitAsked = true;
         this->_flash = "Press q again to stop sharing and quit";
+    } else if (data == "s") {
+        try {
+            this->_host.setSharing(!this->_host.isSharing());
+            this->_flash = this->_host.isSharing() ? "Sharing on" : "Sharing off: nobody can connect";
+        } catch (const std::exception& e) {
+            this->_flash = QString("Sharing could not start: ") + e.what();
+        }
     } else if (data == "r") {
         this->_host.rotateCode();
         this->_flash = "New code";
@@ -159,9 +166,10 @@ void xdesk::ui::tty::HostTui::draw_(void)
     // Header
     const int left = this->_host.code().secondsLeft();
     line(bg(QColor(30, 34, 46)) + bold() + fg(ACCENT) + " xdesk " + reset() + bg(QColor(30, 34, 46)) + fg(MUTED)
-        + fit(QString(" sharing  ·  ") + (this->_page == Page::Dashboard ? "[1 sessions]" : "1 sessions") + "  " + (this->_page == Page::Devices ? "[2 devices]" : "2 devices") + "  " + (this->_page == Page::Logs ? "[3 logs]" : "3 logs"), w - 7).toUtf8());
+        + fit(QString(this->_host.isSharing() ? " sharing  ·  " : " OFF  ·  ") + (this->_page == Page::Dashboard ? "[1 sessions]" : "1 sessions") + "  " + (this->_page == Page::Devices ? "[2 devices]" : "2 devices") + "  " + (this->_page == Page::Logs ? "[3 logs]" : "3 logs"), w - 7).toUtf8());
     line("");
-    line("  " + fg(MUTED) + "Code  " + reset() + bold() + fg(ACCENT) + this->_host.code().display().toUtf8() + reset() + fg(MUTED)
+    if (!this->_host.isSharing()) line("  " + fg(BAD) + bold() + "Sharing is off" + reset() + fg(MUTED) + ": nobody can connect. Press s to start sharing.");
+    else line("  " + fg(MUTED) + "Code  " + reset() + bold() + fg(ACCENT) + this->_host.code().display().toUtf8() + reset() + fg(MUTED)
         + (left >= 0 ? ("   changes in " + QString::number(left / 60) + ":" + QString::number(left % 60).rightJustified(2, '0')).toUtf8() : QByteArray("   one time"))
         + "   ·   identity " + security::fingerprint_short(this->_host.certificate().fingerprint()).toUtf8());
     for (const net::Endpoint& e: this->_host.exposure().endpoints())
@@ -221,7 +229,7 @@ void xdesk::ui::tty::HostTui::draw_(void)
             + move(h - 2, 1) + bg(QColor(60, 50, 20)) + fit("  [a] accept   [A] accept & trust   [r] refuse   (refused in 60 s)", w).toUtf8() + reset();
     }
     if (!this->_prompt.isEmpty()) out += move(h - 2, 1) + bg(QColor(40, 40, 70)) + fit("  " + this->_prompt + "  > " + this->_promptTyped, w).toUtf8() + reset();
-    QString help = "  ↑↓ select  tab/1-3 pages  r new code  q quit";
+    QString help = QString("  ↑↓ select  tab/1-3 pages  s ") + (this->_host.isSharing() ? "stop" : "start") + " sharing  r new code  q quit";
     if (this->_page == Page::Dashboard) help += "  ·  k kick  b ban  v/c/t/p toggle view/control/terminal/clipboard";
     if (this->_page == Page::Devices) help += "  ·  u unban  T trust  U untrust  f forget  a unban first address";
     out += move(h - 1, 1) + (this->_flash.contains("TAMPER") ? fg(BAD) + bold() : fg(WARN)) + fit("  " + this->_flash, w).toUtf8() + reset();
