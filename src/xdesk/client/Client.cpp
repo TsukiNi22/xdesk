@@ -86,6 +86,7 @@ void xdesk::client::Client::connectToHost(const Options& options)
     this->_options = options;
     if (this->_options.name.isEmpty()) this->_options.name = QHostInfo::localHostName() + " - " + QSysInfo::prettyProductName();
     security::configure_tls(tls, true); // native to native: post-quantum key exchange only
+    tls.setSslOption(QSsl::SslOptionDisableServerNameIndication, true); // no SNI: the pinned certificate, even on the tailnet name (the browsers asking it get the tailscale one)
     this->setState_(State::Connecting);
     this->_ws = net::WebSocket::connectTo(options.host, options.port, "/ws", tls, this);
     QObject::connect(this->_ws, &net::WebSocket::opened, this, &Client::onOpened_);

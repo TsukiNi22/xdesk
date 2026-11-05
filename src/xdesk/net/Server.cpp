@@ -27,6 +27,7 @@ File Description:
 #include <QJsonDocument>
 #include <QHostAddress>
 #include <QSslSocket>
+#include <algorithm>
 #include <QFileInfo>
 #include <QPointer>
 #include <QString>
@@ -43,6 +44,51 @@ static const QByteArray SECURITY_HEADERS =
     "Cross-Origin-Resource-Policy: same-origin\r\n"
     "Permissions-Policy: camera=(self), microphone=(), geolocation=()\r\n"; // camera: QR code scanner of the web client
 
+#define HELLO_TIMEOUT 8000 // ms to send the ClientHello and finish the handshake
+#define HELLO_MAX 16389 // one TLS record: 5 + 16384
+
+static inline int be16(const unsigned char* b, const qsizetype at)
+{
+    return (b[at] << 8) | b[at + 1];
+}
+
+QString xdesk::net::TlsServer::serverName(const QByteArray& data, bool& complete)
+{
+    const unsigned char* b = reinterpret_cast<const unsigned char*>(data.constData());
+    const qsizetype size = data.size();
+    qsizetype p = 0;
+    qsizetype end = 0;
+
+    complete = true;
+    if (size > 0 && b[0] != 0x16) return ""; // not a handshake: the TLS layer refuses it
+    if (size < 5) {complete = false; return "";}
+    end = 5 + be16(b, 3);
+    if (size < end) {complete = false; return "";}
+    p = 5;
+    if (end - p < 4 || b[p] != 0x01) return ""; // not a ClientHello
+    p += 4 + 2 + 32; // handshake header, version, random
+    if (p + 1 > end) return "";
+    p += 1 + b[p]; // session id
+    if (p + 2 > end) return "";
+    p += 2 + be16(b, p); // cipher suites
+    if (p + 1 > end) return "";
+    p += 1 + b[p]; // compression methods
+    if (p + 2 > end) return "";
+    end = std::min(end, p + 2 + be16(b, p));
+    p += 2;
+    while (p + 4 <= end) {
+        const int type = be16(b, p);
+        const int length = be16(b, p + 2);
+        p += 4;
+        if (p + length > end) return "";
+        // server_name: list length (2), name type (1, 0 = host name), name length (2), name
+        if (type == 0 && length >= 5 && b[p + 2] == 0 && p + 5 + be16(b, p + 3) <= end)
+            return QString::fromLatin1(data.mid(p + 5, be16(b, p + 3))).toLower();
+        p += length;
+    }
+    return "";
+}
+
 static QByteArray content_type(const QString& path)
 {
     const QString ext = QFileInfo(path).suffix().toLower();
@@ -58,13 +104,51 @@ static QByteArray content_type(const QString& path)
     return "application/octet-stream";
 }
 
+void xdesk::net::TlsServer::setNamed(const QString& name, const QSslConfiguration& config)
+{
+    this->_name = name.toLower();
+    this->_named = config;
+    if (!this->_name.isEmpty()) this->_named.setPeerVerifyMode(QSslSocket::VerifyNone);
+}
+
+void xdesk::net::TlsServer::incomingConnection(qintptr descriptor)
+{
+    QSslSocket* socket = new QSslSocket(this);
+    QPointer<QSslSocket> guard = socket;
+
+    socket->setSslConfiguration(this->sslConfiguration());
+    if (!socket->setSocketDescriptor(descriptor)) {socket->deleteLater(); return;}
+    socket->setProperty("xdesk_hello", true);
+    QObject::connect(socket, &QSslSocket::readyRead, this, [this, socket]() {
+        if (socket->property("xdesk_hello").toBool()) this->onHello_(socket);
+    });
+    QObject::connect(socket, &QSslSocket::encrypted, this, [this, socket]() {
+        socket->disconnect(this);
+        this->addPendingConnection(socket); // emits pendingConnectionAvailable
+    });
+    QObject::connect(socket, &QSslSocket::errorOccurred, this, [socket](QAbstractSocket::SocketError) {socket->deleteLater();});
+    QObject::connect(socket, &QSslSocket::handshakeInterruptedOnError, this, [socket](const QSslError&) {socket->abort();});
+    QTimer::singleShot(HELLO_TIMEOUT, this, [guard]() {
+        if (guard && !guard->isEncrypted()) {guard->abort(); guard->deleteLater();}
+    });
+}
+
+void xdesk::net::TlsServer::onHello_(QSslSocket* socket)
+{
+    bool complete = true;
+    const QByteArray hello = socket->peek(HELLO_MAX); // not consumed: the TLS layer reads it again
+    const QString name = TlsServer::serverName(hello, complete);
+
+    if (!complete && hello.size() < HELLO_MAX) return; // next segment (big hellos: post-quantum key shares)
+    socket->setProperty("xdesk_hello", false);
+    if (!this->_name.isEmpty() && name == this->_name) socket->setSslConfiguration(this->_named);
+    socket->startServerEncryption();
+}
+
 xdesk::net::Server::Server(QObject* parent)
 : QObject(parent)
 {
-    this->_server.setHandshakeTimeout(8000);
     QObject::connect(&this->_server, &QSslServer::pendingConnectionAvailable, this, &Server::onConnection_);
-    QObject::connect(&this->_server, &QSslServer::errorOccurred, this, [](QSslSocket* socket, QAbstractSocket::SocketError) {socket->deleteLater();});
-    QObject::connect(&this->_server, &QSslServer::handshakeInterruptedOnError, this, [](QSslSocket* socket, const QSslError&) {socket->abort();});
 }
 
 void xdesk::net::Server::listen(const QString& address, const quint16 port, const QSslConfiguration& tls)

@@ -22,6 +22,7 @@ File Description:
 #include <utils/utils.hpp>
 #include "xdesk/net/Exposure.hpp"
 #include "xdesk/net/Protocol.hpp"
+#include "xdesk/core/Config.hpp"
 #include <QRegularExpression>
 #include <QNetworkInterface>
 #include <QStandardPaths>
@@ -30,7 +31,24 @@ File Description:
 #include <QHostAddress>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QFileInfo>
+#include <QDateTime>
+#include <QHostInfo>
 #include <QString>
+#include <QFile>
+#include <QDir>
+
+//----------------------------------------------------------------//
+/* DEFINE */
+
+#define CERT_RENEW 43200000 // ms between two tailscale cert runs (it renews the certificate itself when it gets old)
+#define CERT_RETRY 300000 // ms before trying again after a failure
+#define CERT_MARGIN 86400 // s: a certificate expiring sooner is not served
+
+_cold static QString certificate_path(const QString& name, const QString& ext)
+{
+    return QDir(xdesk::core::Config::dataDir()).filePath("tailscale/" + name + "." + ext);
+}
 
 xdesk::net::Exposure::Exposure(QObject* parent)
 : QObject(parent)
@@ -50,6 +68,10 @@ xdesk::net::Exposure::Exposure(QObject* parent)
     QObject::connect(&this->_tailscale, &QProcess::finished, this, &Exposure::onTailnet_);
     QObject::connect(&this->_tailscale, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {this->onTailnet_();});
     QObject::connect(&this->_probe, &QTimer::timeout, this, &Exposure::probeTailnet_);
+    QObject::connect(&this->_certTool, &QProcess::finished, this, &Exposure::onCertificate_);
+    QObject::connect(&this->_certTool, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart) this->onCertificate_();
+    });
 }
 
 xdesk::net::Exposure::~Exposure()
@@ -117,11 +139,13 @@ void xdesk::net::Exposure::probeTailnet_(void)
 
 void xdesk::net::Exposure::onTailnet_(void)
 {
-    const QJsonObject o = QJsonDocument::fromJson(this->_tailscale.state() == QProcess::NotRunning ? this->_tailscale.readAllStandardOutput() : QByteArray()).object();
+    const QByteArray answer = this->_tailscale.state() == QProcess::NotRunning ? this->_tailscale.readAllStandardOutput() : QByteArray();
+    const QJsonObject o = QJsonDocument::fromJson(answer.isEmpty() ? this->_tailnetAnswer : answer).object();
     const QJsonObject self = o.value("Self").toObject();
     Tailnet tailnet;
 
     if (!this->_active) return; // answer of a probe killed by stop
+    if (!answer.isEmpty()) this->_tailnetAnswer = answer;
 
     tailnet.up = o.value("BackendState").toString() == "Running";
     tailnet.name = o.value("CurrentTailnet").toObject().value("Name").toString();
@@ -129,6 +153,8 @@ void xdesk::net::Exposure::onTailnet_(void)
     if (tailnet.dns.endsWith('.')) tailnet.dns.chop(1);
     for (const QJsonValue& value: self.value("TailscaleIPs").toArray())
         if (QHostAddress(value.toString()).protocol() == QAbstractSocket::IPv4Protocol) {tailnet.ip = value.toString(); break;}
+    for (const QJsonValue& value: o.value("CertDomains").toArray())
+        if (!tailnet.dns.isEmpty() && value.toString().compare(tailnet.dns, Qt::CaseInsensitive) == 0) tailnet.https = true;
 
     // No CLI (or no answer): the address of the tailscale interface, without a name
     if (tailnet.ip.isEmpty()) {
@@ -136,10 +162,89 @@ void xdesk::net::Exposure::onTailnet_(void)
         tailnet.up = !tailnet.ip.isEmpty();
     }
     this->_tailnet = tailnet;
+
+    // Browsers on the name: a real certificate (every *.ts.net name is HSTS preloaded, a self-signed one is refused there)
+    if (this->_mode == core::Exposure::Tailscale && tailnet.up && tailnet.https) {
+        if (this->_certName != tailnet.dns && this->loadCertificate_(tailnet.dns)) emit this->certificateChanged();
+        const qint64 since = QDateTime::currentMSecsSinceEpoch() - this->_certFetched;
+        if (since > (this->_certName == tailnet.dns ? CERT_RENEW : CERT_RETRY)) this->fetchCertificate_();
+    }
     this->refresh_();
-    if (this->_mode == core::Exposure::Tailscale)
-        this->setStatus_(tailnet.up ? "Tailscale: reachable by the devices of " + (tailnet.name.isEmpty() ? QString("your tailnet") : tailnet.name) + ", and on the LAN"
-                                    : "Tailscale is not connected on this PC (run: tailscale up): LAN only for now");
+    if (this->_mode != core::Exposure::Tailscale) return;
+    if (!tailnet.up) {
+        this->setStatus_("Tailscale is not connected on this PC (run: tailscale up): LAN only for now");
+        return;
+    }
+    QString status = "Tailscale: reachable by the devices of " + (tailnet.name.isEmpty() ? QString("your tailnet") : tailnet.name) + ", and on the LAN";
+    if (tailnet.dns.isEmpty()) status += ". MagicDNS is off: the browsers use the address";
+    else if (!tailnet.https) status += ". Browsers use the address: enable HTTPS in the Tailscale admin console (DNS page) to use " + tailnet.dns;
+    else if (this->_certName.isEmpty() && !this->_certError.isEmpty()) status += ". Browsers use the address: " + this->_certError;
+    this->setStatus_(status);
+}
+
+void xdesk::net::Exposure::fetchCertificate_(void)
+{
+    const QString name = this->_tailnet.dns;
+
+    if (this->_certTool.state() != QProcess::NotRunning || name.isEmpty()) return;
+    if (!QDir().mkpath(QFileInfo(certificate_path(name, "crt")).absolutePath())) return;
+    this->_certFetched = QDateTime::currentMSecsSinceEpoch();
+    this->_certTool.setProperty("xdesk_name", name);
+    this->_certTool.start("tailscale", {"cert", "--cert-file", certificate_path(name, "crt"), "--key-file", certificate_path(name, "key"), name});
+}
+
+void xdesk::net::Exposure::onCertificate_(void)
+{
+    const QString name = this->_certTool.property("xdesk_name").toString();
+    const QString output = QString::fromUtf8(this->_certTool.readAllStandardError() + this->_certTool.readAllStandardOutput()).trimmed();
+    const bool ok = this->_certTool.exitStatus() == QProcess::NormalExit && this->_certTool.exitCode() == 0 && this->_certTool.error() != QProcess::FailedToStart;
+
+    const QSslCertificate before = this->_certName == name ? this->_certChain.value(0) : QSslCertificate();
+
+    (void)QFile::setPermissions(certificate_path(name, "key"), QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    if (ok && this->loadCertificate_(name)) {
+        this->_certError.clear();
+        if (this->_certChain.value(0) != before) emit this->certificateChanged(); // renewed (the same one again: nothing to do)
+    } else if (!ok) {
+        // Most common: not the operator of tailscaled (sudo tailscale set --operator=$USER), HTTPS off in the console
+        this->_certError = output.contains("Access denied", Qt::CaseInsensitive) || output.contains("permission", Qt::CaseInsensitive)
+            ? "tailscale cert needs the operator right (once, as root: tailscale set --operator=$USER)"
+            : "tailscale cert failed (" + output.section('\n', 0, 0).left(160) + ")";
+    }
+    if (this->_active) this->onTailnet_(); // status and endpoints with the result (no new tailscale status run)
+}
+
+bool xdesk::net::Exposure::loadCertificate_(const QString& name)
+{
+    QFile keyFile(certificate_path(name, "key"));
+    const QList<QSslCertificate> chain = QSslCertificate::fromPath(certificate_path(name, "crt"), QSsl::Pem);
+    QSslKey key;
+
+    if (chain.isEmpty() || chain.first().isNull() || !keyFile.open(QIODevice::ReadOnly)) return false;
+    const QByteArray pem = keyFile.readAll();
+    key = QSslKey(pem, QSsl::Ec, QSsl::Pem);
+    if (key.isNull()) key = QSslKey(pem, QSsl::Rsa, QSsl::Pem);
+    if (key.isNull() || chain.first().expiryDate() < QDateTime::currentDateTimeUtc().addSecs(CERT_MARGIN)) return false;
+    if (!chain.first().subjectAlternativeNames().values(QSsl::DnsEntry).contains(name, Qt::CaseInsensitive)) return false;
+    this->_certName = name;
+    this->_certChain = chain;
+    this->_certKey = key;
+    return true;
+}
+
+void xdesk::net::Exposure::lookupMdns_(void)
+{
+    const QString name = QHostInfo::localHostName() + ".local";
+
+    // Published by avahi / Bonjour: the browsers can use the name on the LAN (only kept when it resolves to an IPv4 of this PC)
+    QHostInfo::lookupHost(name, this, [this, name](const QHostInfo& info) {
+        QStringList addresses;
+        for (const QHostAddress& address: info.addresses())
+            if (address.protocol() == QAbstractSocket::IPv4Protocol) addresses.append(address.toString());
+        this->_mdnsName = addresses.isEmpty() ? QString() : name;
+        this->_mdnsAddresses = addresses;
+        this->refresh_();
+    });
 }
 
 QString xdesk::net::Exposure::tailscaleAddress(void)
@@ -166,6 +271,7 @@ void xdesk::net::Exposure::start(const core::Settings& settings, const quint16 p
     this->_endpoints.clear();
     this->refresh_();
     this->probeTailnet_();
+    this->lookupMdns_();
     this->_probe.start(30000);
     if (this->_mode == core::Exposure::Upnp || this->_mode == core::Exposure::Bore || this->_mode == core::Exposure::Cloudflared || this->_mode == core::Exposure::Ngrok)
         this->startTool_();
@@ -186,6 +292,7 @@ void xdesk::net::Exposure::stop(void)
     this->_active = false;
     this->_probe.stop();
     if (this->_tailscale.state() != QProcess::NotRunning) this->_tailscale.kill();
+    this->_tailnetAnswer.clear();
     this->_announce.stop();
     this->_discovery.close();
     if (this->_tool.state() != QProcess::NotRunning) {
@@ -213,15 +320,18 @@ void xdesk::net::Exposure::refresh_(void)
         endpoints.append({"Internet", "Anyone on the internet, through the port you forwarded on the router", "https://" + this->_publicHost + ":" + port, this->_publicHost, "", this->_port, true});
     if (this->_mode == core::Exposure::Tailscale && this->_tailnet.up) {
         const QString host = this->_tailnet.dns.isEmpty() ? this->_tailnet.ip : this->_tailnet.dns;
-        const QString web = this->_tailnet.ip.isEmpty() ? host : this->_tailnet.ip;
+        const bool named = !this->_tailnet.dns.isEmpty() && this->_certName == this->_tailnet.dns;
+        const QString web = named || this->_tailnet.ip.isEmpty() ? host : this->_tailnet.ip;
 
-        // The browsers get the IP: every *.ts.net name is HSTS preloaded, so a self-signed certificate is refused there without any exception
-        endpoints.append({"Tailscale", "Your devices signed in to " + (this->_tailnet.name.isEmpty() ? QString("the tailnet") : "the tailnet " + this->_tailnet.name), "https://" + web + ":" + port, host, "", this->_port, true});
+        // The name only with the tailscale certificate: every *.ts.net name is HSTS preloaded, a self-signed certificate is refused there without any exception
+        endpoints.append({"Tailscale", "Your devices signed in to " + (this->_tailnet.name.isEmpty() ? QString("the tailnet") : "the tailnet " + this->_tailnet.name), "https://" + web + ":" + port, host, host == this->_tailnet.ip ? QString() : this->_tailnet.ip, this->_port, true});
     }
 
-    // LAN: always open while sharing
-    for (const QPair<QString, QString>& entry: lanInterfaces())
-        endpoints.append({"LAN", "Devices on the same network (" + entry.first + ")", "https://" + entry.second + ":" + port, entry.second, "", this->_port, true});
+    // LAN: always open while sharing (the .local name when it points to this interface)
+    for (const QPair<QString, QString>& entry: lanInterfaces()) {
+        const QString host = this->_mdnsAddresses.contains(entry.second) ? this->_mdnsName : entry.second;
+        endpoints.append({"LAN", "Devices on the same network (" + entry.first + ")", "https://" + host + ":" + port, host, host == entry.second ? QString() : entry.second, this->_port, true});
+    }
     endpoints.append({"This PC", "Only this computer", "https://localhost:" + port, "localhost", "127.0.0.1", this->_port, true});
     this->_endpoints = endpoints;
     emit this->changed();

@@ -52,6 +52,16 @@ xdesk::host::Host::Host(core::Config& config, QObject* parent)
     });
     QObject::connect(&this->_guard, &security::IntegrityGuard::tamper, this, &Host::onTamper_);
     QObject::connect(&this->_exposure, &net::Exposure::changed, this, &Host::stateChanged);
+    QObject::connect(&this->_exposure, &net::Exposure::certificateChanged, this, [this]() {
+        const QString name = this->_exposure.certificateName();
+        QSslConfiguration named = this->tls_();
+
+        // The browsers asking the tailnet name get the tailscale certificate, everybody else the pinned one
+        named.setLocalCertificateChain(this->_exposure.certificateChain());
+        named.setPrivateKey(this->_exposure.certificateKey());
+        this->_server.setNamedCertificate(name, name.isEmpty() ? QSslConfiguration() : named);
+        if (!name.isEmpty()) this->_log.info("server", "", "Tailscale certificate for " + name + " (valid until " + this->_exposure.certificateChain().first().expiryDate().toString("yyyy-MM-dd") + "): the browsers can use the name");
+    });
     QObject::connect(&this->_server, &net::Server::newSocket, this, &Host::onSocket_);
 }
 
@@ -197,6 +207,10 @@ void xdesk::host::Host::startStream_(void)
             if (s->state() == State::Active) s->sendJson({{"t", "screen"}, {"w", size.width()}, {"h", size.height()}});
         emit this->stateChanged();
     });
+    QObject::connect(this->_stream, &Stream::scaled, this, [this](const QString& id, const double scale) {
+        if (this->_sessions.contains(id)) this->_scales[id] = scale;
+    });
+    QMetaObject::invokeMethod(this->_stream, "setMaxHeight", Qt::QueuedConnection, Q_ARG(int, this->_config.settings().maxHeight));
     this->_streamThread.start();
 }
 
@@ -746,6 +760,8 @@ bool xdesk::host::Host::applySettings(const core::Settings& settings)
     this->_config.save();
     this->_guard.endTrustedWrite();
     if (old.codeLength != settings.codeLength || old.codeLifetime != settings.codeLifetime) this->_code.configure(settings.codeLength, settings.codeLifetime);
+    if (this->_stream && old.maxHeight != settings.maxHeight)
+        QMetaObject::invokeMethod(this->_stream, "setMaxHeight", Qt::QueuedConnection, Q_ARG(int, settings.maxHeight));
     if (this->_sharing && (old.port != settings.port || old.bind != settings.bind)) {
         this->_server.stop();
         this->_server.listen(settings.bind, settings.port, this->tls_());

@@ -54,6 +54,7 @@ set(SRC
 
     ## Network (sub-part: net)
     xdesk/net/Protocol.cpp
+    xdesk/net/Server.cpp
 
     ## Host (sub-part: host)
     xdesk/host/Host.cpp
@@ -67,6 +68,9 @@ add_executable(${TARGET} ${SRC} ${SRC_PROJECT})
 # Dependencies
 # =========================
 target_include_directories(${TARGET} PRIVATE ../include/ ../include/exception/ ../third_party/ .)
+if(XDESK_HAS_PIPEWIRE)
+    target_include_directories(${TARGET} SYSTEM PRIVATE ../third_party/pipewire) # <pipewire/...>, <spa/...>
+endif()
 target_link_libraries(${TARGET} PRIVATE ${XDESK_LIBS} GTest::gtest GTest::gtest_main)
 target_compile_definitions(${TARGET} PRIVATE ${XDESK_DEFINITIONS})
 if(XDESK_PACKAGE_LIB)
