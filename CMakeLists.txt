@@ -180,6 +180,7 @@ set(SRC_SHARED
 # One platform only (selected here, never wrapped in an #ifdef)
 set(SRC_UNIX
     src/xdesk/platform/unix/PtyTerminal.cpp
+    ${CMAKE_SOURCE_DIR}/include/xdesk/platform/unix/PtyTerminal.hpp # Q_OBJECT (moc)
 )
 set(SRC_LINUX
     src/xdesk/platform/linux/UInputInjector.cpp
@@ -221,7 +222,6 @@ set(HDR_MOC
     ${CMAKE_SOURCE_DIR}/include/xdesk/net/Server.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/net/WebSocket.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/platform/ITerminal.hpp
-    ${CMAKE_SOURCE_DIR}/include/xdesk/platform/unix/PtyTerminal.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/security/DeviceRegistry.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/security/IntegrityGuard.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/security/PairingCode.hpp
