@@ -41,6 +41,9 @@
             controlDenied: "L'hôte n'a pas donné le droit de contrôle.", terminalDenied: "L'hôte n'a pas donné le droit d'ouvrir un terminal.",
             proofMismatch: "L'hôte n'a pas prouvé qu'il connaît le secret de cet appareil : connexion fermée.",
             exited: "processus terminé", copied: "Copié", fullscreenFail: "Plein écran indisponible",
+            scan: "Scanner le QR code de l'hôte", scanTitle: "Visez le QR code avec la caméra", scanHint: "Affiché par le panneau de l'hôte : Vue d'ensemble, QR code",
+            scanClose: "Annuler", scanNoCamera: "Caméra indisponible : autorisez-la, ou entrez le code à la main.",
+            scanNotXdesk: "Ce QR code n'est pas un lien xdesk.", scanOther: "Ce QR code mène à un autre ordinateur : ",
             states: {idle: "hors ligne", connecting: "connexion", pending: "en attente", active: "connecté", closed: "fermé", banned: "banni"},
         },
     };
@@ -53,6 +56,8 @@
         controlDenied: "The host did not give the control right.", terminalDenied: "The host did not give the terminal right.",
         proofMismatch: "The host did not prove it knows the secret of this device: connection closed.",
         exited: "process exited", copied: "Copied", fullscreenFail: "Fullscreen unavailable",
+        scanNoCamera: "Camera unavailable: allow it, or type the code.", scanNotXdesk: "This QR code is not an xdesk link.",
+        scanOther: "This QR code leads to another computer: ",
     };
     let lang = load("lang") || ((navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en");
 
@@ -490,6 +495,102 @@
         }
         connect();
     });
+
+    // ---------------------------------------------------------------- //
+    // QR code scanner (BarcodeDetector when the browser has it, else jsQR loaded on demand)
+
+    const scan = {stream: null, timer: 0, detector: null, canvas: null};
+
+    function loadJsQR() {
+        if (window.jsQR) return Promise.resolve();
+        return new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = "/vendor/jsQR.js";
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+
+    function stopScan() {
+        clearTimeout(scan.timer);
+        if (scan.stream) for (const track of scan.stream.getTracks()) track.stop();
+        scan.stream = null;
+        $("scanVideo").srcObject = null;
+        $("scanView").hidden = true;
+    }
+
+    // xdesk://host:port?fp=..&code=.. (app link) or https://host:port/?code=.. (browser link)
+    function onScanned(text) {
+        let url = null;
+        try {
+            url = new URL(text.trim().replace(/^xdesk:\/\//i, "https://"));
+        } catch (e) {
+            url = null;
+        }
+        const code = url && url.protocol === "https:" ? url.searchParams.get("code") : null;
+        stopScan();
+        if (!code) {
+            showConnect(t("scanNotXdesk"));
+            return;
+        }
+        if (url.host !== location.host) {
+            if (confirm(t("scanOther") + url.host)) location.href = "https://" + url.host + "/?code=" + encodeURIComponent(normalizeCode(code));
+            return;
+        }
+        $("codeInput").value = formatCode(code);
+        showConnect("");
+        connect();
+    }
+
+    async function scanFrame() {
+        const video = $("scanVideo");
+        if (!scan.stream) return;
+        if (video.readyState >= 2 && video.videoWidth > 0) {
+            try {
+                if (scan.detector) {
+                    const found = await scan.detector.detect(video);
+                    if (found.length) return onScanned(found[0].rawValue);
+                } else {
+                    const w = Math.min(640, video.videoWidth);
+                    const h = Math.round(video.videoHeight * w / video.videoWidth);
+                    const c = scan.canvas || (scan.canvas = document.createElement("canvas"));
+                    c.width = w;
+                    c.height = h;
+                    const g = c.getContext("2d", {willReadFrequently: true});
+                    g.drawImage(video, 0, 0, w, h);
+                    const found = window.jsQR(g.getImageData(0, 0, w, h).data, w, h, {inversionAttempts: "dontInvert"});
+                    if (found) return onScanned(found.data);
+                }
+            } catch (e) { /* next frame */ }
+        }
+        scan.timer = setTimeout(scanFrame, 150);
+    }
+
+    async function startScan() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            showConnect(t("scanNoCamera"));
+            return;
+        }
+        try {
+            scan.detector = null;
+            if ("BarcodeDetector" in window && (await window.BarcodeDetector.getSupportedFormats()).includes("qr_code")) scan.detector = new window.BarcodeDetector({formats: ["qr_code"]});
+            else await loadJsQR();
+            scan.stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: {ideal: "environment"}}, audio: false});
+        } catch (e) {
+            stopScan();
+            showConnect(t("scanNoCamera"));
+            return;
+        }
+        $("scanView").hidden = false;
+        $("scanVideo").srcObject = scan.stream;
+        await $("scanVideo").play().catch(() => {});
+        scanFrame();
+    }
+
+    $("scanBtn").addEventListener("click", startScan);
+    $("scanClose").addEventListener("click", stopScan);
+    document.addEventListener("keydown", (e) => {if (e.key === "Escape" && scan.stream) stopScan();});
 
     // ---------------------------------------------------------------- //
     // Frames

@@ -5,13 +5,17 @@
  *    against the fp of the link), then every TLS error is accepted ONLY for that exact certificate
  *  - automatic updates: /app/version of the host compared with the installed version, /app/xdesk.apk installed with
  *    the PackageInstaller (user confirmation of the system)
+ *  - QR codes: a scanner page of the APK (assets/scan.html, served on a local https origin) reads the xdesk:// link shown
+ *    by the host; the camera is only given to that page and to the pinned host (scanner of the web client)
 */
 package dev.tsukini.xdesk;
 
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.PendingIntent;
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
@@ -32,7 +36,10 @@ import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
+import android.webkit.PermissionRequest;
 import android.webkit.SslErrorHandler;
+import android.webkit.WebChromeClient;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -56,6 +63,7 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.Arrays;
 import java.util.Locale;
 
 import javax.net.ssl.HostnameVerifier;
@@ -72,6 +80,8 @@ public class MainActivity extends Activity {
     private static final String PREFS = "xdesk";
     private static final int DEFAULT_PORT = 47800;
     private static final int TIMEOUT = 8000; // ms
+    private static final int CAMERA_REQUEST = 7;
+    private static final String SCANNER = "https://appassets.androidplatform.net"; // local origin of the scanner page (served from the assets)
 
     /* palette (html-style dark tokens) */
     private static final int BG = Color.parseColor("#101315");
@@ -90,6 +100,9 @@ public class MainActivity extends Activity {
     private WebView _web;
     private String _pendingCode = ""; // code of a xdesk:// link, given to the web client once
     private boolean _updateChecked = false;
+    private boolean _scanning = false; // the scanner page is shown (back = setup)
+    private Runnable _cameraGranted; // waiting for the answer of the camera permission
+    private Runnable _cameraDenied;
 
     // ---------------------------------------------------------------- //
     // Life cycle
@@ -146,6 +159,10 @@ public class MainActivity extends Activity {
     }
 
     private void onBack() {
+        if (this._scanning) {
+            this.showSetup("", this.host());
+            return;
+        }
         if (this._web != null && this._web.canGoBack()) {
             this._web.goBack();
             return;
@@ -370,6 +387,7 @@ public class MainActivity extends Activity {
     private String tr(String en, String fr) {return this.french() ? fr : en;}
 
     private void clearRoot() {
+        this._scanning = false;
         if (this._web != null) {
             this._root.removeView(this._web);
             this._web.destroy();
@@ -413,8 +431,8 @@ public class MainActivity extends Activity {
         box.addView(title);
 
         TextView lead = new TextView(this);
-        lead.setText(this.tr("Address shown on the host (LAN, Tailscale, tunnel), for example 192.168.1.20:47800, or open the xdesk:// link of the host.",
-            "Adresse affichée sur l'hôte (LAN, Tailscale, tunnel), par exemple 192.168.1.20:47800, ou ouvrez le lien xdesk:// de l'hôte."));
+        lead.setText(this.tr("Address shown on the host (LAN, Tailscale, tunnel), for example 192.168.1.20:47800, or scan the QR code of the host panel (Overview, QR code).",
+            "Adresse affichée sur l'hôte (LAN, Tailscale, tunnel), par exemple 192.168.1.20:47800, ou scannez le QR code du panneau de l'hôte (Vue d'ensemble, QR code)."));
         lead.setTextColor(MUTED);
         lead.setTextSize(15);
         box.addView(lead);
@@ -448,6 +466,19 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, this.dp(48));
         gp.topMargin = this.dp(16);
         box.addView(go, gp);
+
+        Button scan = new Button(this);
+        scan.setText(this.tr("Scan the QR code of the host", "Scanner le QR code de l'hôte"));
+        scan.setTextColor(TEXT);
+        scan.setBackgroundColor(SURFACE);
+        scan.setAllCaps(false);
+        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, this.dp(48));
+        sp.topMargin = this.dp(10);
+        box.addView(scan, sp);
+        scan.setOnClickListener(v -> this.withCamera(this::showScanner, () -> {
+            err.setText(this.tr("Camera refused: type the address, or open the xdesk:// link with the camera app.", "Caméra refusée : tapez l'adresse, ou ouvrez le lien xdesk:// avec l'application appareil photo."));
+            err.setVisibility(View.VISIBLE);
+        }));
 
         Runnable submit = () -> {
             String origin = normalize(input.getText().toString());
@@ -522,6 +553,7 @@ public class MainActivity extends Activity {
                 MainActivity.this._ui.post(() -> MainActivity.this.showSetup(MainActivity.this.tr("Host unreachable: ", "Hôte injoignable : ") + error.getDescription(), origin));
             }
         });
+        web.setWebChromeClient(this.cameraClient(origin)); // scanner of the web client: camera for the pinned host only
         web.setDownloadListener((url, agent, disposition, mime, length) -> this.checkUpdate(true));
         this._root.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         String url = origin + "/";
@@ -534,6 +566,104 @@ public class MainActivity extends Activity {
             this._updateChecked = true;
             this.checkUpdate(false);
         }
+    }
+
+    // ---------------------------------------------------------------- //
+    // QR code scanner
+
+    // Runtime permission of the camera, then granted / denied
+    private void withCamera(Runnable granted, Runnable denied) {
+        if (Build.VERSION.SDK_INT < 23 || this.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            granted.run();
+            return;
+        }
+        this._cameraGranted = granted;
+        this._cameraDenied = denied;
+        this.requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_REQUEST);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(request, permissions, results);
+        if (request != CAMERA_REQUEST) return;
+        Runnable next = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED ? this._cameraGranted : this._cameraDenied;
+        this._cameraGranted = null;
+        this._cameraDenied = null;
+        if (next != null) next.run();
+    }
+
+    // The camera of a page: only for the given origin, and only the video
+    private WebChromeClient cameraClient(String allowed) {
+        return new WebChromeClient() {
+            @Override
+            public void onPermissionRequest(PermissionRequest request) {
+                Uri asked = request.getOrigin();
+                String origin = asked == null ? "" : asked.getScheme() + "://" + asked.getHost() + (asked.getPort() > 0 ? ":" + asked.getPort() : "");
+                boolean video = Arrays.asList(request.getResources()).contains(PermissionRequest.RESOURCE_VIDEO_CAPTURE);
+                String a = normalize(origin);
+                if (!video || a == null || !a.equals(normalize(allowed))) {
+                    request.deny();
+                    return;
+                }
+                MainActivity.this._ui.post(() -> MainActivity.this.withCamera(() -> request.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE}), request::deny));
+            }
+        };
+    }
+
+    // Scanner page of the APK: the assets served on a local https origin (secure context: the camera works there)
+    private void showScanner() {
+        this.clearRoot();
+        WebView web = new WebView(this);
+        this._web = web;
+        this._scanning = true;
+        web.setBackgroundColor(Color.BLACK);
+        WebSettings s = web.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setMediaPlaybackRequiresUserGesture(false);
+        s.setAllowFileAccess(false);
+        s.setAllowContentAccess(false);
+        web.setWebChromeClient(this.cameraClient(SCANNER));
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                if (!SCANNER.equals(uri.getScheme() + "://" + uri.getHost())) return null;
+                String path = uri.getPath() == null || uri.getPath().equals("/") ? "scan.html" : uri.getPath().substring(1);
+                if (!path.equals("scan.html") && !path.equals("jsQR.js")) return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", null, null);
+                try {
+                    return new WebResourceResponse(path.endsWith(".js") ? "text/javascript" : "text/html", "utf-8", MainActivity.this.getAssets().open(path));
+                } catch (Exception e) {
+                    return null;
+                }
+            }
+
+            // The page navigates to what it read: xdesk://host:port?fp=..&code=.. or https://host:port/?code=..
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                String scheme = uri.getScheme() == null ? "" : uri.getScheme();
+                if (SCANNER.equals(scheme + "://" + uri.getHost())) return false;
+                if (scheme.equals("xdesk-cancel")) {
+                    MainActivity.this._ui.post(() -> MainActivity.this.showSetup("", MainActivity.this.host()));
+                    return true;
+                }
+                if (scheme.equals("xdesk")) {
+                    MainActivity.this._ui.post(() -> MainActivity.this.handleLink(new Intent(Intent.ACTION_VIEW, uri)));
+                    return true;
+                }
+                String origin = normalize(uri.toString());
+                String code = uri.getQueryParameter("code");
+                if (scheme.equals("https") && origin != null && code != null) {
+                    MainActivity.this._pendingCode = code;
+                    MainActivity.this._ui.post(() -> MainActivity.this.probe(origin, "")); // no fingerprint in a browser link: confirmed by the user
+                    return true;
+                }
+                MainActivity.this._ui.post(() -> MainActivity.this.showSetup(MainActivity.this.tr("This QR code is not an xdesk link", "Ce QR code n'est pas un lien xdesk"), MainActivity.this.host()));
+                return true;
+            }
+        });
+        this._root.addView(web, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        web.loadUrl(SCANNER + "/?lang=" + (this.french() ? "fr" : "en"));
     }
 
     // ---------------------------------------------------------------- //

@@ -38,13 +38,16 @@ TARGET_SDK="${TARGET_SDK%%.*}"
 
 echo "build_apk: xdesk $VERSION ($CODE), build-tools $TOOLS_VERSION, $PLATFORM"
 rm -rf "$OUT"
-command mkdir -p "$OUT/gen" "$OUT/classes" "$OUT/dex"
+command mkdir -p "$OUT/gen" "$OUT/classes" "$OUT/dex" "$OUT/assets"
+
+# Assets: the QR code scanner page + the decoder of the web client
+cp "$APP/assets/"* "$ROOT/web/vendor/jsQR.js" "$OUT/assets/"
 
 # Resources + manifest
 "$TOOLS/aapt2" compile --dir "$APP/res" -o "$OUT/res.zip"
 "$TOOLS/aapt2" link -I "$ANDROID_JAR" --manifest "$APP/AndroidManifest.xml" -o "$OUT/base.apk" \
     --java "$OUT/gen" --min-sdk-version 24 --target-sdk-version "$TARGET_SDK" \
-    --version-code "$CODE" --version-name "$VERSION" "$OUT/res.zip"
+    --version-code "$CODE" --version-name "$VERSION" -A "$OUT/assets" "$OUT/res.zip"
 
 # Java -> dex
 find "$APP/src" "$OUT/gen" -name '*.java' > "$OUT/sources.txt"
@@ -64,5 +67,5 @@ fi
 "$TOOLS/apksigner" sign --ks "$KEYSTORE" --ks-pass "pass:$PASS" --ks-key-alias xdesk --out "$OUT/xdesk.apk" "$OUT/aligned.apk"
 "$TOOLS/apksigner" verify "$OUT/xdesk.apk"
 echo "$VERSION" > "$OUT/version.txt"
-rm -rf "$OUT/gen" "$OUT/classes" "$OUT/dex" "$OUT/res.zip" "$OUT/base.apk" "$OUT/aligned.apk" "$OUT/sources.txt" "$OUT/classes.txt" "$OUT"/*.idsig
+rm -rf "$OUT/assets" "$OUT/gen" "$OUT/classes" "$OUT/dex" "$OUT/res.zip" "$OUT/base.apk" "$OUT/aligned.apk" "$OUT/sources.txt" "$OUT/classes.txt" "$OUT"/*.idsig
 echo "build_apk: $OUT/xdesk.apk ($(du -h "$OUT/xdesk.apk" | cut -f1))"

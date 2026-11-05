@@ -175,6 +175,9 @@ set(SRC_SHARED
     src/xdesk/ui/tty/Ansi.cpp
     src/xdesk/ui/tty/HostTui.cpp
     src/xdesk/ui/tty/ClientTui.cpp
+
+    ## Third party (sub-part: third_party)
+    third_party/qrcodegen/qrcodegen.cpp
 )
 
 # One platform only (selected here, never wrapped in an #ifdef)
@@ -377,7 +380,7 @@ add_custom_target(package_release
 # Dependencies
 # =========================
 foreach(target ${COMPILED_TARGETS})
-    target_include_directories(${target} PRIVATE include/exception)
+    target_include_directories(${target} PRIVATE include/exception third_party)
     add_dependencies(${target} generated_external_exception_header)
 endforeach()
 if(XDESK_PACKAGE_LIB)

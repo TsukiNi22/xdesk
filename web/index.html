@@ -49,6 +49,7 @@
                 <label for="codeInput" data-i18n="codeLabel">Connection code</label>
                 <input class="code" id="codeInput" inputmode="text" autocapitalize="characters" spellcheck="false" maxlength="14" placeholder="XXX-XXX-XXX" aria-describedby="codeHelp">
                 <small id="codeHelp" class="muted" data-i18n="codeHelp">Not needed for a trusted device.</small>
+                <button class="btn ghost scan-btn" type="button" id="scanBtn" data-i18n="scan">Scan the QR code of the host</button>
 
                 <label for="nameInput" data-i18n="nameLabel">Name of this device</label>
                 <input id="nameInput" maxlength="64">
@@ -67,6 +68,17 @@
                     <button class="btn ghost" type="button" id="forgetBtn" hidden data-i18n="forget">Forget this device</button>
                 </div>
             </form>
+        </section>
+
+        <!-- QR code scanner (camera) -->
+        <section class="scan" id="scanView" hidden aria-labelledby="scanTitle">
+            <video id="scanVideo" playsinline muted></video>
+            <div class="scan-frame" aria-hidden="true"></div>
+            <div class="scan-bar">
+                <strong id="scanTitle" data-i18n="scanTitle">Point the camera at the QR code</strong>
+                <span class="muted" id="scanHint" data-i18n="scanHint">Shown by the host panel: Overview, QR code</span>
+                <button class="btn" type="button" id="scanClose" data-i18n="scanClose">Cancel</button>
+            </div>
         </section>
 
         <!-- Pending / closed -->

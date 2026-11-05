@@ -12,7 +12,7 @@ WARN_ON="minor"                    # minor | negligible | none
 FIX="none"                         # none | safe (auto fixes of the fully staged files, re-added before the check)
 MISSING="warn"                     # warn | fail | ignore (xstyle not installed)
 OUTPUT="auto"                      # auto (compact under Claude Code / XSTYLE_RTK) | human | rtk
-EXTRA_ARGS="-e build,_deps,third_party"                      # more xstyle options (-l cpp,py -e build -i G-TODO ...)
+EXTRA_ARGS="-e build,_deps,third_party,vendor"                      # more xstyle options (-l cpp,py -e build -i G-TODO ...)
 # <<< config <<<
 
 set -uo pipefail

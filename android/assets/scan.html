@@ -1,0 +1,96 @@
+<!doctype html>
+<!-- QR code scanner of the xdesk app: reads the link shown by the host panel, then navigates to it (the activity takes it) -->
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>xdesk - scan</title>
+    <style>
+        html, body { margin: 0; height: 100%; background: #000; color: #e4e7e9; font-family: system-ui, sans-serif; overflow: hidden; }
+        video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .frame { position: fixed; left: 50%; top: 42%; width: min(70vw, 60vh, 320px); aspect-ratio: 1; transform: translate(-50%, -50%); border: 3px solid #3ddc97; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .45); }
+        .bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; padding: 16px 16px max(16px, env(safe-area-inset-bottom)); background: #161a1d; border-top: 1px solid #2a3035; }
+        .muted { color: #8d969d; font-size: 14px; }
+        .error { color: #f0a742; }
+        button { min-height: 44px; min-width: 140px; font: inherit; color: #e4e7e9; background: #1d2226; border: 1px solid #2a3035; border-radius: 3px; }
+    </style>
+</head>
+<body>
+    <video id="video" playsinline muted></video>
+    <div class="frame" aria-hidden="true"></div>
+    <div class="bar">
+        <strong id="title">Point the camera at the QR code</strong>
+        <span class="muted" id="hint">Shown by the host panel: Overview, QR code</span>
+        <button type="button" id="cancel">Cancel</button>
+    </div>
+    <script src="/jsQR.js"></script>
+    <script>
+        "use strict";
+        (() => {
+            const fr = new URLSearchParams(location.search).get("lang") === "fr";
+            const video = document.getElementById("video");
+            const canvas = document.createElement("canvas");
+            let detector = null;
+
+            if (fr) {
+                document.getElementById("title").textContent = "Visez le QR code avec la caméra";
+                document.getElementById("hint").textContent = "Affiché par le panneau de l'hôte : Vue d'ensemble, QR code";
+                document.getElementById("cancel").textContent = "Annuler";
+            }
+
+            function fail(text) {
+                const hint = document.getElementById("hint");
+                hint.textContent = text;
+                hint.className = "error";
+            }
+
+            // xdesk:// or https:// links only: the activity checks them (fingerprint, confirmation)
+            function found(text) {
+                const value = (text || "").trim();
+                if (!/^(xdesk|https):\/\//i.test(value)) {
+                    fail(fr ? "Ce QR code n'est pas un lien xdesk." : "This QR code is not an xdesk link.");
+                    return false;
+                }
+                for (const track of (video.srcObject ? video.srcObject.getTracks() : [])) track.stop();
+                location.href = value;
+                return true;
+            }
+
+            async function frame() {
+                if (video.readyState >= 2 && video.videoWidth > 0) {
+                    try {
+                        if (detector) {
+                            const codes = await detector.detect(video);
+                            if (codes.length && found(codes[0].rawValue)) return;
+                        } else {
+                            const w = Math.min(640, video.videoWidth);
+                            const h = Math.round(video.videoHeight * w / video.videoWidth);
+                            canvas.width = w;
+                            canvas.height = h;
+                            const g = canvas.getContext("2d", {willReadFrequently: true});
+                            g.drawImage(video, 0, 0, w, h);
+                            const code = window.jsQR(g.getImageData(0, 0, w, h).data, w, h, {inversionAttempts: "dontInvert"});
+                            if (code && found(code.data)) return;
+                        }
+                    } catch (e) { /* next frame */ }
+                }
+                setTimeout(frame, 150);
+            }
+
+            async function start() {
+                try {
+                    if ("BarcodeDetector" in window && (await window.BarcodeDetector.getSupportedFormats()).includes("qr_code")) detector = new window.BarcodeDetector({formats: ["qr_code"]});
+                    video.srcObject = await navigator.mediaDevices.getUserMedia({video: {facingMode: {ideal: "environment"}}, audio: false});
+                    await video.play();
+                    frame();
+                } catch (e) {
+                    fail(fr ? "Caméra indisponible : autorisez-la dans les réglages d'Android." : "Camera unavailable: allow it in the Android settings.");
+                }
+            }
+
+            document.getElementById("cancel").addEventListener("click", () => {location.href = "xdesk-cancel:back";});
+            start();
+        })();
+    </script>
+</body>
+</html>

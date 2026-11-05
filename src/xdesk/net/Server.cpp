@@ -41,7 +41,7 @@ static const QByteArray SECURITY_HEADERS =
     "Cache-Control: no-store\r\n"
     "Cross-Origin-Opener-Policy: same-origin\r\n"
     "Cross-Origin-Resource-Policy: same-origin\r\n"
-    "Permissions-Policy: camera=(), microphone=(), geolocation=()\r\n";
+    "Permissions-Policy: camera=(self), microphone=(), geolocation=()\r\n"; // camera: QR code scanner of the web client
 
 static QByteArray content_type(const QString& path)
 {
