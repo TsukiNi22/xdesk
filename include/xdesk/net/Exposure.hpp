@@ -84,6 +84,7 @@ class Exposure: public QObject {
         QProcess _tailscale; // tailscale status --json
         Tailnet _tailnet; // last answer of tailscale
         QTimer _probe; // every 30 s: interfaces and tailnet may change
+        bool _active = false; // between start and stop (a late tailscale answer adds no endpoint after stop)
 
         // ---------- Pre-Function -------- //
         void refresh_(void); // recompute the endpoints

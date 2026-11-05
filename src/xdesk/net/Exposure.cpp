@@ -121,6 +121,8 @@ void xdesk::net::Exposure::onTailnet_(void)
     const QJsonObject self = o.value("Self").toObject();
     Tailnet tailnet;
 
+    if (!this->_active) return; // answer of a probe killed by stop
+
     tailnet.up = o.value("BackendState").toString() == "Running";
     tailnet.name = o.value("CurrentTailnet").toObject().value("Name").toString();
     if (o.value("CurrentTailnet").toObject().value("MagicDNSEnabled").toBool(true)) tailnet.dns = self.value("DNSName").toString();
@@ -157,6 +159,7 @@ void xdesk::net::Exposure::setStatus_(const QString& status)
 void xdesk::net::Exposure::start(const core::Settings& settings, const quint16 port, const QString& name, const QString& fingerprint)
 {
     this->stop();
+    this->_active = true;
     this->_mode = settings.exposure;
     this->_port = port;
     this->_publicHost = settings.publicHost;
@@ -180,7 +183,9 @@ void xdesk::net::Exposure::start(const core::Settings& settings, const quint16 p
 
 void xdesk::net::Exposure::stop(void)
 {
+    this->_active = false;
     this->_probe.stop();
+    if (this->_tailscale.state() != QProcess::NotRunning) this->_tailscale.kill();
     this->_announce.stop();
     this->_discovery.close();
     if (this->_tool.state() != QProcess::NotRunning) {
@@ -191,6 +196,8 @@ void xdesk::net::Exposure::stop(void)
     // Remove the router mapping (best effort, detached)
     if (this->_mode == core::Exposure::Upnp && this->_port != 0 && !QStandardPaths::findExecutable("upnpc").isEmpty())
         QProcess::startDetached("upnpc", {"-d", QString::number(this->_port), "TCP"});
+    this->_endpoints.clear();
+    this->_status = "";
 }
 
 void xdesk::net::Exposure::refresh_(void)
@@ -198,6 +205,7 @@ void xdesk::net::Exposure::refresh_(void)
     QList<Endpoint> endpoints;
     const QString port = QString::number(this->_port);
 
+    if (!this->_active) return;
     // The public endpoint first (found by the tool output for the tunnels), only the one of the chosen mode
     for (const Endpoint& e: this->_endpoints)
         if (e.label != "LAN" && e.label != "Tailscale" && e.label != "This PC" && e.label != "Internet") endpoints.append(e);
@@ -205,7 +213,10 @@ void xdesk::net::Exposure::refresh_(void)
         endpoints.append({"Internet", "Anyone on the internet, through the port you forwarded on the router", "https://" + this->_publicHost + ":" + port, this->_publicHost, "", this->_port, true});
     if (this->_mode == core::Exposure::Tailscale && this->_tailnet.up) {
         const QString host = this->_tailnet.dns.isEmpty() ? this->_tailnet.ip : this->_tailnet.dns;
-        endpoints.append({"Tailscale", "Your devices signed in to " + (this->_tailnet.name.isEmpty() ? QString("the tailnet") : "the tailnet " + this->_tailnet.name), "https://" + host + ":" + port, host, host == this->_tailnet.ip ? QString() : this->_tailnet.ip, this->_port, true});
+        const QString web = this->_tailnet.ip.isEmpty() ? host : this->_tailnet.ip;
+
+        // The browsers get the IP: every *.ts.net name is HSTS preloaded, so a self-signed certificate is refused there without any exception
+        endpoints.append({"Tailscale", "Your devices signed in to " + (this->_tailnet.name.isEmpty() ? QString("the tailnet") : "the tailnet " + this->_tailnet.name), "https://" + web + ":" + port, host, "", this->_port, true});
     }
 
     // LAN: always open while sharing
