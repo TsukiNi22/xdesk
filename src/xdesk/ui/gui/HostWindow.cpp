@@ -26,25 +26,31 @@ File Description:
 #include "xdesk/ui/gui/HostWindow.hpp"
 #include "xdesk/security/Crypto.hpp"
 #include "xdesk/ui/gui/Theme.hpp"
+#include <qrcodegen/qrcodegen.hpp>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QGuiApplication>
 #include <QJsonDocument>
 #include <QApplication>
 #include <QInputDialog>
+#include <QButtonGroup>
 #include <QHeaderView>
 #include <QFormLayout>
 #include <QMessageBox>
 #include <QCloseEvent>
 #include <QScrollArea>
+#include <QToolButton>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
+#include <functional>
 #include <QClipboard>
 #include <QDateTime>
 #include <QHostInfo>
 #include <QSplitter>
+#include <QPainter>
 #include <QDialog>
 #include <QAction>
+#include <QImage>
 #include <QMenu>
 #include <QFont>
 #include <QUrl>
@@ -80,11 +86,64 @@ static QPushButton* make_button(const QString& text, const QString& kind = "", c
     return button;
 }
 
+// Style property: the style sheet is applied again only when the value changes (no flicker on the 1 Hz refresh)
+static void set_prop(QWidget* widget, const char* name, const QVariant& value)
+{
+    if (widget->property(name) == value) return;
+    widget->setProperty(name, value);
+    widget->style()->unpolish(widget);
+    widget->style()->polish(widget);
+}
+
 static void set_tone(QLabel* label, const QString& tone)
 {
-    label->setProperty("tone", tone);
-    label->style()->unpolish(label);
-    label->style()->polish(label);
+    set_prop(label, "tone", tone);
+}
+
+// Card with a header strip (title in small capitals, actions on the right): the caller lays out the body
+static QFrame* make_panel(const QString& title, QWidget*& body, const QList<QWidget*>& actions = {}, QLabel** titleLabel = nullptr)
+{
+    QFrame* card = make_card();
+    QVBoxLayout* layout = new QVBoxLayout(card);
+    QWidget* head = new QWidget(card);
+    QHBoxLayout* headLayout = new QHBoxLayout(head);
+    QLabel* label = make_label(title, "subtitle");
+
+    layout->setContentsMargins(1, 1, 1, 1);
+    layout->setSpacing(0);
+    head->setObjectName("cardHead");
+    head->setAttribute(Qt::WA_StyledBackground, true);
+    headLayout->setContentsMargins(16, 6, 10, 6);
+    headLayout->setSpacing(6);
+    headLayout->addWidget(label);
+    headLayout->addStretch();
+    for (QWidget* action: actions)
+        headLayout->addWidget(action);
+    body = new QWidget(card);
+    layout->addWidget(head);
+    layout->addWidget(body, 1);
+    if (titleLabel) *titleLabel = label;
+    return card;
+}
+
+// Title of a page, one muted line under it, a widget on the right
+static QWidget* make_page_head(const QString& title, const QString& text, QWidget* right = nullptr, QLabel** textLabel = nullptr)
+{
+    QWidget* head = new QWidget();
+    QHBoxLayout* layout = new QHBoxLayout(head);
+    QVBoxLayout* texts = new QVBoxLayout();
+    QLabel* line = make_label(text, "muted");
+
+    head->setObjectName("pageHead");
+    layout->setContentsMargins(0, 0, 0, 6);
+    texts->setSpacing(3);
+    texts->addWidget(make_label(title, "title"));
+    line->setWordWrap(true);
+    texts->addWidget(line);
+    layout->addLayout(texts, 1);
+    if (right) layout->addWidget(right, 0, Qt::AlignTop);
+    if (textLabel) *textLabel = line;
+    return head;
 }
 
 static QTableWidget* make_table(const QStringList& headers)
@@ -97,12 +156,15 @@ static QTableWidget* make_table(const QStringList& headers)
         upper.append(header.toUpper());
     table->setHorizontalHeaderLabels(upper);
     table->verticalHeader()->hide();
+    table->verticalHeader()->setDefaultSectionSize(34);
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     table->setSelectionMode(QAbstractItemView::SingleSelection);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table->setShowGrid(false);
     table->setAlternatingRowColors(true);
+    table->setFrameShape(QFrame::NoFrame);
     table->horizontalHeader()->setStretchLastSection(true);
+    table->horizontalHeader()->setHighlightSections(false);
     table->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     return table;
@@ -127,6 +189,7 @@ static QComboBox* make_exposure_box(void)
     box->setItemData(4, "Also anyone on the internet, through Cloudflare (the relay decrypts the traffic)", Qt::ToolTipRole);
     box->setItemData(5, "Also anyone on the internet, through ngrok (TLS stays end to end, account needed)", Qt::ToolTipRole);
     box->setItemData(6, "Also anyone on the internet, through the port you forwarded on the router", Qt::ToolTipRole);
+    box->setMinimumWidth(250);
     return box;
 }
 
@@ -138,6 +201,38 @@ static QString since_text(const qint64 ms)
     if (seconds < 60) return QString::number(seconds) + " s";
     if (seconds < 3600) return QString::number(seconds / 60) + " min";
     return QString::number(seconds / 3600) + " h " + QString::number((seconds % 3600) / 60) + " min";
+}
+
+// QR code drawn black on white with its quiet zone (4 modules), as big as fits in size
+static QPixmap qr_pixmap(const QString& text, const int size)
+{
+    const qrcodegen::QrCode qr = qrcodegen::QrCode::encodeText(text.toUtf8().constData(), qrcodegen::QrCode::Ecc::MEDIUM);
+    const int modules = qr.getSize() + 8;
+    const int scale = std::max(1, size / modules);
+    QImage image(modules * scale, modules * scale, QImage::Format_RGB32);
+    QPainter p(&image);
+
+    image.fill(Qt::white);
+    p.setPen(Qt::NoPen);
+    p.setBrush(Qt::black);
+    for (int y = 0; y < qr.getSize(); ++y)
+        for (int x = 0; x < qr.getSize(); ++x)
+            if (qr.getModule(x, y)) p.drawRect((x + 4) * scale, (y + 4) * scale, scale, scale);
+    p.end();
+    return QPixmap::fromImage(image);
+}
+
+static QString endpoint_kind(const xdesk::net::Endpoint& e)
+{
+    if (e.label == "Tailscale") return "tailscale";
+    if (e.label == "LAN") return "lan";
+    if (e.label == "This PC") return "local";
+    return "internet";
+}
+
+static QString endpoint_command(const xdesk::net::Endpoint& e)
+{
+    return "xdesk connect " + e.host + (e.port != XDESK_DEFAULT_PORT ? " -p " + QString::number(e.port) : "");
 }
 
 //----------------------------------------------------------------//
@@ -154,26 +249,30 @@ xdesk::ui::gui::HostWindow::HostWindow(host::Host& host, QWidget* parent)
     QVBoxLayout* mainLayout = new QVBoxLayout(main);
     QHBoxLayout* brand = new QHBoxLayout();
     QLabel* logo = new QLabel();
+    QFrame* rule = new QFrame(sidebar);
     QHBoxLayout* bannerLayout = nullptr;
+    QLabel* bannerIcon = new QLabel();
     QPushButton* bannerClose = nullptr;
 
     this->setWindowTitle("xdesk - remote access");
     this->setWindowIcon(QIcon(Theme::logo(64)));
-    this->resize(1180, 760);
+    this->resize(1180, 780);
     rootLayout->setContentsMargins(0, 0, 0, 0);
     rootLayout->setSpacing(0);
 
-    // Sidebar
+    // Sidebar: brand, pages, theme, then the sharing switch at the bottom (always in reach)
     sidebar->setObjectName("sidebar");
-    sidebar->setFixedWidth(210);
-    sideLayout->setContentsMargins(14, 18, 14, 14);
+    sidebar->setAttribute(Qt::WA_StyledBackground, true);
+    sidebar->setFixedWidth(220);
+    sideLayout->setContentsMargins(14, 18, 14, 16);
+    sideLayout->setSpacing(6);
     logo->setPixmap(Theme::logo(30));
     brand->addWidget(logo);
     brand->addWidget(make_label("xdesk", "brand"));
     brand->addStretch();
     brand->addWidget(make_label(QString("v") + XDESK_VERSION, "version"));
     sideLayout->addLayout(brand);
-    sideLayout->addSpacing(14);
+    sideLayout->addSpacing(16);
     this->_nav = new QListWidget(sidebar);
     this->_nav->setObjectName("nav");
     this->_nav->setFrameShape(QFrame::NoFrame);
@@ -183,24 +282,32 @@ xdesk::ui::gui::HostWindow::HostWindow(host::Host& host, QWidget* parent)
     sideLayout->addWidget(this->_nav, 1);
     sideLayout->addWidget(make_label("Theme", "subtitle"));
     sideLayout->addWidget(Theme::switcher([this](const QString& theme) {this->_host.setTheme(theme);}, sidebar));
-    sideLayout->addSpacing(10);
-    this->_statusSessions = make_label("No session", "muted");
+    sideLayout->addSpacing(12);
+    rule->setObjectName("rule");
+    sideLayout->addWidget(rule);
+    sideLayout->addSpacing(8);
+    this->_statusSessions = make_label("", "muted");
+    this->_statusSessions->setWordWrap(true);
     sideLayout->addWidget(this->_statusSessions);
-    QPushButton* stop = make_button("Stop sharing", "danger", "power");
-    sideLayout->addWidget(stop);
-    QObject::connect(stop, &QPushButton::clicked, this, &HostWindow::quit_);
+    this->_share = make_button("", "", "power");
+    this->_share->setObjectName("share");
+    sideLayout->addWidget(this->_share);
+    QObject::connect(this->_share, &QPushButton::clicked, this, &HostWindow::toggleSharing_);
 
     // Pages + tamper banner
-    mainLayout->setContentsMargins(22, 18, 22, 18);
+    mainLayout->setContentsMargins(26, 22, 26, 22);
+    mainLayout->setSpacing(14);
     this->_banner = new QWidget(main);
     this->_banner->setObjectName("banner");
+    this->_banner->setAttribute(Qt::WA_StyledBackground, true);
     bannerLayout = new QHBoxLayout(this->_banner);
+    bannerLayout->setContentsMargins(14, 10, 10, 10);
     this->_bannerText = new QLabel(this->_banner);
-    this->_bannerText->setStyleSheet("color: white; font-weight: 600;");
     this->_bannerText->setWordWrap(true);
     bannerClose = make_button("Dismiss", "ghost");
     bannerClose->setStyleSheet("color: white;");
-    bannerLayout->addWidget(Theme::icon("shield", Qt::white).pixmap(20, 20).isNull() ? new QLabel() : [&]() {QLabel* l = new QLabel(); l->setPixmap(Theme::icon("shield", Qt::white).pixmap(20, 20)); return l;}());
+    bannerIcon->setPixmap(Theme::icon("shield", Qt::white).pixmap(20, 20));
+    bannerLayout->addWidget(bannerIcon);
     bannerLayout->addWidget(this->_bannerText, 1);
     bannerLayout->addWidget(bannerClose);
     this->_banner->hide();
@@ -290,14 +397,17 @@ void xdesk::ui::gui::HostWindow::retheme_(void)
         const QString icon = button->property("icon").toString();
         if (!icon.isEmpty()) button->setIcon(Theme::icon(icon, button->property("kind").toString() == "primary" ? Theme::palette().accentText : QColor()));
     }
+    this->_endpointKey.clear(); // rows drawn again with the new icons
+    this->refreshShare_();
     this->refreshOverview_();
     this->refreshDevices_();
 }
 
 void xdesk::ui::gui::HostWindow::closeEvent(QCloseEvent* event)
 {
-    if (this->_quitting || !this->_tray || !QSystemTrayIcon::isSystemTrayAvailable()) {
-        if (!this->_quitting && !this->_host.sessions().isEmpty() && QMessageBox::question(this, "Stop sharing", "Sessions are connected. Stop sharing and quit xdesk?") != QMessageBox::Yes) {
+    // Sharing + a tray: the panel hides, xdesk keeps sharing; otherwise closing the panel quits
+    if (this->_quitting || !this->_host.isSharing() || !this->_tray || !QSystemTrayIcon::isSystemTrayAvailable()) {
+        if (!this->_quitting && !this->_host.sessions().isEmpty() && QMessageBox::question(this, "Quit xdesk", "Sessions are connected. Stop sharing and quit xdesk?") != QMessageBox::Yes) {
             event->ignore();
             return;
         }
@@ -310,17 +420,47 @@ void xdesk::ui::gui::HostWindow::closeEvent(QCloseEvent* event)
     this->hide();
     this->_host.setPanelFocused(false);
     if (!this->_trayHintShown) {
-        this->_tray->showMessage("xdesk is still sharing", "The panel is in the tray. Quit from the tray menu to stop sharing.", QSystemTrayIcon::Information, 4000);
+        this->_tray->showMessage("xdesk is still sharing", "The panel is in the tray. Stop sharing or quit from the tray menu.", QSystemTrayIcon::Information, 4000);
         this->_trayHintShown = true;
     }
 }
 
 void xdesk::ui::gui::HostWindow::quit_(void)
 {
-    if (!this->_host.sessions().isEmpty() && QMessageBox::question(this, "Stop sharing", "Every session will be disconnected. Stop sharing and quit xdesk?") != QMessageBox::Yes) return;
+    if (!this->_host.sessions().isEmpty() && QMessageBox::question(this, "Quit xdesk", "Every session will be disconnected. Stop sharing and quit xdesk?") != QMessageBox::Yes) return;
     this->_quitting = true;
     this->_host.kickAll("The host stopped sharing");
     QApplication::quit();
+}
+
+void xdesk::ui::gui::HostWindow::toggleSharing_(void)
+{
+    const bool on = this->_host.isSharing();
+
+    if (on && !this->_host.sessions().isEmpty() && QMessageBox::question(this, "Stop sharing", "Every session will be disconnected. Stop sharing? (xdesk stays open)") != QMessageBox::Yes) return;
+    try {
+        this->_host.setSharing(!on);
+    } catch (const std::exception& e) {
+        QMessageBox::critical(this, "Start sharing", QString("Sharing could not start:\n") + e.what());
+    }
+    this->refreshOverview_();
+}
+
+void xdesk::ui::gui::HostWindow::refreshShare_(void)
+{
+    const bool on = this->_host.isSharing();
+
+    // Off: green "Start sharing" | on: red "Stop sharing"
+    this->_share->setText(on ? "Stop sharing" : "Start sharing");
+    this->_share->setToolTip(on ? "Close every connection and stop listening (xdesk stays open)" : "Listen for connections: the code and the addresses of the overview work again");
+    this->_share->setIcon(Theme::icon("power", on ? QColor(Qt::white) : Theme::palette().accentText));
+    set_prop(this->_share, "on", on);
+    this->_shareState->setText(on ? "● SHARING" : "● OFF");
+    this->_shareState->setToolTip(on ? "Connections are accepted on the addresses below" : "Nobody can connect: start sharing at the bottom left");
+    set_prop(this->_shareState, "on", on);
+    set_prop(this->_code, "off", !on);
+    this->_codeActions->setVisible(on);
+    if (this->_trayShare) this->_trayShare->setText(on ? "Stop sharing" : "Start sharing");
 }
 
 void xdesk::ui::gui::HostWindow::buildTray_(void)
@@ -329,13 +469,14 @@ void xdesk::ui::gui::HostWindow::buildTray_(void)
 
     if (!QSystemTrayIcon::isSystemTrayAvailable()) return;
     this->_tray = new QSystemTrayIcon(QIcon(Theme::logo(64)), this);
-    this->_tray->setToolTip("xdesk - sharing");
+    this->_tray->setToolTip("xdesk");
     menu->addAction("Open the panel", this, [this]() {this->showNormal(); this->raise(); this->activateWindow();});
+    this->_trayShare = menu->addAction("Start sharing", this, &HostWindow::toggleSharing_);
     menu->addAction("Copy the code", this, [this]() {QGuiApplication::clipboard()->setText(this->_host.code().display());});
     menu->addAction("New code", this, [this]() {this->_host.rotateCode();});
     menu->addSeparator();
     menu->addAction("Disconnect everybody", this, [this]() {this->_host.kickAll("Disconnected by the host");});
-    menu->addAction("Quit (stop sharing)", this, &HostWindow::quit_);
+    menu->addAction("Quit xdesk", this, &HostWindow::quit_);
     this->_tray->setContextMenu(menu);
     QObject::connect(this->_tray, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger) {this->showNormal(); this->raise(); this->activateWindow();}
@@ -351,136 +492,314 @@ QWidget* xdesk::ui::gui::HostWindow::buildOverview_(void)
     QWidget* page = new QWidget();
     QVBoxLayout* layout = new QVBoxLayout(page);
     QHBoxLayout* top = new QHBoxLayout();
-    QFrame* codeCard = make_card();
-    QVBoxLayout* codeLayout = new QVBoxLayout(codeCard);
-    QHBoxLayout* codeButtons = new QHBoxLayout();
+    QWidget* codeBody = nullptr;
+    QWidget* statusBody = nullptr;
+    QWidget* endpointsBody = nullptr;
     QPushButton* copy = make_button("Copy", "", "copy");
     QPushButton* rotate = make_button("New code", "ghost", "refresh");
-    QFrame* statusCard = make_card();
-    QFormLayout* statusLayout = new QFormLayout(statusCard);
-    QFrame* endpointsCard = make_card();
-    QVBoxLayout* endpointsLayout = new QVBoxLayout(endpointsCard);
-    QHBoxLayout* exposureRow = new QHBoxLayout();
+    QPushButton* qr = make_button("QR code", "", "qr");
+    QHBoxLayout* codeButtons = nullptr;
+    QVBoxLayout* codeLayout = nullptr;
+    QFormLayout* statusLayout = nullptr;
+    QVBoxLayout* endpointsLayout = nullptr;
+    QFrame* codeCard = make_panel("Connection code", codeBody);
+    QFrame* statusCard = make_panel("Status", statusBody);
+    QFrame* endpointsCard = nullptr;
 
+    layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(16);
-    layout->addWidget(make_label("Overview", "title"));
-    this->_identity = make_label("", "muted");
-    layout->addWidget(this->_identity);
+    this->_shareState = make_label("", "pill");
+    layout->addWidget(make_page_head("Overview", "", this->_shareState, &this->_identity));
 
     // Code
     codeCard->setProperty("accent", true);
-    codeLayout->setContentsMargins(22, 18, 22, 18);
-    codeLayout->addWidget(make_label("Connection code", "subtitle"));
+    codeLayout = new QVBoxLayout(codeBody);
+    codeLayout->setContentsMargins(20, 16, 20, 18);
+    codeLayout->setSpacing(8);
     codeLayout->addWidget(make_label("Give it to the person who connects: it works once, then changes", "muted"));
     this->_code = make_label("---", "code");
     codeLayout->addWidget(this->_code);
-    this->_codeBar = new QProgressBar(codeCard);
+    this->_codeBar = new QProgressBar(codeBody);
     this->_codeBar->setTextVisible(false);
-    this->_codeBar->setFixedHeight(4);
+    this->_codeBar->setFixedHeight(3);
     codeLayout->addWidget(this->_codeBar);
     this->_codeTimer = make_label("", "muted");
+    this->_codeTimer->setWordWrap(true);
     codeLayout->addWidget(this->_codeTimer);
     this->_fingerprint = make_label("", "muted");
     this->_fingerprint->setToolTip(security::fingerprint_text(this->_host.certificate().fingerprint()));
     codeLayout->addWidget(this->_fingerprint);
+    codeLayout->addStretch();
+    this->_codeActions = new QWidget(codeBody);
+    codeButtons = new QHBoxLayout(this->_codeActions);
+    codeButtons->setContentsMargins(0, 6, 0, 0);
     codeButtons->addWidget(copy);
+    codeButtons->addWidget(qr);
     codeButtons->addWidget(rotate);
     codeButtons->addStretch();
-    codeLayout->addLayout(codeButtons);
+    codeLayout->addWidget(this->_codeActions);
+    copy->setToolTip("Copy the code");
+    qr->setToolTip("Show a QR code to scan with a phone: it opens the xdesk app or the browser with the code filled in");
     QObject::connect(copy, &QPushButton::clicked, this, [this]() {QGuiApplication::clipboard()->setText(this->_host.code().display());});
+    QObject::connect(qr, &QPushButton::clicked, this, [this]() {this->showQr_(-1);});
     QObject::connect(rotate, &QPushButton::clicked, this, [this]() {this->_host.rotateCode();});
 
     // Status
-    statusLayout->setContentsMargins(20, 18, 20, 18);
-    statusLayout->setVerticalSpacing(10);
-    statusLayout->addRow(make_label("Status", "subtitle"));
+    statusLayout = new QFormLayout(statusBody);
+    statusLayout->setContentsMargins(20, 16, 20, 18);
+    statusLayout->setVerticalSpacing(12);
+    statusLayout->setHorizontalSpacing(18);
+    statusLayout->setLabelAlignment(Qt::AlignLeft | Qt::AlignTop);
     this->_statusCapture = make_label("-");
+    this->_statusCapture->setWordWrap(true);
     this->_statusInput = make_label("-");
     this->_statusTls = make_label(security::tls_summary());
     this->_statusTls->setWordWrap(true);
-    statusLayout->addRow("Screen", this->_statusCapture);
-    statusLayout->addRow("Input", this->_statusInput);
-    statusLayout->addRow("Encryption", this->_statusTls);
+    statusLayout->addRow(make_label("Screen", "muted"), this->_statusCapture);
+    statusLayout->addRow(make_label("Input", "muted"), this->_statusInput);
+    statusLayout->addRow(make_label("Encryption", "muted"), this->_statusTls);
+    top->setSpacing(16);
     top->addWidget(codeCard, 3);
     top->addWidget(statusCard, 2);
     layout->addLayout(top);
 
-    // Endpoints
-    endpointsLayout->setContentsMargins(20, 18, 20, 18);
-    exposureRow->addWidget(make_label("Who can reach this PC", "subtitle"));
-    exposureRow->addStretch();
-    exposureRow->addWidget(make_label("Open to", "muted"));
+    // Addresses: one row per path, the exposure chooser in the header
     this->_exposure = make_exposure_box();
-    exposureRow->addWidget(this->_exposure);
-    endpointsLayout->addLayout(exposureRow);
+    endpointsCard = make_panel("Who can reach this PC", endpointsBody, {make_label("Open to", "muted"), this->_exposure});
+    endpointsLayout = new QVBoxLayout(endpointsBody);
+    endpointsLayout->setContentsMargins(0, 0, 0, 0);
+    endpointsLayout->setSpacing(0);
     this->_exposureStatus = make_label("", "muted");
     this->_exposureStatus->setWordWrap(true);
+    this->_exposureStatus->setContentsMargins(16, 12, 16, 10);
     endpointsLayout->addWidget(this->_exposureStatus);
-    this->_endpoints = make_table({"Path", "Who can use it", "Address"});
-    this->_endpoints->horizontalHeader()->setStretchLastSection(false);
-    this->_endpoints->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-    this->_endpoints->setWordWrap(true);
-    endpointsLayout->addWidget(this->_endpoints);
-    QObject::connect(this->_endpoints, &QTableWidget::cellDoubleClicked, this, [this](const int row, const int column) {
-        const QTableWidgetItem* item = this->_endpoints->item(row, 2);
-        (void)column;
-        QGuiApplication::clipboard()->setText(item->text());
-        this->_exposureStatus->setText("Copied " + item->text() + "  (xdesk app: " + item->data(Qt::UserRole).toString() + ")");
-    });
+    this->_endpointList = new QWidget(endpointsBody);
+    new QVBoxLayout(this->_endpointList);
+    this->_endpointList->layout()->setContentsMargins(0, 0, 0, 0);
+    this->_endpointList->layout()->setSpacing(0);
+    endpointsLayout->addWidget(this->_endpointList);
+    endpointsLayout->addStretch();
     QObject::connect(this->_exposure, &QComboBox::activated, this, [this](const int) {
         core::Settings s = this->_host.config().settings();
         s.exposure = core::exposure_from(this->_exposure->currentData().toString());
         if (!this->_host.applySettings(s)) QMessageBox::warning(this, "Locked", "Settings cannot change while a remote session controls this PC or has a terminal.");
         this->loadSettings_();
     });
-    layout->addWidget(endpointsCard, 1);
+    layout->addWidget(endpointsCard);
+    layout->addStretch(1);
     return page;
 }
 
 void xdesk::ui::gui::HostWindow::refreshOverview_(void)
 {
     const security::PairingCode& code = this->_host.code();
+    const bool on = this->_host.isSharing();
     const int left = code.secondsLeft();
     const int lifetime = std::max(1, this->_host.config().settings().codeLifetime);
-    const QList<net::Endpoint>& endpoints = this->_host.exposure().endpoints();
-    int active = 0;
-
-    this->_code->setText(code.display());
-    this->_codeBar->setVisible(left >= 0);
-    this->_codeBar->setRange(0, lifetime);
-    this->_codeBar->setValue(std::max(0, left));
-    this->_codeTimer->setText(left >= 0 ? "Changes in " + QString::number(left / 60) + ":" + QString::number(left % 60).rightJustified(2, '0') + ", and after each use" : "Changes after each use");
-    this->_fingerprint->setText("Host identity " + security::fingerprint_short(this->_host.certificate().fingerprint()) + "  (the native clients show the same one)");
-    this->_statusCapture->setText(this->_host.captureBackend().isEmpty() ? QString("idle, starts with the first viewer") : this->_host.captureBackend());
-    set_tone(this->_statusCapture, this->_host.captureBackend().startsWith("none") ? "danger" : (this->_host.captureBackend().isEmpty() ? "muted" : "success"));
-    this->_statusInput->setText(!this->_host.inputError().isEmpty() ? "unavailable" : (this->_host.captureBackend().isEmpty() ? QString("idle") : this->_host.inputBackend()));
-    this->_statusInput->setToolTip(this->_host.inputError());
-    set_tone(this->_statusInput, !this->_host.inputError().isEmpty() ? "warning" : (this->_host.inputBackend() == "none" ? "muted" : "success"));
     const net::Tailnet& tailnet = this->_host.exposure().tailnet();
     QString identity = "This PC is <b>" + QHostInfo::localHostName().toHtmlEscaped() + "</b>";
-    if (this->_host.exposure().mode() == core::Exposure::Tailscale && tailnet.up && !tailnet.dns.isEmpty())
+    int active = 0;
+
+    this->refreshShare_();
+    this->_code->setText(on ? code.display() : "OFF");
+    this->_codeBar->setVisible(on && left >= 0);
+    this->_codeBar->setRange(0, lifetime);
+    this->_codeBar->setValue(std::max(0, left));
+    if (!on) this->_codeTimer->setText("Nobody can connect while sharing is off. Start sharing (bottom left) to get a code.");
+    else this->_codeTimer->setText(left >= 0 ? "Changes in " + QString::number(left / 60) + ":" + QString::number(left % 60).rightJustified(2, '0') + ", and after each use" : "Changes after each use");
+    this->_fingerprint->setText("Host identity " + security::fingerprint_short(this->_host.certificate().fingerprint()) + "  (the native clients show the same one)");
+    if (!on) this->_statusCapture->setText("off");
+    else this->_statusCapture->setText(this->_host.captureBackend().isEmpty() ? QString("idle, starts with the first viewer") : this->_host.captureBackend());
+    set_tone(this->_statusCapture, !on || this->_host.captureBackend().isEmpty() ? "muted" : (this->_host.captureBackend().startsWith("none") ? "danger" : "success"));
+    this->_statusInput->setText(!on ? QString("off") : (!this->_host.inputError().isEmpty() ? "unavailable" : (this->_host.captureBackend().isEmpty() ? QString("idle") : this->_host.inputBackend())));
+    this->_statusInput->setToolTip(this->_host.inputError());
+    set_tone(this->_statusInput, !on ? "muted" : (!this->_host.inputError().isEmpty() ? "warning" : (this->_host.inputBackend() == "none" ? "muted" : "success")));
+    if (on && this->_host.exposure().mode() == core::Exposure::Tailscale && tailnet.up && !tailnet.dns.isEmpty())
         identity += "  ·  on Tailscale it is <b>" + tailnet.dns.section('.', 0, 0).toHtmlEscaped() + "</b> (" + tailnet.dns.toHtmlEscaped() + ")";
     this->_identity->setText(identity);
-    this->_exposure->setCurrentIndex(std::max(0, this->_exposure->findData(core::exposure_name(this->_host.exposure().mode()))));
-    this->_exposureStatus->setText(this->_host.exposure().status() + ".  Open the address in a browser or a phone, or give it to the xdesk app. Double click to copy.");
-    this->_endpoints->setRowCount(static_cast<int>(endpoints.size()));
-    for (int i = 0; i < endpoints.size(); ++i) {
-        const net::Endpoint& e = endpoints[i];
-        const QString command = "xdesk connect " + e.host + (e.port != XDESK_DEFAULT_PORT ? " -p " + QString::number(e.port) : "");
-        const QString tip = command + "\n" + (e.ip.isEmpty() ? QString() : "IP address " + e.ip + "\n") + (e.endToEnd ? "Encrypted end to end (TLS 1.3 + ML-KEM)" : "The relay decrypts the traffic: prefer another path for sensitive work");
-        QTableWidgetItem* items[3] = {new QTableWidgetItem(e.label), new QTableWidgetItem(e.reach), new QTableWidgetItem(e.url)};
-        items[2]->setData(Qt::UserRole, command);
-        items[2]->setFont(QFont(Theme::monospaceFamily(), 9));
-        for (int c = 0; c < 3; ++c) {
-            items[c]->setToolTip(tip);
-            this->_endpoints->setItem(i, c, items[c]);
-        }
-        if (!e.endToEnd) items[1]->setForeground(Theme::palette().warning);
-    }
+    this->_exposure->setCurrentIndex(std::max(0, this->_exposure->findData(core::exposure_name(this->_host.config().settings().exposure))));
+    this->_exposureStatus->setText(on ? this->_host.exposure().status() + "." : "Sharing is off: every path is closed. The choice above applies when sharing starts.");
+    this->refreshEndpoints_();
     for (const host::Session* s: this->_host.sessions())
         active += s->state() == host::State::Active;
-    this->_statusSessions->setText(active == 0 ? "No session" : QString::number(active) + (active == 1 ? " session connected" : " sessions connected"));
-    if (this->_tray) this->_tray->setToolTip("xdesk - " + this->_statusSessions->text() + " - code " + code.display());
+    if (!on) this->_statusSessions->setText("Not sharing: nobody can connect");
+    else this->_statusSessions->setText(active == 0 ? "Sharing, no session yet" : QString::number(active) + (active == 1 ? " session connected" : " sessions connected"));
+    if (this->_tray) this->_tray->setToolTip(on ? "xdesk - " + this->_statusSessions->text() + " - code " + code.display() : QString("xdesk - not sharing"));
+}
+
+void xdesk::ui::gui::HostWindow::refreshEndpoints_(void)
+{
+    const QList<net::Endpoint>& endpoints = this->_host.exposure().endpoints();
+    const bool on = this->_host.isSharing();
+    QLayout* layout = this->_endpointList->layout();
+    QString key = on ? "on" : "off";
+
+    // Rebuilt only when an address changes (the overview refreshes every second)
+    for (const net::Endpoint& e: endpoints)
+        key += "\n" + e.label + "|" + e.url + "|" + e.reach + "|" + e.host + "|" + e.ip + "|" + (e.endToEnd ? "1" : "0");
+    if (key == this->_endpointKey) return;
+    this->_endpointKey = key;
+    while (QLayoutItem* item = layout->takeAt(0)) {
+        if (item->widget()) item->widget()->deleteLater();
+        delete item;
+    }
+    if (!on || endpoints.isEmpty()) {
+        QLabel* empty = make_label(on ? "Looking for the addresses of this PC..." : "No address while sharing is off.", "muted");
+        empty->setContentsMargins(16, 6, 16, 12);
+        layout->addWidget(empty);
+        if (!on) {
+            QWidget* actions = new QWidget(this->_endpointList);
+            QHBoxLayout* actionsLayout = new QHBoxLayout(actions);
+            QPushButton* start = make_button("Start sharing", "primary", "power");
+            actionsLayout->setContentsMargins(16, 0, 16, 16);
+            actionsLayout->addWidget(start);
+            actionsLayout->addStretch();
+            QObject::connect(start, &QPushButton::clicked, this, &HostWindow::toggleSharing_);
+            layout->addWidget(actions);
+        }
+        return;
+    }
+    for (int i = 0; i < endpoints.size(); ++i) {
+        const net::Endpoint& e = endpoints[i];
+        const QString urlHost = QUrl(e.url).host();
+        QFrame* row = new QFrame(this->_endpointList);
+        QHBoxLayout* rowLayout = new QHBoxLayout(row);
+        QVBoxLayout* texts = new QVBoxLayout();
+        QLabel* tag = make_label(e.label.toUpper(), "tag");
+        QLabel* address = make_label(e.url, "address");
+        QLabel* reach = make_label(e.reach);
+        QPushButton* copy = make_button("", "ghost", "copy");
+        QPushButton* qr = make_button("", "ghost", "qr");
+        QStringList details = {e.reach};
+
+        // <tag> <address / who can use it> <copy> <qr>
+        if (e.host != urlHost) details << "xdesk connect " + e.host;
+        if (!e.ip.isEmpty()) details << "IP " + e.ip;
+        if (!e.endToEnd) details << "the relay decrypts the traffic";
+        reach->setText(details.join("  ·  "));
+        reach->setWordWrap(true);
+        set_tone(reach, e.endToEnd ? "muted" : "warning");
+        row->setObjectName("endpoint");
+        row->setProperty("last", i == endpoints.size() - 1);
+        row->setAttribute(Qt::WA_StyledBackground, true);
+        row->setToolTip(endpoint_command(e) + "\n" + (e.endToEnd ? "Encrypted end to end (TLS 1.3 + ML-KEM)" : "The relay decrypts the traffic: prefer another path for sensitive work"));
+        rowLayout->setContentsMargins(16, 10, 12, 10);
+        rowLayout->setSpacing(14);
+        tag->setProperty("kind", endpoint_kind(e));
+        tag->setAlignment(Qt::AlignCenter);
+        tag->setFixedWidth(92);
+        texts->setSpacing(3);
+        texts->addWidget(address);
+        texts->addWidget(reach);
+        copy->setToolTip("Copy " + e.url);
+        qr->setToolTip("QR code of this address (with the code)");
+        rowLayout->addWidget(tag, 0, Qt::AlignVCenter);
+        rowLayout->addLayout(texts, 1);
+        rowLayout->addWidget(copy);
+        rowLayout->addWidget(qr);
+        QObject::connect(copy, &QPushButton::clicked, this, [copy, url = e.url]() {
+            QGuiApplication::clipboard()->setText(url);
+            copy->setText("Copied");
+            QTimer::singleShot(1500, copy, [copy]() {copy->setText("");});
+        });
+        QObject::connect(qr, &QPushButton::clicked, this, [this, i]() {this->showQr_(i);});
+        layout->addWidget(row);
+    }
+}
+
+void xdesk::ui::gui::HostWindow::showQr_(const int endpoint)
+{
+    QDialog* dialog = new QDialog(this);
+    QVBoxLayout* layout = new QVBoxLayout(dialog);
+    QComboBox* address = new QComboBox(dialog);
+    QWidget* target = new QWidget(dialog);
+    QHBoxLayout* targetLayout = new QHBoxLayout(target);
+    QButtonGroup* group = new QButtonGroup(dialog);
+    QToolButton* app = new QToolButton(target);
+    QToolButton* browser = new QToolButton(target);
+    QLabel* image = new QLabel(dialog);
+    QLabel* link = make_label("", "mono");
+    QLabel* hint = make_label("", "muted");
+    QLabel* lead = make_label("The camera of the phone opens the link: the code is filled in, and the app also pins the identity of this PC.", "muted");
+    QPushButton* copy = make_button("Copy the link", "ghost", "copy");
+    QPushButton* close = make_button("Close", "ghost");
+    QHBoxLayout* buttons = new QHBoxLayout();
+    const QList<net::Endpoint> endpoints = this->_host.exposure().endpoints();
+    int first = -1;
+    std::function<void(void)> draw;
+
+    if (!this->_host.isSharing() || endpoints.isEmpty()) {
+        QMessageBox::information(this, "QR code", "Start sharing first: the QR code holds an address of this PC and the connection code.");
+        dialog->deleteLater();
+        return;
+    }
+    dialog->setWindowTitle("QR code - xdesk");
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setFixedWidth(440);
+    layout->setContentsMargins(24, 20, 24, 20);
+    layout->setSpacing(10);
+    layout->addWidget(make_label("Scan with a phone", "title"));
+    lead->setWordWrap(true);
+    layout->addWidget(lead);
+    for (int i = 0; i < endpoints.size(); ++i) {
+        address->addItem(endpoints[i].label + "  ·  " + QUrl(endpoints[i].url).host(), i);
+        if (first < 0 && endpoint_kind(endpoints[i]) != "local") first = i;
+    }
+    address->setCurrentIndex(endpoint >= 0 && endpoint < endpoints.size() ? endpoint : std::max(0, first));
+    layout->addWidget(address);
+
+    // App link (xdesk://, pinned fingerprint) | browser link (https://, web client)
+    target->setObjectName("segmented");
+    target->setAttribute(Qt::WA_StyledBackground, true);
+    targetLayout->setContentsMargins(1, 1, 1, 1);
+    targetLayout->setSpacing(0);
+    app->setText("xdesk app (Android)");
+    browser->setText("Browser");
+    for (QToolButton* button: {app, browser}) {
+        button->setCheckable(true);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        group->addButton(button);
+        targetLayout->addWidget(button);
+    }
+    app->setChecked(true);
+    layout->addWidget(target);
+    image->setObjectName("qr");
+    image->setAlignment(Qt::AlignCenter);
+    layout->addWidget(image, 0, Qt::AlignHCenter);
+    link->setWordWrap(true);
+    link->setAlignment(Qt::AlignCenter);
+    layout->addWidget(link);
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+    buttons->addWidget(copy);
+    buttons->addStretch();
+    buttons->addWidget(close);
+    layout->addLayout(buttons);
+    draw = [this, address, app, image, link, hint, endpoints]() {
+        const net::Endpoint& e = endpoints.value(address->currentData().toInt());
+        const QUrl url(e.url);
+        const QString code = security::normalize_code(this->_host.code().display());
+        const QString hostPort = url.host().contains(':') ? "[" + url.host() + "]:" + QString::number(url.port(e.port)) : url.host() + ":" + QString::number(url.port(e.port));
+        const QString text = app->isChecked()
+            ? "xdesk://" + hostPort + "?fp=" + QString::fromLatin1(this->_host.certificate().fingerprint().toHex()) + "&code=" + code
+            : "https://" + hostPort + "/?code=" + code;
+
+        image->setPixmap(qr_pixmap(text, 300));
+        link->setText(text.section('?', 0, 0) + "  ·  code " + this->_host.code().display()); // the fingerprint stays in the tooltip (too long to read)
+        link->setToolTip(text);
+        hint->setText(app->isChecked()
+            ? "Android: the camera (or Google Lens) opens the xdesk app, which trusts this PC without asking. No app yet: use Browser, the web page offers it."
+            : "Any phone: the camera opens the web client with the code. The browser warns once about the self-signed certificate: compare the host identity.");
+    };
+    QObject::connect(address, &QComboBox::currentIndexChanged, dialog, [draw](const int) {draw();});
+    QObject::connect(group, &QButtonGroup::buttonClicked, dialog, [draw](QAbstractButton*) {draw();});
+    QObject::connect(&this->_host.code(), &security::PairingCode::changed, dialog, [draw](const QString&) {draw();}); // the code changes after each use
+    QObject::connect(&this->_host, &host::Host::stateChanged, dialog, [this, dialog]() {if (!this->_host.isSharing()) dialog->close();});
+    QObject::connect(close, &QPushButton::clicked, dialog, &QDialog::close);
+    QObject::connect(copy, &QPushButton::clicked, dialog, [link]() {QGuiApplication::clipboard()->setText(link->toolTip());});
+    draw();
+    dialog->show();
 }
 
 //----------------------------------------------------------------//
@@ -491,37 +810,45 @@ QWidget* xdesk::ui::gui::HostWindow::buildSessions_(void)
     QWidget* page = new QWidget();
     QVBoxLayout* layout = new QVBoxLayout(page);
     QSplitter* splitter = new QSplitter(Qt::Vertical, page);
-    QFrame* detailCard = make_card();
-    QVBoxLayout* detailLayout = new QVBoxLayout(detailCard);
-    QHBoxLayout* head = new QHBoxLayout();
+    QWidget* listBody = nullptr;
+    QWidget* detailBody = nullptr;
     QHBoxLayout* perms = new QHBoxLayout();
     QPushButton* kick = make_button("Disconnect", "", "power");
     QPushButton* ban = make_button("Ban", "danger", "lock");
+    QFrame* listCard = make_panel("Connected devices", listBody);
+    QFrame* detailCard = make_panel("Select a session", detailBody, {kick, ban}, &this->_detailTitle);
+    QVBoxLayout* listLayout = new QVBoxLayout(listBody);
+    QVBoxLayout* detailLayout = new QVBoxLayout(detailBody);
     QTabWidget* tabs = new QTabWidget();
 
-    layout->addWidget(make_label("Sessions", "title"));
-    layout->addWidget(make_label("Everything each connected device does, live. Select a session to see its inputs and terminals.", "muted"));
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(16);
+    layout->addWidget(make_page_head("Sessions", "Everything each connected device does, live. Select a session to see its inputs and terminals."));
+    listLayout->setContentsMargins(0, 0, 0, 0);
     this->_sessions = make_table({"Device", "Client", "Address", "State", "Mode", "Rights", "FPS", "Latency", "Kbit/s", "Since", "Last activity"});
-    splitter->addWidget(this->_sessions);
+    listLayout->addWidget(this->_sessions);
+    splitter->setObjectName("gap");
+    splitter->setHandleWidth(14);
+    splitter->setChildrenCollapsible(false);
+    splitter->addWidget(listCard);
     QObject::connect(this->_sessions, &QTableWidget::itemSelectionChanged, this, [this]() {
         const QList<QTableWidgetItem*> items = this->_sessions->selectedItems();
         this->selectSession_(items.isEmpty() ? QString() : items.front()->data(Qt::UserRole).toString());
     });
 
     // Detail
-    detailLayout->setContentsMargins(18, 14, 18, 14);
-    this->_detailTitle = make_label("Select a session", "subtitle");
-    head->addWidget(this->_detailTitle, 1);
-    head->addWidget(kick);
-    head->addWidget(ban);
-    detailLayout->addLayout(head);
+    detailLayout->setContentsMargins(0, 0, 0, 0);
+    detailLayout->setSpacing(0);
     this->_detailInfo = make_label("", "muted");
     this->_detailInfo->setWordWrap(true);
+    this->_detailInfo->setContentsMargins(16, 12, 16, 4);
     detailLayout->addWidget(this->_detailInfo);
     this->_permView = new QCheckBox("See the screen");
-    this->_permControl = new QCheckBox("Control keyboard & mouse");
+    this->_permControl = new QCheckBox("Control keyboard && mouse");
     this->_permTerminal = new QCheckBox("Open terminals");
     this->_permClipboard = new QCheckBox("Clipboard");
+    perms->setContentsMargins(16, 8, 16, 12);
+    perms->setSpacing(22);
     for (QCheckBox* box: {this->_permView, this->_permControl, this->_permTerminal, this->_permClipboard}) {
         perms->addWidget(box);
         QObject::connect(box, &QCheckBox::clicked, this, [this]() {
@@ -539,6 +866,7 @@ QWidget* xdesk::ui::gui::HostWindow::buildSessions_(void)
     this->_activity->setReadOnly(true);
     this->_activity->setMaximumBlockCount(2000);
     this->_activity->setFont(QFont(Theme::monospaceFamily(), 10));
+    tabs->setDocumentMode(true);
     tabs->addTab(this->_activity, Theme::icon("control"), "Live activity");
     this->_mirrorTabs = new QTabWidget();
     this->_mirrorTabs->setDocumentMode(true);
@@ -661,7 +989,7 @@ void xdesk::ui::gui::HostWindow::showApproval_(host::Session* session)
     QHBoxLayout* buttons = new QHBoxLayout();
     QPushButton* refuse = make_button("Refuse", "danger");
     QPushButton* accept = make_button("Accept", "");
-    QPushButton* trust = make_button("Accept & trust", "primary", "shield");
+    QPushButton* trust = make_button("Accept && trust", "primary", "shield");
     QLabel* countdown = make_label("", "muted");
     QTimer* timer = new QTimer(dialog);
     const QString id = session->id();
@@ -719,37 +1047,36 @@ QWidget* xdesk::ui::gui::HostWindow::buildDevices_(void)
 {
     QWidget* page = new QWidget();
     QVBoxLayout* layout = new QVBoxLayout(page);
-    QHBoxLayout* deviceButtons = new QHBoxLayout();
-    QHBoxLayout* addressButtons = new QHBoxLayout();
     QPushButton* trust = make_button("Trust", "", "shield");
     QPushButton* untrust = make_button("Untrust", "ghost");
     QPushButton* unban = make_button("Unban", "primary", "lock");
     QPushButton* forget = make_button("Forget", "danger");
     QPushButton* unbanAddress = make_button("Unban address", "primary", "lock");
+    QWidget* devicesBody = nullptr;
+    QWidget* addressesBody = nullptr;
+    QFrame* devicesCard = make_panel("Known devices", devicesBody, {trust, untrust, forget, unban});
+    QFrame* addressesCard = make_panel("Banned addresses", addressesBody, {unbanAddress});
+    QVBoxLayout* devicesLayout = new QVBoxLayout(devicesBody);
+    QVBoxLayout* addressesLayout = new QVBoxLayout(addressesBody);
     std::function<QString(QTableWidget*)> selected = [](QTableWidget* table) {
         const QList<QTableWidgetItem*> items = table->selectedItems();
         return items.isEmpty() ? QString() : items.front()->data(Qt::UserRole).toString();
     };
 
-    layout->addWidget(make_label("Devices", "title"));
-    layout->addWidget(make_label("Trusted devices reconnect without a code. Banned devices and addresses are refused until you unban them here, on this PC.", "muted"));
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(16);
+    layout->addWidget(make_page_head("Devices", "Trusted devices reconnect without a code. Banned devices and addresses are refused until you unban them here, on this PC."));
     this->_lockInfo = make_label("", "");
     this->_lockInfo->setWordWrap(true);
     layout->addWidget(this->_lockInfo);
+    devicesLayout->setContentsMargins(0, 0, 0, 0);
     this->_devices = make_table({"Device", "Client", "OS", "Last address", "State", "Sessions", "Last seen", "Reason"});
-    layout->addWidget(this->_devices, 2);
-    deviceButtons->addWidget(trust);
-    deviceButtons->addWidget(untrust);
-    deviceButtons->addStretch();
-    deviceButtons->addWidget(forget);
-    deviceButtons->addWidget(unban);
-    layout->addLayout(deviceButtons);
-    layout->addWidget(make_label("Banned addresses", "subtitle"));
+    devicesLayout->addWidget(this->_devices);
+    layout->addWidget(devicesCard, 2);
+    addressesLayout->setContentsMargins(0, 0, 0, 0);
     this->_addresses = make_table({"Address", "Reason", "Since", "Until"});
-    layout->addWidget(this->_addresses, 1);
-    addressButtons->addStretch();
-    addressButtons->addWidget(unbanAddress);
-    layout->addLayout(addressButtons);
+    addressesLayout->addWidget(this->_addresses);
+    layout->addWidget(addressesCard, 1);
     this->_localButtons = {trust, untrust, unban, forget, unbanAddress};
     QObject::connect(trust, &QPushButton::clicked, this, [this, selected]() {
         const QString id = selected(this->_devices);
@@ -840,11 +1167,14 @@ QWidget* xdesk::ui::gui::HostWindow::buildLogs_(void)
 {
     QWidget* page = new QWidget();
     QVBoxLayout* layout = new QVBoxLayout(page);
-    QHBoxLayout* filters = new QHBoxLayout();
-    QPushButton* open = make_button("Open the log folder", "ghost", "logs");
+    QPushButton* open = make_button("Open the folder", "ghost", "logs");
+    QWidget* body = nullptr;
+    QFrame* card = nullptr;
+    QVBoxLayout* bodyLayout = nullptr;
 
-    layout->addWidget(make_label("Logs", "title"));
-    layout->addWidget(make_label("Audit trail of every connection, decision, input and terminal command (jsonl, one file per day).", "muted"));
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(16);
+    layout->addWidget(make_page_head("Logs", "Audit trail of every connection, decision, input and terminal command (jsonl, one file per day). Double click an entry for its details."));
     this->_logLevel = new QComboBox();
     this->_logLevel->addItems({"all levels", "info", "warn", "alert"});
     this->_logCategory = new QComboBox();
@@ -852,19 +1182,21 @@ QWidget* xdesk::ui::gui::HostWindow::buildLogs_(void)
     this->_logSearch = new QLineEdit();
     this->_logSearch->setPlaceholderText("Search (session, address, text)...");
     this->_logSearch->setClearButtonEnabled(true);
-    filters->addWidget(this->_logLevel);
-    filters->addWidget(this->_logCategory);
-    filters->addWidget(this->_logSearch, 1);
-    filters->addWidget(open);
-    layout->addLayout(filters);
+    this->_logSearch->setMinimumWidth(240);
+    card = make_panel("Entries", body, {this->_logLevel, this->_logCategory, this->_logSearch, open});
+    bodyLayout = new QVBoxLayout(body);
+    bodyLayout->setContentsMargins(0, 0, 0, 0);
     this->_logs = new QTreeWidget();
-    this->_logs->setHeaderLabels({"Time", "Level", "Category", "Session", "Message"});
+    this->_logs->setHeaderLabels({"TIME", "LEVEL", "CATEGORY", "SESSION", "MESSAGE"});
     this->_logs->setRootIsDecorated(false);
     this->_logs->setAlternatingRowColors(true);
     this->_logs->setUniformRowHeights(true);
+    this->_logs->setFrameShape(QFrame::NoFrame);
     this->_logs->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
     this->_logs->header()->setStretchLastSection(true);
-    layout->addWidget(this->_logs, 1);
+    this->_logs->header()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    bodyLayout->addWidget(this->_logs);
+    layout->addWidget(card, 1);
     QObject::connect(this->_logLevel, &QComboBox::currentIndexChanged, this, &HostWindow::filterLogs_);
     QObject::connect(this->_logCategory, &QComboBox::currentIndexChanged, this, &HostWindow::filterLogs_);
     QObject::connect(this->_logSearch, &QLineEdit::textChanged, this, &HostWindow::filterLogs_);
@@ -915,23 +1247,32 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     QWidget* page = new QWidget();
     QVBoxLayout* layout = new QVBoxLayout(page);
     QHBoxLayout* columns = new QHBoxLayout();
-    QFrame* networkCard = make_card();
-    QFrame* accessCard = make_card();
-    QFrame* streamCard = make_card();
-    QFormLayout* network = new QFormLayout(networkCard);
-    QFormLayout* access = new QFormLayout(accessCard);
-    QFormLayout* stream = new QFormLayout(streamCard);
+    QWidget* networkBody = nullptr;
+    QWidget* accessBody = nullptr;
+    QWidget* streamBody = nullptr;
+    QFrame* networkCard = make_panel("Network", networkBody);
+    QFrame* accessCard = make_panel("Access & security", accessBody);
+    QFrame* streamCard = make_panel("Stream & interface", streamBody);
+    QFormLayout* network = new QFormLayout(networkBody);
+    QFormLayout* access = new QFormLayout(accessBody);
+    QFormLayout* stream = new QFormLayout(streamBody);
     QVBoxLayout* left = new QVBoxLayout();
     QHBoxLayout* save = new QHBoxLayout();
 
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
-    layout->addWidget(make_label("Settings", "title"));
-    layout->addWidget(make_label("Saved in config.json. Changing them needs the person in front of the PC (locked while a remote session has control).", "muted"));
+    layout->setContentsMargins(0, 0, 4, 0);
+    layout->setSpacing(16);
+    layout->addWidget(make_page_head("Settings", "Saved in config.json. Changing them needs the person in front of the PC (locked while a remote session has control)."));
+    for (QFormLayout* form: {network, access, stream}) {
+        form->setContentsMargins(18, 14, 18, 16);
+        form->setVerticalSpacing(10);
+        form->setHorizontalSpacing(16);
+        form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    }
 
     // Network
-    network->setContentsMargins(20, 16, 20, 16);
-    network->addRow(make_label("Network", "subtitle"));
     this->_setPort = new QSpinBox();
     this->_setPort->setRange(1, 65535);
     this->_setBind = new QLineEdit();
@@ -939,15 +1280,13 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     this->_setPublicHost = new QLineEdit();
     this->_setPublicHost->setPlaceholderText("my.domain.tld (manual exposure)");
     this->_setDiscovery = new QCheckBox("Announce on the LAN (xdesk scan)");
-    network->addRow("Port", this->_setPort);
-    network->addRow("Listen on", this->_setBind);
-    network->addRow("Exposure", this->_setExposure);
-    network->addRow("Public address", this->_setPublicHost);
+    network->addRow(make_label("Port", "muted"), this->_setPort);
+    network->addRow(make_label("Listen on", "muted"), this->_setBind);
+    network->addRow(make_label("Exposure", "muted"), this->_setExposure);
+    network->addRow(make_label("Public address", "muted"), this->_setPublicHost);
     network->addRow("", this->_setDiscovery);
 
     // Stream
-    stream->setContentsMargins(20, 16, 20, 16);
-    stream->addRow(make_label("Stream & interface", "subtitle"));
     this->_setFps = new QSpinBox();
     this->_setFps->setRange(1, 120);
     this->_setQuality = new QSlider(Qt::Horizontal);
@@ -958,18 +1297,17 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     this->_setLanguage = new QComboBox();
     this->_setLanguage->addItems({"en", "fr"});
     this->_setMinimized = new QCheckBox("Start in the tray");
-    stream->addRow("Max FPS", this->_setFps);
-    stream->addRow("JPEG quality", this->_setQuality);
-    stream->addRow("Scale", this->_setScale);
-    stream->addRow("Language", this->_setLanguage);
+    stream->addRow(make_label("Max FPS", "muted"), this->_setFps);
+    stream->addRow(make_label("JPEG quality", "muted"), this->_setQuality);
+    stream->addRow(make_label("Scale", "muted"), this->_setScale);
+    stream->addRow(make_label("Language", "muted"), this->_setLanguage);
     stream->addRow("", this->_setMinimized);
+    left->setSpacing(16);
     left->addWidget(networkCard);
     left->addWidget(streamCard);
     left->addStretch();
 
     // Access
-    access->setContentsMargins(20, 16, 20, 16);
-    access->addRow(make_label("Access & security", "subtitle"));
     this->_setCodeLength = new QSpinBox();
     this->_setCodeLength->setRange(6, 24);
     this->_setCodeLifetime = new QSpinBox();
@@ -984,25 +1322,26 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     this->_setIdle = new QSpinBox();
     this->_setIdle->setRange(0, 86400);
     this->_setIdle->setSuffix(" s");
-    this->_setAllowControl = new QCheckBox("Allow keyboard & mouse control");
+    this->_setAllowControl = new QCheckBox("Allow keyboard && mouse control");
     this->_setAllowTerminal = new QCheckBox("Allow remote terminals");
     this->_setAllowWeb = new QCheckBox("Allow browsers and the android app");
     this->_setViewOnly = new QCheckBox("New sessions start view only");
     this->_setBanOnTamper = new QCheckBox("Ban a session that touches xdesk");
     this->_setShell = new QLineEdit();
     this->_setShell->setPlaceholderText("default shell");
-    access->addRow("Code length", this->_setCodeLength);
-    access->addRow("Code lifetime", this->_setCodeLifetime);
-    access->addRow("Ask before accepting", this->_setApproval);
-    access->addRow("Max sessions", this->_setMaxSessions);
-    access->addRow("Failures before ban", this->_setMaxFailures);
-    access->addRow("Idle kick", this->_setIdle);
+    access->addRow(make_label("Code length", "muted"), this->_setCodeLength);
+    access->addRow(make_label("Code lifetime", "muted"), this->_setCodeLifetime);
+    access->addRow(make_label("Ask before accepting", "muted"), this->_setApproval);
+    access->addRow(make_label("Max sessions", "muted"), this->_setMaxSessions);
+    access->addRow(make_label("Failures before ban", "muted"), this->_setMaxFailures);
+    access->addRow(make_label("Idle kick", "muted"), this->_setIdle);
     access->addRow("", this->_setAllowControl);
     access->addRow("", this->_setAllowTerminal);
     access->addRow("", this->_setAllowWeb);
     access->addRow("", this->_setViewOnly);
     access->addRow("", this->_setBanOnTamper);
-    access->addRow("Terminal shell", this->_setShell);
+    access->addRow(make_label("Terminal shell", "muted"), this->_setShell);
+    columns->setSpacing(16);
     columns->addLayout(left, 1);
     columns->addWidget(accessCard, 1, Qt::AlignTop);
     layout->addLayout(columns);

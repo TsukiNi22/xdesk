@@ -21,6 +21,7 @@ File Description:
 #define _Attribute
 #include <utils/utils.hpp>
 #include "xdesk/ui/gui/Theme.hpp"
+#include <QTemporaryDir>
 #include <QFontDatabase>
 #include <QStyleFactory>
 #include <QPainterPath>
@@ -28,8 +29,10 @@ File Description:
 #include <QHBoxLayout>
 #include <QToolButton>
 #include <QStyleHints>
+#include <functional>
 #include <QPainter>
 #include <QPalette>
+#include <QFile>
 #include <QFont>
 #include <cmath>
 
@@ -84,6 +87,26 @@ static xdesk::ui::gui::Palette light_palette(void)
     return p;
 }
 
+// Check mark of the checked boxes: drawn once per colour in a private temporary folder (the style sheets only take files)
+static QString check_image(const QColor& color)
+{
+    static QTemporaryDir dir;
+    const QString path = dir.path() + "/check-" + color.name().mid(1) + ".png";
+
+    if (QFile::exists(path)) return path;
+    for (const int scale: {1, 2}) {
+        QPixmap pix(16 * scale, 16 * scale);
+        pix.fill(Qt::transparent);
+        QPainter p(&pix);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(QPen(color, 2.2 * scale, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin));
+        p.drawPolyline(QPolygonF({QPointF(3.5 * scale, 8.5 * scale), QPointF(6.5 * scale, 11.5 * scale), QPointF(12.5 * scale, 4.5 * scale)}));
+        p.end();
+        (void)pix.save(scale == 1 ? path : QString(path).replace(".png", "@2x.png"), "PNG");
+    }
+    return path;
+}
+
 static QString style_sheet(const xdesk::ui::gui::Palette& p)
 {
     QString qss = R"(
@@ -100,9 +123,14 @@ QToolTip { background: @surface; color: @text; border: 1px solid @border; paddin
 #version { color: @muted; font-family: "@mono"; font-size: 11px; }
 #rule { background: @border; max-height: 1px; min-height: 1px; }
 
-#card { background: @surface; border: 1px solid @border; border-radius: 3px; }
+#card { background: @surface; border: 1px solid @border; border-radius: 4px; }
 #card[accent="true"] { border-top: 2px solid @accent; }
-#title { font-size: 21px; font-weight: 700; }
+#cardHead { background: @surfaceHead; border: none; border-bottom: 1px solid @border; border-top-left-radius: 3px; border-top-right-radius: 3px; min-height: 40px; }
+#cardHead #subtitle { color: @text; }
+#card QTableWidget, #card QTreeWidget, #card QPlainTextEdit { border: none; border-radius: 0; }
+#card QTabWidget::pane { border: none; border-top: 1px solid @border; }
+#pageHead #title { padding: 0; }
+#title { font-size: 22px; font-weight: 700; }
 #subtitle { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: @muted; }
 #muted, QLabel[muted="true"] { color: @muted; }
 #mono { font-family: "@mono"; }
@@ -110,6 +138,19 @@ QToolTip { background: @surface; color: @text; border: 1px solid @border; paddin
 #banner { background: @danger; border-radius: 3px; }
 #banner QLabel { color: white; font-weight: 600; }
 #badge { border-radius: 2px; padding: 1px 6px; background: @surfaceAlt; color: @muted; font-family: "@mono"; font-size: 11px; }
+#pill { font-family: "@mono"; font-size: 11px; font-weight: 700; letter-spacing: 1px; padding: 4px 10px; border-radius: 2px; }
+#pill[on="true"] { color: @success; background: @successSoft; border: 1px solid @success; }
+#pill[on="false"] { color: @danger; background: @dangerSoft; border: 1px solid @danger; }
+#code[off="true"] { color: @muted; border-left-color: @border; }
+#endpoint { background: transparent; border: none; border-bottom: 1px solid @border; }
+#endpoint[last="true"] { border-bottom: none; }
+#endpoint:hover { background: @accentSoft; }
+#tag { font-family: "@mono"; font-size: 10px; font-weight: 700; letter-spacing: 1px; padding: 3px 0; border: 1px solid @border; border-radius: 2px; color: @muted; background: @surfaceAlt; }
+#tag[kind="tailscale"] { color: @accent; border-color: @accent; background: @accentSoft; }
+#tag[kind="internet"] { color: @warning; border-color: @warning; }
+#tag[kind="lan"] { color: @text; }
+#address { font-family: "@mono"; font-size: 13px; font-weight: 600; }
+#qr { background: white; border: 1px solid @border; border-radius: 4px; padding: 10px; }
 QLabel[tone="success"] { color: @success; }
 QLabel[tone="warning"] { color: @warning; }
 QLabel[tone="danger"] { color: @danger; }
@@ -128,6 +169,11 @@ QPushButton[kind="danger"] { background: transparent; color: @danger; border: 1p
 QPushButton[kind="danger"]:hover { background: @danger; color: white; }
 QPushButton[kind="ghost"] { background: transparent; border: 1px solid transparent; color: @muted; padding: 6px 8px; }
 QPushButton[kind="ghost"]:hover { color: @text; border-color: @border; }
+QPushButton#share { padding: 11px 14px; font-weight: 700; font-size: 13px; text-align: left; border-radius: 3px; }
+QPushButton#share[on="false"] { background: @success; color: @accentText; border: 1px solid @success; }
+QPushButton#share[on="false"]:hover { background: @accentHover; }
+QPushButton#share[on="true"] { background: @danger; color: white; border: 1px solid @danger; }
+QPushButton#share[on="true"]:hover { background: @dangerHover; }
 
 #segmented { background: @surfaceAlt; border: 1px solid @border; border-radius: 3px; }
 #segmented QToolButton { background: transparent; border: none; border-radius: 0; padding: 5px 0; color: @muted; font-weight: 600; font-size: 11px; }
@@ -145,9 +191,12 @@ QComboBox QAbstractItemView { background: @surface; border: 1px solid @border; s
 QSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::up-button, QDoubleSpinBox::down-button { width: 0; border: none; }
 
 QCheckBox { spacing: 8px; }
-QCheckBox::indicator { width: 15px; height: 15px; border-radius: 2px; border: 1px solid @muted; background: @surfaceAlt; }
-QCheckBox::indicator:checked { background: @accent; border-color: @accent; }
+QCheckBox::indicator { width: 16px; height: 16px; border-radius: 2px; border: 1px solid @muted; background: @surfaceAlt; }
+QCheckBox::indicator:hover { border-color: @accent; }
+QCheckBox::indicator:checked { background: @accent; border-color: @accent; image: url(@checkOn); }
+QCheckBox::indicator:checked:disabled { background: @border; border-color: @border; image: url(@checkOff); }
 QCheckBox::indicator:disabled { background: @surface; border-color: @border; }
+QCheckBox:disabled { color: @muted; }
 
 QSlider::groove:horizontal { height: 3px; background: @border; }
 QSlider::sub-page:horizontal { background: @accent; }
@@ -159,9 +208,9 @@ QTableWidget, QTreeWidget, QListWidget {
     background: @surface; border: 1px solid @border; border-radius: 0; gridline-color: transparent;
     alternate-background-color: @surfaceAlt; selection-background-color: @accentSoft; selection-color: @text;
 }
-QTableWidget::item, QTreeWidget::item { padding: 6px; border: none; }
+QTableWidget::item, QTreeWidget::item { padding: 6px 10px; border: none; }
 QTableWidget::item:selected, QTreeWidget::item:selected { border-left: 2px solid @accent; }
-QHeaderView::section { background: @surface; color: @muted; border: none; border-bottom: 1px solid @border; padding: 7px 6px; font-weight: 700; font-size: 11px; }
+QHeaderView::section { background: @surfaceHead; color: @muted; border: none; border-bottom: 1px solid @border; padding: 8px 10px; font-weight: 700; font-size: 11px; }
 QTableCornerButton::section { background: @surface; border: none; }
 
 QTabWidget::pane { border: 1px solid @border; top: -1px; background: @surface; }
@@ -186,14 +235,21 @@ QScrollBar::handle:horizontal { background: @border; min-width: 30px; }
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
 QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
 QSplitter::handle { background: @border; }
+QSplitter#gap::handle { background: transparent; }
 QSplitter::handle:horizontal { width: 1px; }
 QSplitter::handle:vertical { height: 1px; }
 )";
-    QColor soft = p.accent;
-    soft.setAlphaF(p.dark ? 0.14f : 0.12f);
-    const QString softRgba = QString("rgba(%1, %2, %3, %4)").arg(soft.red()).arg(soft.green()).arg(soft.blue()).arg(soft.alphaF(), 0, 'f', 2);
+    const std::function<QString(const QColor&, const double)> rgba = [](const QColor& c, const double alpha) {
+        return QString("rgba(%1, %2, %3, %4)").arg(c.red()).arg(c.green()).arg(c.blue()).arg(alpha, 0, 'f', 2);
+    };
 
-    qss.replace("@accentSoft", softRgba);
+    qss.replace("@accentSoft", rgba(p.accent, p.dark ? 0.14 : 0.12));
+    qss.replace("@successSoft", rgba(p.success, p.dark ? 0.12 : 0.10));
+    qss.replace("@dangerSoft", rgba(p.danger, p.dark ? 0.12 : 0.10));
+    qss.replace("@dangerHover", (p.dark ? p.danger.lighter(110) : p.danger.darker(112)).name());
+    qss.replace("@surfaceHead", (p.dark ? p.surface.lighter(112) : p.surface.darker(102)).name());
+    qss.replace("@checkOn", check_image(p.accentText));
+    qss.replace("@checkOff", check_image(p.muted));
     qss.replace("@accentHover", (p.dark ? p.accent.lighter(112) : p.accent.darker(115)).name());
     qss.replace("@accentText", p.accentText.name());
     qss.replace("@accent", p.accent.name());
@@ -425,6 +481,14 @@ QIcon xdesk::ui::gui::Theme::icon(const QString& name, const QColor& color)
         p.drawArc(QRectF(20, 8, 24, 30), 0, 180 * 16);
         p.drawLine(QPointF(20, 23), QPointF(20, 28));
         p.drawLine(QPointF(44, 23), QPointF(44, 28));
+    } else if (name == "qr") {
+        // Three finder squares and a few modules
+        for (const QPointF& corner: {QPointF(8, 8), QPointF(38, 8), QPointF(8, 38)})
+            p.drawRect(QRectF(corner, QSizeF(18, 18)));
+        p.setPen(Qt::NoPen);
+        p.setBrush(c);
+        for (const QRectF& module: {QRectF(13, 13, 8, 8), QRectF(43, 13, 8, 8), QRectF(13, 43, 8, 8), QRectF(38, 38, 7, 7), QRectF(49, 49, 7, 7), QRectF(49, 38, 7, 7)})
+            p.drawRect(module);
     } else if (name == "scan") {
         p.drawArc(QRectF(8, 8, 48, 48), 45 * 16, 90 * 16);
         p.drawArc(QRectF(18, 18, 28, 28), 45 * 16, 90 * 16);

@@ -45,6 +45,7 @@ File Description:
     #include <QCheckBox>                    // QCheckBox
     #include <QSpinBox>                     // QSpinBox
     #include <QSlider>                      // QSlider
+    #include <QAction>                      // QAction
     #include <QLabel>                       // QLabel
     #include <QTimer>                       // QTimer
     #include <QHash>                        // QHash
@@ -63,6 +64,8 @@ class HostWindow: public QMainWindow {
         QWidget* _banner = nullptr; // tamper alert
         QLabel* _bannerText = nullptr;
         QSystemTrayIcon* _tray = nullptr;
+        QAction* _trayShare = nullptr; // start / stop sharing in the tray menu
+        QPushButton* _share = nullptr; // start (green) / stop (red) sharing, the app keeps running
         QTimer _tick; // 1 Hz: countdown, lock state
         bool _quitting = false;
         bool _trayHintShown = false;
@@ -72,7 +75,10 @@ class HostWindow: public QMainWindow {
         QProgressBar* _codeBar = nullptr;
         QLabel* _codeTimer = nullptr;
         QLabel* _fingerprint = nullptr;
-        QTableWidget* _endpoints = nullptr;
+        QWidget* _codeActions = nullptr; // copy / new code (off while not sharing)
+        QLabel* _shareState = nullptr; // SHARING / OFF pill
+        QWidget* _endpointList = nullptr; // one row per address
+        QString _endpointKey = ""; // what the rows show (rebuilt only when it changes)
         QComboBox* _exposure = nullptr;
         QLabel* _exposureStatus = nullptr;
         QLabel* _identity = nullptr; // name of this PC (and its tailnet name)
@@ -142,6 +148,11 @@ class HostWindow: public QMainWindow {
         _nodiscard QWidget* buildSettings_(void);
         void buildTray_(void);
         void refreshOverview_(void);
+        void refreshEndpoints_(void);
+        void refreshShare_(void); // button, pill, tray
+        void toggleSharing_(void);
+        Q_INVOKABLE void showPage_(const int page) {this->_nav->setCurrentRow(page);}; // snapshots
+        Q_INVOKABLE void showQr_(const int endpoint); // QR code of an address + the code (-1 = the first one a phone can reach)
         Q_INVOKABLE void retheme_(void); // icons drawn again in the new colours (called by Theme::apply)
         void refreshSession_(host::Session* session);
         void refreshDetail_(void);
