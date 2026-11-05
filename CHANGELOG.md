@@ -28,10 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security: TLS 1.3 with the `X25519MLKEM768` hybrid post-quantum key exchange, one time pairing codes proven with Argon2id and bound to the certificate, mutual authentication, trusted devices, signed device registry, bans of devices and addresses
 - Tamper protection: watched binary / config / data, checked terminal commands and processes, hardened host process, ban of the sessions touching xdesk, local only unban / trust / settings
 - Audit log (`jsonl` per day) and terminal transcripts
-- Screen stream: dirty tiles (libjpeg-turbo / solid), frames in flight limit, remote cursor; capture DXGI (Windows), Qt (X11 / macOS), xdg-desktop-portal (Wayland)
+- Screen stream: dirty tiles (libjpeg-turbo / solid), frames in flight limit, remote cursor; capture DXGI (Windows), Qt (X11 / macOS), xdg-desktop-portal (Wayland), started with the first viewer only
 - Input: `SendInput` (Windows), `uinput` / XTest (Linux), physical key codes
 - Terminals: `forkpty` (Unix), ConPTY (Windows)
-- Exposure: LAN + discovery, Tailscale, UPnP, `bore`, `cloudflared`, `ngrok`, manual
+- Exposure: LAN + discovery, Tailscale (MagicDNS name), UPnP, `bore`, `cloudflared`, `ngrok`, manual; the LAN is always open, each mode adds one path and the host refuses the peers coming through another one
+- Look: own "graphite + signal green" theme (square corners, small capitals, monospace for codes and addresses), Auto / Light / Dark switch in the host panel, the viewer and the web client, the Auto mode follows the system live
 - Scripts: `install.sh`, `install.ps1`, `bundle_windows.sh`, `build_apk.sh`
 - Unit tests: crypto, pairing code, device registry, protocol, frame encoder, command line
 

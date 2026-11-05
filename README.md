@@ -281,15 +281,20 @@ cmake --build $BUILD_DIR --target get_unregistered_files  # .cpp files missing f
 
 ## Exposure (LAN / external)
 
-| Mode | How | Encryption |
-| ---- | --- | ---------- |
-| `lan` | Every local interface + UDP discovery (`xdesk scan`, port `47801`) | end to end |
-| `tailscale` | The tailnet address of the host (`100.x.y.z`), nothing to open | end to end (WireGuard + TLS) |
-| `upnp` | `upnpc` opens the port on the router, shows the public address | end to end |
-| `bore` | `bore local <port> --to bore.pub` (TCP tunnel, no account) | end to end |
-| `ngrok` | `ngrok tcp <port>` (account) | end to end |
-| `cloudflared` | `cloudflared tunnel --url https://localhost:<port>` (`*.trycloudflare.com`, browsers only) | **the relay terminates TLS** |
-| `manual` | Port forwarded by hand, public address given in the settings | end to end |
+The LAN is always open while the host shares (and the PC itself, `localhost`); the mode only **adds one path**, and the
+host refuses every connection that arrives through another one (ex: in `lan` mode a peer coming through Tailscale or
+from the internet is dropped before TLS and logged once). Changing the mode drops the sessions that came through the
+path it closes. The panel shows, for each path, who can use it and its address.
+
+| Mode | Adds | How | Encryption |
+| ---- | ---- | --- | ---------- |
+| `lan` | nothing (LAN only) | Every local interface + UDP discovery (`xdesk scan`, port `47801`) | end to end |
+| `tailscale` | your devices of the tailnet | The MagicDNS name of the host (`pc.tailnet.ts.net`, else `100.x.y.z`), nothing to open | end to end (WireGuard + TLS) |
+| `upnp` | the internet | `upnpc` opens the port on the router, shows the public address | end to end |
+| `bore` | the internet (relay) | `bore local <port> --to bore.pub` (TCP tunnel, no account) | end to end |
+| `ngrok` | the internet (relay) | `ngrok tcp <port>` (account) | end to end |
+| `cloudflared` | the internet (relay) | `cloudflared tunnel --url https://localhost:<port>` (`*.trycloudflare.com`, browsers only) | **the relay terminates TLS** |
+| `manual` | the internet | Port forwarded by hand, public address given in the settings | end to end |
 
 > [!NOTE]
 > The tools (`upnpc`, `bore`, `cloudflared`, `ngrok`, `tailscale`) are used only when installed; the panel shows the state of the tunnel and every address (double click to copy).
@@ -335,7 +340,7 @@ cmake --build build --parallel $(nproc)                       # ./unit_tests at 
 ## Known limits
 
 > [!WARNING]
-> - Wayland: the real time capture needs `pipewire-devel` at build time (else portal screenshots, a few FPS) and the user accepts the screen share once (the portal remembers it); the remote control needs `/dev/uinput` (`scripts/install.sh --uinput`).
+> - Wayland: the real time capture needs `pipewire-devel` at build time (else portal screenshots, a few FPS); the capture only starts with the first viewer (the portal asks the screen share then, once: it remembers it) and stops 15 s after the last one; the remote control needs `/dev/uinput` (`scripts/install.sh --uinput`), else the panel shows `Input: unavailable` and the sessions stay view only.
 > - Windows: the build needs `mingw64-qt6-qtbase` (`scripts/bundle_windows.sh`); the code is checked with MinGW but not yet run on a real Windows.
 > - The web client cannot read the certificate: it sends the code inside TLS (no Argon2id binding) - prefer the native clients on untrusted networks.
 
