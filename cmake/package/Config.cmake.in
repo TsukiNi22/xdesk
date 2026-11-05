@@ -1,0 +1,51 @@
+@PACKAGE_INIT@
+
+# Dependencies
+include(CMakeFindDependencyMacro)
+find_dependency(utils 4.1.0 CONFIG REQUIRED) # The public headers include <utils/utils.hpp>
+
+# Custom error message if the required variant isn't installed (packages lib@LIB_NAME@-db / -as / -op)
+if(WIN32)
+    set(_@TARGET@_package "mingw64-lib@LIB_NAME@") # Windows packages (MinGW sysroot)
+else()
+    set(_@TARGET@_package "lib@LIB_NAME@")
+endif()
+file(GLOB _@TARGET@_configs "${CMAKE_CURRENT_LIST_DIR}/@TARGET@Targets-*.cmake")
+if(NOT _@TARGET@_configs)
+    # Header-only library (INTERFACE target): no variant to check
+elseif(CMAKE_BUILD_TYPE STREQUAL "Asan" AND WIN32)
+    message(FATAL_ERROR
+        "No Asan version of @TARGET@ with MinGW (no AddressSanitizer).\n"
+        "Please build in Debug with the package '${_@TARGET@_package}-db'.\n"
+    )
+elseif(CMAKE_BUILD_TYPE STREQUAL "Asan")
+    if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/@TARGET@Targets-asan.cmake")
+        message(FATAL_ERROR
+            "The Asan version of @TARGET@ is not installed.\n"
+            "Please install the package '${_@TARGET@_package}-as'.\n"
+        )
+    endif()
+
+elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/@TARGET@Targets-debug.cmake")
+        message(FATAL_ERROR
+            "The Debug version of @TARGET@ is not installed.\n"
+            "Please install the package '${_@TARGET@_package}-db'.\n"
+        )
+    endif()
+
+#elseif(CMAKE_BUILD_TYPE STREQUAL "Optimized")
+else() # Default selection for noconfig
+    if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/@TARGET@Targets-optimized.cmake" AND NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/@TARGET@Targets-noconfig.cmake")
+        message(FATAL_ERROR
+            "The Optimized version of @TARGET@ is not installed.\n"
+            "Please install the package '${_@TARGET@_package}-op'.\n"
+        )
+    endif()
+endif()
+unset(_@TARGET@_configs)
+unset(_@TARGET@_package)
+
+# Load and check tools
+include("${CMAKE_CURRENT_LIST_DIR}/@TARGET@Targets.cmake")
+check_required_components(@TARGET@)

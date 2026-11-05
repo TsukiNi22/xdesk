@@ -1,0 +1,76 @@
+{
+    "errors": [
+        {
+            "code": "Config",
+            "message": "Invalid or unreadable configuration",
+            "info": "Check the config.json of xdesk (xdesk --config-path)",
+            "restrictions": ["None", "Warning", "Error", "Fatal"]
+        },
+        {
+            "code": "Crypto",
+            "message": "Cryptographic operation failed",
+            "info": "OpenSSL >= 3.2 is required (Argon2id, ML-KEM for TLS 1.3)",
+            "restrictions": ["Error", "Fatal"]
+        },
+        {
+            "code": "Certificate",
+            "message": "TLS certificate error",
+            "info": "The certificate of the host can be regenerated with xdesk --regen-cert",
+            "restrictions": ["Warning", "Error", "Fatal"]
+        },
+        {
+            "code": "Network",
+            "message": "Network error",
+            "info": "Port already used, address unreachable or exposure tool missing",
+            "restrictions": ["Warning", "Error", "Fatal"]
+        },
+        {
+            "code": "Protocol",
+            "message": "Protocol violation",
+            "info": "The peer sent a malformed or unexpected message",
+            "restrictions": ["Warning", "Error"]
+        },
+        {
+            "code": "Auth",
+            "message": "Authentication failed",
+            "info": "Wrong or expired code, unknown device, banned device or address",
+            "restrictions": ["Warning", "Error"]
+        },
+        {
+            "code": "Capture",
+            "message": "Screen capture unavailable",
+            "info": "Wayland needs the xdg-desktop-portal ScreenCast (PipeWire), X11 / Windows / macOS capture natively",
+            "restrictions": ["Warning", "Error"]
+        },
+        {
+            "code": "Input",
+            "message": "Input injection unavailable",
+            "info": "Linux needs write access to /dev/uinput (see the install script) or XTest on X11",
+            "restrictions": ["Warning", "Error"]
+        },
+        {
+            "code": "Terminal",
+            "message": "Terminal error",
+            "info": "The pseudo terminal could not be created (forkpty / ConPTY)",
+            "restrictions": ["Warning", "Error"]
+        },
+        {
+            "code": "Tamper",
+            "message": "Tampering attempt detected",
+            "info": "A remote session tried to change or stop xdesk: it is banned until a local unban",
+            "restrictions": ["Warning", "Error", "Fatal"]
+        },
+        {
+            "code": "Usage",
+            "message": "Invalid usage",
+            "info": "See xdesk --help",
+            "restrictions": ["Error"]
+        },
+        {
+            "code": "Io",
+            "message": "File input / output error",
+            "info": "Check the permissions of the data folder of xdesk",
+            "restrictions": ["Warning", "Error", "Fatal"]
+        }
+   ]
+}
