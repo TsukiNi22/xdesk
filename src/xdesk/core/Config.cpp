@@ -163,6 +163,7 @@ void xdesk::core::Config::load(void)
     s.fps = std::clamp(o.value("fps").toInt(s.fps), 1, 120);
     s.quality = std::clamp(o.value("quality").toInt(s.quality), 1, 100);
     s.scale = std::clamp(o.value("scale").toDouble(s.scale), 0.25, 1.0);
+    s.maxHeight = std::clamp(o.value("maxHeight").toInt(s.maxHeight), 0, 4320);
 
     // Ui
     s.theme = o.value("theme").toString(s.theme);
@@ -196,6 +197,7 @@ void xdesk::core::Config::save(void) const
     o["fps"] = s.fps;
     o["quality"] = s.quality;
     o["scale"] = s.scale;
+    o["maxHeight"] = s.maxHeight;
     o["theme"] = s.theme;
     o["language"] = s.language;
     o["startMinimized"] = s.startMinimized;

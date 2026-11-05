@@ -29,6 +29,7 @@ File Description:
     #include "../platform/IScreenCapture.hpp"       // xdesk::platform::IScreenCapture
     #include "../platform/FrameEncoder.hpp"         // xdesk::platform::FrameEncoder
     #include <QByteArray>                           // QByteArray
+    #include <algorithm>                            // std::max
     #include <QObject>                              // QObject
     #include <QString>                              // QString
     #include <cstdint>                              // std::uint32_t
@@ -46,7 +47,8 @@ struct StreamClient {
     platform::FrameEncoder encoder; // what this client already has
     int inFlight = 0; // frames sent without ack
     int quality = 70; // jpeg quality
-    double scale = 1.0; // frame scale
+    double scale = 1.0; // frame scale asked by the client
+    double effective = 0.0; // scale applied: the asked one, capped by the max height of the host (0 = not computed yet)
     int fps = 30; // cap
     qint64 lastFrame = 0; // ms of the last frame sent
 };
@@ -66,6 +68,7 @@ class Stream: public QObject {
         QPoint _cursor = {-1, -1}; // last cursor sent
         QSize _size; // captured screen size
         QString _backend = ""; // name of the capture backend
+        int _maxHeight = 0; // frames at most this tall, the width follows (0 = the screen size)
 
         // ---------- Pre-Function -------- //
         void tick_(void);
@@ -73,6 +76,7 @@ class Stream: public QObject {
         void closeCapture_(void); // no viewer anymore: the screen is released
 
     public slots:
+        // ---------- Pre-Function -------- //
         void start(void); // prepare the timers (the capture waits for the first viewer)
         void stop(void);
         void addClient(const QString& session, const int quality, const double scale, const int fps);
@@ -80,6 +84,9 @@ class Stream: public QObject {
         void ack(const QString& session, const std::uint32_t id);
         void setQuality(const QString& session, const int quality, const double scale, const int fps);
         void refresh(const QString& session); // next frame complete
+
+        // ------------ Function ---------- //
+        inline void setMaxHeight(const int height) {this->_maxHeight = std::max(0, height);}; // 0 = the screen size
 
     public:
         // ---------- Constructor --------- //
@@ -95,6 +102,7 @@ class Stream: public QObject {
         void frame(const QString& session, const QByteArray& message); // Binary::Frame for this session
         void cursor(const QPoint& position); // Binary::Cursor for every session
         void resized(const QSize& size);
+        void scaled(const QString& session, const double scale); // scale applied to the frames of this session (input / cursor mapping)
 };
 
 } // namespace end

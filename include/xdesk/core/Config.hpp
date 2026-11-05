@@ -81,6 +81,7 @@ struct Settings {
     int fps = 30; // frames per second cap
     int quality = 70; // jpeg quality (1 - 100)
     double scale = 1.0; // scale of the frames sent (0.25 - 1.0)
+    int maxHeight = 0; // frames at most this tall, the width follows (0 = the screen size): 1080, 720, 480...
 
     /* ui */
     QString theme = "system"; // system | dark | light

@@ -114,9 +114,9 @@ void xdesk::host::Stream::setQuality(const QString& session, const int quality, 
     QHash<QString, StreamClient>::iterator it = this->_clients.find(session);
 
     if (it == this->_clients.end()) return;
-    if (std::abs(it->scale - scale) > 0.001) it->encoder.reset();
     it->quality = quality;
     it->scale = scale;
+    it->effective = 0.0; // recomputed (and announced) with the next frame
     it->fps = fps;
 }
 
@@ -156,12 +156,21 @@ void xdesk::host::Stream::tick_(void)
     // Encode for every ready client (its own dirty tiles)
     for (QHash<QString, StreamClient>::iterator it = this->_clients.begin(); it != this->_clients.end(); ++it) {
         StreamClient& client = it.value();
-        const int key = static_cast<int>(std::lround(client.scale * 1000));
+        const double cap = this->_maxHeight > 0 && frame.height() > this->_maxHeight ? static_cast<double>(this->_maxHeight) / frame.height() : 1.0;
+        const double effective = std::min(client.scale, cap);
+        const int key = static_cast<int>(std::lround(effective * 1000));
         QByteArray message;
 
         if (client.inFlight >= XDESK_FRAMES_IN_FLIGHT || now - client.lastFrame < 1000 / std::max(1, client.fps)) continue;
+
+        // Another size: a complete frame, and the host maps the input with the new scale
+        if (std::abs(client.effective - effective) > 0.0005) {
+            if (client.effective > 0.0) client.encoder.reset();
+            client.effective = effective;
+            emit this->scaled(it.key(), effective);
+        }
         if (!scaled.contains(key))
-            scaled.insert(key, key >= 1000 ? frame : frame.scaled(std::max(1, static_cast<int>(frame.width() * client.scale)), std::max(1, static_cast<int>(frame.height() * client.scale)), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+            scaled.insert(key, key >= 1000 ? frame : frame.scaled(std::max(1, static_cast<int>(frame.width() * effective)), std::max(1, static_cast<int>(frame.height() * effective)), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
         client.lastFrame = now;
         message = client.encoder.encode(scaled.value(key), client.quality);
         if (message.isEmpty()) continue;
