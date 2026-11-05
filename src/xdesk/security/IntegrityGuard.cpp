@@ -19,8 +19,8 @@ File Description:
 \**************************************************************/
 
 #ifdef _WIN32
+    #include <windows.h> // xstyle: ignore CPP-INCLUDE-ORDER (first: the other Windows headers need its types)
     #include <tlhelp32.h>
-    #include <windows.h>
     #include <aclapi.h>
     #include <sddl.h>
 #endif

@@ -24,12 +24,12 @@ File Description:
     /* INCLUDE */
 
     /* type */
+    #include <windows.h> // xstyle: ignore CPP-INCLUDE-ORDER (Windows headers before libutils: _unused clash)
+    #include <d3d11.h>                  // ID3D11Device, ID3D11Texture2D
+    #include <dxgi1_2.h>                // IDXGIOutputDuplication
     #define _Attribute
     #include <utils/utils.hpp>              // _hot, _cold, _nodiscard
     #include "../IScreenCapture.hpp"        // xdesk::platform::IScreenCapture
-    #include <windows.h>                    // HRESULT
-    #include <dxgi1_2.h>                    // IDXGIOutputDuplication
-    #include <d3d11.h>                      // ID3D11Device, ID3D11Texture2D
     #include <QString>                      // QString
     #include <QImage>                       // QImage
 

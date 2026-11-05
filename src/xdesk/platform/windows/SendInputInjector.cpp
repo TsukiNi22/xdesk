@@ -18,11 +18,11 @@ File Description:
 ##  for me, life is all about functions...
 \**************************************************************/
 
+#include <windows.h> // xstyle: ignore CPP-INCLUDE-ORDER (Windows headers before libutils: _unused clash)
 #define _Attribute
 #include <utils/utils.hpp>
 #include "xdesk/platform/windows/SendInputInjector.hpp"
 #include "xdesk/platform/Keymap.hpp"
-#include <windows.h>
 #include <optional>
 
 bool xdesk::platform::SendInputInjector::start(const QSize& screen)

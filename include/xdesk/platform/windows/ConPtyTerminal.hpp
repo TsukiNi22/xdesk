@@ -27,10 +27,10 @@ File Description:
     #ifndef _WIN32_WINNT
         #define _WIN32_WINNT 0x0A00 // ConPTY: Windows 10 1809+
     #endif
+    #include <windows.h> // xstyle: ignore CPP-INCLUDE-ORDER (Windows headers before libutils: _unused clash)
     #define _Attribute
     #include <utils/utils.hpp>          // _hot, _cold, _nodiscard
     #include "../ITerminal.hpp"         // xdesk::platform::ITerminal
-    #include <windows.h>                // HANDLE, HPCON
     #include <QThread>                  // QThread
     #include <QString>                  // QString
     #include <atomic>                   // std::atomic

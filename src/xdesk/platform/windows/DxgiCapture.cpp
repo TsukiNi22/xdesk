@@ -18,12 +18,12 @@ File Description:
 ##  for me, life is all about functions...
 \**************************************************************/
 
+#include <windows.h> // xstyle: ignore CPP-INCLUDE-ORDER (Windows headers before libutils: _unused clash)
+#include <d3d11.h>
+#include <dxgi1_2.h>
 #define _Attribute
 #include <utils/utils.hpp>
 #include "xdesk/platform/windows/DxgiCapture.hpp"
-#include <windows.h>
-#include <dxgi1_2.h>
-#include <d3d11.h>
 #include <QImage>
 
 // Release a COM pointer and reset it

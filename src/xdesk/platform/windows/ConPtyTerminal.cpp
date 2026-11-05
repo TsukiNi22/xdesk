@@ -21,12 +21,12 @@ File Description:
 #ifndef _WIN32_WINNT
     #define _WIN32_WINNT 0x0A00
 #endif
+#include <windows.h> // xstyle: ignore CPP-INCLUDE-ORDER (Windows headers before libutils: _unused clash)
 #define _Attribute
 #include <utils/utils.hpp>
 #include "xdesk/platform/windows/ConPtyTerminal.hpp"
 #include <QProcessEnvironment>
 #include <QByteArray>
-#include <windows.h>
 #include <QPointer>
 #include <vector>
 
