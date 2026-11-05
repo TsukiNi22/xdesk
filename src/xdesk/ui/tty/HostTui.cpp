@@ -165,8 +165,8 @@ void xdesk::ui::tty::HostTui::draw_(void)
         + (left >= 0 ? ("   changes in " + QString::number(left / 60) + ":" + QString::number(left % 60).rightJustified(2, '0')).toUtf8() : QByteArray("   one time"))
         + "   ·   identity " + security::fingerprint_short(this->_host.certificate().fingerprint()).toUtf8());
     for (const net::Endpoint& e: this->_host.exposure().endpoints())
-        line("  " + fg(MUTED) + fit(e.label, 11).toUtf8() + reset() + e.url.toUtf8() + fg(MUTED) + (e.endToEnd ? "" : "  (relay sees the traffic)") + "   xdesk connect " + e.host.toUtf8() + (e.port != XDESK_DEFAULT_PORT ? " -p " + QByteArray::number(e.port) : ""));
-    line("  " + fg(MUTED) + "Screen " + reset() + this->_host.captureBackend().toUtf8() + fg(MUTED) + "  ·  input " + reset() + this->_host.inputBackend().toUtf8()
+        line("  " + fg(MUTED) + fit(e.label, 11).toUtf8() + reset() + e.url.toUtf8() + fg(MUTED) + "   " + e.reach.toUtf8() + (e.ip.isEmpty() ? "" : " · " + e.ip.toUtf8()) + reset());
+    line("  " + fg(MUTED) + "Screen " + reset() + (this->_host.captureBackend().isEmpty() ? QByteArray("idle (starts with the first viewer)") : this->_host.captureBackend().toUtf8()) + fg(MUTED) + "  ·  input " + reset() + (this->_host.inputError().isEmpty() ? this->_host.inputBackend().toUtf8() : ("unavailable: " + this->_host.inputError()).toUtf8())
         + fg(MUTED) + "  ·  " + security::tls_summary().toUtf8() + "  ·  " + this->_host.exposure().status().toUtf8());
     line("");
 

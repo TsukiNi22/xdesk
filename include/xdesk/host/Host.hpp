@@ -45,6 +45,7 @@ File Description:
     #include <QString>                                  // QString
     #include <memory>                                   // std::unique_ptr
     #include <QHash>                                    // QHash
+    #include <QSet>                                     // QSet
     #include <QList>                                    // QList
     #include <QSize>                                    // QSize
 
@@ -84,7 +85,9 @@ class Host: public QObject {
         QThread _streamThread;
         std::unique_ptr<platform::IInputInjector> _injector; // created when the screen size is known
         QSize _screen; // captured size
-        QString _captureBackend = ""; // name, or the error
+        QString _captureBackend = ""; // name, or the error ("" = idle: starts with the first viewer)
+        QString _inputError = ""; // why no input backend could start
+        QSet<QString> _refused; // addresses refused by the exposure (logged once)
         QHash<QString, Session*> _sessions; // id -> session (owned)
         QList<Terminal> _terminals;
         QHash<QString, int> _authFailures; // address -> failed codes
@@ -110,6 +113,7 @@ class Host: public QObject {
         void closeTerminals_(const QString& session);
         void terminalInput_(Terminal& terminal, const QByteArray& data);
         void updateMarker_(void);
+        void openInjector_(void); // input backend for the captured screen (logs once why it fails)
         _cold _nodiscard Permissions defaultPermissions_(const Session* session) const;
 
     public:
@@ -133,6 +137,7 @@ class Host: public QObject {
         _cold _nodiscard bool setTrusted(const QString& deviceId, const bool trusted);
         _cold _nodiscard bool forget(const QString& deviceId);
         _cold _nodiscard bool applySettings(const core::Settings& settings); // save + restart what changed
+        _cold void setTheme(const QString& theme); // look of the local panel only: no confirmation needed
 
         /* panel */
         void setPanelFocused(const bool focused); // remote input paused while the panel is used
@@ -149,6 +154,7 @@ class Host: public QObject {
         _cold _nodiscard inline QSize screen(void) const                             {return this->_screen;};
         _cold _nodiscard inline const QString& captureBackend(void) const            {return this->_captureBackend;};
         _cold _nodiscard inline QString inputBackend(void) const                     {return this->_injector ? this->_injector->name() : QString("none");};
+        _cold _nodiscard inline const QString& inputError(void) const                {return this->_inputError;};
         _cold _nodiscard inline bool isRunning(void) const                           {return this->_running;};
 
         // ------------ Operator ---------- //

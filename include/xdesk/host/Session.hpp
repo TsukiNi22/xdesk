@@ -29,6 +29,7 @@ File Description:
     #include "../net/WebSocket.hpp"     // xdesk::net::WebSocket
     #include "../net/Protocol.hpp"      // xdesk::net::ClientKind, xdesk::net::Binary
     #include <QElapsedTimer>            // QElapsedTimer
+    #include <QHostAddress>             // QHostAddress
     #include <QJsonObject>              // QJsonObject
     #include <QByteArray>               // QByteArray
     #include <QObject>                  // QObject
@@ -128,6 +129,7 @@ class Session: public QObject {
         _cold _nodiscard inline const QString& name(void) const            {return this->_name;};
         _cold _nodiscard inline const QString& os(void) const              {return this->_os;};
         _cold _nodiscard inline const QString& address(void) const         {return this->_address;};
+        _cold _nodiscard inline QHostAddress peer(void) const              {return this->_ws ? this->_ws->peerAddress() : QHostAddress();}; // address of the socket itself (loopback for the tunnels)
         _cold _nodiscard inline const QString& deviceId(void) const        {return this->_deviceId;};
         _cold _nodiscard inline const QString& mode(void) const            {return this->_mode;};
         _cold _nodiscard inline const QString& userAgent(void) const       {return this->_userAgent;};

@@ -28,6 +28,7 @@ File Description:
     #include <utils/utils.hpp>      // _cold, _nodiscard
     #include "../core/Config.hpp"   // xdesk::core::Exposure, xdesk::core::Settings
     #include <QStringList>          // QStringList
+    #include <QHostAddress>         // QHostAddress
     #include <QUdpSocket>           // QUdpSocket
     #include <QByteArray>           // QByteArray
     #include <QProcess>             // QProcess
@@ -41,11 +42,20 @@ namespace xdesk::net { // namespace start
 /* STRUCT */
 
 struct Endpoint {
-    QString label; // "LAN eth0", "Tailscale", "bore.pub"...
+    QString label; // "LAN", "Tailscale", "bore.pub"...
+    QString reach; // who can use it, in plain words
     QString url; // https://host:port (open in a browser)
-    QString host; // host for the native clients
+    QString host; // name or address for the native clients
+    QString ip; // numeric address behind host ("" = host is already one)
     quint16 port = 0;
     bool endToEnd = true; // false: the relay sees the traffic (cloudflared)
+};
+
+struct Tailnet {
+    bool up = false; // tailscale connected on this PC
+    QString dns; // MagicDNS name of this PC ("pc.tailnet.ts.net", "" = MagicDNS off)
+    QString ip; // tailnet IPv4
+    QString name; // name of the tailnet
 };
 
 struct Discovered {
@@ -71,19 +81,27 @@ class Exposure: public QObject {
         QUdpSocket _discovery; // broadcast announce
         QTimer _announce; // every 2 s
         QByteArray _announcement; // json sent
+        QProcess _tailscale; // tailscale status --json
+        Tailnet _tailnet; // last answer of tailscale
+        QTimer _probe; // every 30 s: interfaces and tailnet may change
 
         // ---------- Pre-Function -------- //
         void refresh_(void); // recompute the endpoints
         void startTool_(void);
         void onToolOutput_(void);
         void setStatus_(const QString& status);
+        void probeTailnet_(void); // async, refresh_ when it answers
+        void onTailnet_(void);
 
     public:
         // ---------- Pre-Function -------- //
         void start(const core::Settings& settings, const quint16 port, const QString& name, const QString& fingerprint);
         void stop(void); // tunnel stopped, UPnP mapping removed
-        _cold _nodiscard static QStringList lanAddresses(void); // IPv4 of the up interfaces (no loopback)
+        _cold _nodiscard QString refusal(const QHostAddress& peer) const; // "" = the mode accepts this peer, else why not
+        _cold _nodiscard static QList<QPair<QString, QString>> lanInterfaces(void); // <interface, IPv4> of the up interfaces (no loopback, no tailnet, no container bridge)
+        _cold _nodiscard static QStringList lanAddresses(void); // IPv4 of lanInterfaces()
         _cold _nodiscard static QString tailscaleAddress(void); // "" when not connected
+        _cold _nodiscard static bool isLocalNetwork(const QHostAddress& ip); // private / link local ranges (RFC 1918, RFC 4193)
         _cold _nodiscard static QList<Discovered> scan(const int milliseconds = 2500); // LAN discovery (blocking)
 
         // ------------ Function ---------- //
@@ -91,6 +109,10 @@ class Exposure: public QObject {
         _cold _nodiscard inline const QList<Endpoint>& endpoints(void) const {return this->_endpoints;};
         _cold _nodiscard inline const QString& status(void) const            {return this->_status;};
         _cold _nodiscard inline core::Exposure mode(void) const              {return this->_mode;};
+        _cold _nodiscard inline const Tailnet& tailnet(void) const           {return this->_tailnet;};
+
+        /* tools */
+        _cold _nodiscard static inline bool isTailnet(const QHostAddress& ip) {return ip.isInSubnet(QHostAddress("100.64.0.0"), 10) || ip.isInSubnet(QHostAddress("fd7a:115c:a1e0::"), 48);}; // 100.64.0.0/10, fd7a:115c:a1e0::/48
 
         // ---------- Constructor --------- //
         explicit Exposure(QObject* parent = nullptr);

@@ -29,6 +29,7 @@ File Description:
 #include <QJsonDocument>
 #include <QHostAddress>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QString>
 
 xdesk::net::Exposure::Exposure(QObject* parent)
@@ -46,6 +47,9 @@ xdesk::net::Exposure::Exposure(QObject* parent)
     QObject::connect(&this->_announce, &QTimer::timeout, this, [this]() {
         this->_discovery.writeDatagram(this->_announcement, QHostAddress::Broadcast, XDESK_DISCOVERY_PORT);
     });
+    QObject::connect(&this->_tailscale, &QProcess::finished, this, &Exposure::onTailnet_);
+    QObject::connect(&this->_tailscale, &QProcess::errorOccurred, this, [this](QProcess::ProcessError) {this->onTailnet_();});
+    QObject::connect(&this->_probe, &QTimer::timeout, this, &Exposure::probeTailnet_);
 }
 
 xdesk::net::Exposure::~Exposure()
@@ -53,20 +57,87 @@ xdesk::net::Exposure::~Exposure()
     this->stop();
 }
 
+QList<QPair<QString, QString>> xdesk::net::Exposure::lanInterfaces(void)
+{
+    QList<QPair<QString, QString>> out;
+
+    for (const QNetworkInterface& iface: QNetworkInterface::allInterfaces()) {
+        if (!(iface.flags() & QNetworkInterface::IsUp) || (iface.flags() & QNetworkInterface::IsLoopBack)) continue;
+        if (iface.name().startsWith("docker") || iface.name().startsWith("br-") || iface.name().startsWith("veth") || iface.name().startsWith("virbr") || iface.name().startsWith("tailscale")) continue;
+        for (const QNetworkAddressEntry& entry: iface.addressEntries()) {
+            const QHostAddress ip = entry.ip();
+            if (ip.protocol() != QAbstractSocket::IPv4Protocol || isTailnet(ip)) continue;
+            out.append({iface.humanReadableName(), ip.toString()});
+        }
+    }
+    return out;
+}
+
 QStringList xdesk::net::Exposure::lanAddresses(void)
 {
     QStringList out;
 
-    for (const QNetworkInterface& iface: QNetworkInterface::allInterfaces()) {
-        if (!(iface.flags() & QNetworkInterface::IsUp) || (iface.flags() & QNetworkInterface::IsLoopBack)) continue;
-        if (iface.name().startsWith("docker") || iface.name().startsWith("br-") || iface.name().startsWith("veth") || iface.name().startsWith("virbr")) continue;
-        for (const QNetworkAddressEntry& entry: iface.addressEntries()) {
-            const QHostAddress ip = entry.ip();
-            if (ip.protocol() != QAbstractSocket::IPv4Protocol || ip.isInSubnet(QHostAddress("100.64.0.0"), 10)) continue;
-            out.append(ip.toString());
-        }
-    }
+    for (const QPair<QString, QString>& entry: lanInterfaces())
+        out.append(entry.second);
     return out;
+}
+
+bool xdesk::net::Exposure::isLocalNetwork(const QHostAddress& ip)
+{
+    return ip.isInSubnet(QHostAddress("10.0.0.0"), 8) || ip.isInSubnet(QHostAddress("172.16.0.0"), 12) || ip.isInSubnet(QHostAddress("192.168.0.0"), 16)
+        || ip.isInSubnet(QHostAddress("169.254.0.0"), 16) || ip.isInSubnet(QHostAddress("fe80::"), 10) || ip.isInSubnet(QHostAddress("fc00::"), 7);
+}
+
+QString xdesk::net::Exposure::refusal(const QHostAddress& peer) const
+{
+    bool v4 = false;
+    const quint32 raw = peer.toIPv4Address(&v4);
+    const QHostAddress ip = v4 ? QHostAddress(raw) : peer; // ::ffff:a.b.c.d -> a.b.c.d
+
+    // This PC (and the tunnels: bore, cloudflared and ngrok connect from here)
+    if (ip.isLoopback()) return "";
+
+    // Tailnet: only when Tailscale is the chosen exposure
+    if (isTailnet(ip)) return this->_mode == core::Exposure::Tailscale ? QString() : "came through Tailscale, which is not the chosen exposure (" + core::exposure_name(this->_mode) + ")";
+
+    // LAN: always open while sharing
+    if (isLocalNetwork(ip)) return "";
+
+    // Public address: only with a port opened on the router
+    if (this->_mode == core::Exposure::Upnp || this->_mode == core::Exposure::Manual) return "";
+    return "came from the internet, while the exposure is " + core::exposure_name(this->_mode) + " (no port opened on the router)";
+}
+
+void xdesk::net::Exposure::probeTailnet_(void)
+{
+    if (this->_tailscale.state() != QProcess::NotRunning) return;
+    if (QStandardPaths::findExecutable("tailscale").isEmpty()) {this->onTailnet_(); return;}
+    this->_tailscale.start("tailscale", {"status", "--json"});
+}
+
+void xdesk::net::Exposure::onTailnet_(void)
+{
+    const QJsonObject o = QJsonDocument::fromJson(this->_tailscale.state() == QProcess::NotRunning ? this->_tailscale.readAllStandardOutput() : QByteArray()).object();
+    const QJsonObject self = o.value("Self").toObject();
+    Tailnet tailnet;
+
+    tailnet.up = o.value("BackendState").toString() == "Running";
+    tailnet.name = o.value("CurrentTailnet").toObject().value("Name").toString();
+    if (o.value("CurrentTailnet").toObject().value("MagicDNSEnabled").toBool(true)) tailnet.dns = self.value("DNSName").toString();
+    if (tailnet.dns.endsWith('.')) tailnet.dns.chop(1);
+    for (const QJsonValue& value: self.value("TailscaleIPs").toArray())
+        if (QHostAddress(value.toString()).protocol() == QAbstractSocket::IPv4Protocol) {tailnet.ip = value.toString(); break;}
+
+    // No CLI (or no answer): the address of the tailscale interface, without a name
+    if (tailnet.ip.isEmpty()) {
+        tailnet.ip = tailscaleAddress();
+        tailnet.up = !tailnet.ip.isEmpty();
+    }
+    this->_tailnet = tailnet;
+    this->refresh_();
+    if (this->_mode == core::Exposure::Tailscale)
+        this->setStatus_(tailnet.up ? "Tailscale: reachable by the devices of " + (tailnet.name.isEmpty() ? QString("your tailnet") : tailnet.name) + ", and on the LAN"
+                                    : "Tailscale is not connected on this PC (run: tailscale up): LAN only for now");
 }
 
 QString xdesk::net::Exposure::tailscaleAddress(void)
@@ -91,9 +162,13 @@ void xdesk::net::Exposure::start(const core::Settings& settings, const quint16 p
     this->_publicHost = settings.publicHost;
     this->_endpoints.clear();
     this->refresh_();
+    this->probeTailnet_();
+    this->_probe.start(30000);
     if (this->_mode == core::Exposure::Upnp || this->_mode == core::Exposure::Bore || this->_mode == core::Exposure::Cloudflared || this->_mode == core::Exposure::Ngrok)
         this->startTool_();
-    else this->setStatus_(core::exposure_name(this->_mode) + " ready");
+    else if (this->_mode == core::Exposure::Lan) this->setStatus_("LAN only: devices on the same network can connect");
+    else if (this->_mode == core::Exposure::Manual) this->setStatus_(this->_publicHost.isEmpty() ? "Manual: set the public address in the settings (LAN works meanwhile)" : "Manual: reachable on " + this->_publicHost + " if port " + QString::number(port) + " is forwarded to this PC");
+    else this->setStatus_("Tailscale: asking tailscale...");
 
     // LAN discovery
     if (settings.discovery) {
@@ -105,6 +180,7 @@ void xdesk::net::Exposure::start(const core::Settings& settings, const quint16 p
 
 void xdesk::net::Exposure::stop(void)
 {
+    this->_probe.stop();
     this->_announce.stop();
     this->_discovery.close();
     if (this->_tool.state() != QProcess::NotRunning) {
@@ -121,17 +197,21 @@ void xdesk::net::Exposure::refresh_(void)
 {
     QList<Endpoint> endpoints;
     const QString port = QString::number(this->_port);
-    const QString tailnet = tailscaleAddress();
 
-    // The public endpoint first (found by the tool output for the tunnels)
+    // The public endpoint first (found by the tool output for the tunnels), only the one of the chosen mode
     for (const Endpoint& e: this->_endpoints)
-        if (e.label != "LAN" && e.label != "Tailscale" && e.label != "Local" && e.label != "Public") endpoints.append(e);
+        if (e.label != "LAN" && e.label != "Tailscale" && e.label != "This PC" && e.label != "Internet") endpoints.append(e);
     if (this->_mode == core::Exposure::Manual && !this->_publicHost.isEmpty())
-        endpoints.append({"Public", "https://" + this->_publicHost + ":" + port, this->_publicHost, this->_port, true});
-    if (!tailnet.isEmpty()) endpoints.append({"Tailscale", "https://" + tailnet + ":" + port, tailnet, this->_port, true});
-    for (const QString& ip: lanAddresses())
-        endpoints.append({"LAN", "https://" + ip + ":" + port, ip, this->_port, true});
-    endpoints.append({"Local", "https://localhost:" + port, "localhost", this->_port, true});
+        endpoints.append({"Internet", "Anyone on the internet, through the port you forwarded on the router", "https://" + this->_publicHost + ":" + port, this->_publicHost, "", this->_port, true});
+    if (this->_mode == core::Exposure::Tailscale && this->_tailnet.up) {
+        const QString host = this->_tailnet.dns.isEmpty() ? this->_tailnet.ip : this->_tailnet.dns;
+        endpoints.append({"Tailscale", "Your devices signed in to " + (this->_tailnet.name.isEmpty() ? QString("the tailnet") : "the tailnet " + this->_tailnet.name), "https://" + host + ":" + port, host, host == this->_tailnet.ip ? QString() : this->_tailnet.ip, this->_port, true});
+    }
+
+    // LAN: always open while sharing
+    for (const QPair<QString, QString>& entry: lanInterfaces())
+        endpoints.append({"LAN", "Devices on the same network (" + entry.first + ")", "https://" + entry.second + ":" + port, entry.second, "", this->_port, true});
+    endpoints.append({"This PC", "Only this computer", "https://localhost:" + port, "localhost", "127.0.0.1", this->_port, true});
     this->_endpoints = endpoints;
     emit this->changed();
 }
@@ -166,14 +246,14 @@ void xdesk::net::Exposure::onToolOutput_(void)
         case core::Exposure::Upnp:
             m = QRegularExpression(R"(ExternalIPAddress\s*=\s*([0-9.]+))").match(output);
             if (m.hasMatch()) {
-                this->_endpoints.prepend({"UPnP", "https://" + m.captured(1) + ":" + QString::number(this->_port), m.captured(1), this->_port, true});
+                this->_endpoints.prepend({"UPnP", "Anyone on the internet, through the port opened on the router", "https://" + m.captured(1) + ":" + QString::number(this->_port), m.captured(1), "", this->_port, true});
                 this->setStatus_("Port " + QString::number(this->_port) + " opened on the router");
             } else if (output.contains("failed", Qt::CaseInsensitive) || output.contains("No IGD", Qt::CaseInsensitive)) this->setStatus_("UPnP failed: " + output.trimmed().right(160));
             break;
         case core::Exposure::Bore:
             m = QRegularExpression(R"(listening at ([\w.\-]+):(\d+))").match(output);
             if (m.hasMatch()) {
-                this->_endpoints.prepend({"bore.pub", "https://" + m.captured(1) + ":" + m.captured(2), m.captured(1), static_cast<quint16>(m.captured(2).toUInt()), true});
+                this->_endpoints.prepend({"bore.pub", "Anyone on the internet, through the bore.pub relay (it cannot read the traffic)", "https://" + m.captured(1) + ":" + m.captured(2), m.captured(1), "", static_cast<quint16>(m.captured(2).toUInt()), true});
                 this->setStatus_("Tunnel bore.pub up (TLS end to end)");
             }
             break;
@@ -181,14 +261,14 @@ void xdesk::net::Exposure::onToolOutput_(void)
             m = QRegularExpression(R"((https://[\w\-]+\.trycloudflare\.com))").match(output);
             if (m.hasMatch()) {
                 const QString host = QString(m.captured(1)).mid(8);
-                this->_endpoints.prepend({"Cloudflare", m.captured(1), host, 443, false});
+                this->_endpoints.prepend({"Cloudflare", "Anyone on the internet, through Cloudflare (the relay can read the traffic)", m.captured(1), host, "", 443, false});
                 this->setStatus_("Tunnel trycloudflare.com up (the relay terminates TLS)");
             }
             break;
         case core::Exposure::Ngrok:
             m = QRegularExpression(R"(url=tcp://([\w.\-]+):(\d+))").match(output);
             if (m.hasMatch()) {
-                this->_endpoints.prepend({"ngrok", "https://" + m.captured(1) + ":" + m.captured(2), m.captured(1), static_cast<quint16>(m.captured(2).toUInt()), true});
+                this->_endpoints.prepend({"ngrok", "Anyone on the internet, through the ngrok relay (it cannot read the traffic)", "https://" + m.captured(1) + ":" + m.captured(2), m.captured(1), "", static_cast<quint16>(m.captured(2).toUInt()), true});
                 this->setStatus_("Tunnel ngrok up (TLS end to end)");
             }
             break;

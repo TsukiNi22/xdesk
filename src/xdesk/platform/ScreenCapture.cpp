@@ -33,10 +33,9 @@ File Description:
     #include "xdesk/platform/linux/PortalCapture.hpp"
 #endif
 #include <QtGlobal>
-#include <iostream>
 #include <QString>
 
-std::unique_ptr<xdesk::platform::IScreenCapture> xdesk::platform::create_screen_capture(void)
+std::unique_ptr<xdesk::platform::IScreenCapture> xdesk::platform::create_screen_capture(QString& error)
 {
     std::unique_ptr<IScreenCapture> capture = nullptr;
 
@@ -44,7 +43,7 @@ std::unique_ptr<xdesk::platform::IScreenCapture> xdesk::platform::create_screen_
         // Desktop Duplication (GPU copy, only the changed frames) then GDI through Qt
         capture = std::make_unique<DxgiCapture>();
         if (capture->start()) return capture;
-        std::cerr << "xdesk: capture: dxgi: " << capture->error().toStdString() << std::endl;
+        error = "dxgi: " + capture->error() + "; ";
     #elif defined(__linux__)
         const bool wayland = qEnvironmentVariable("XDG_SESSION_TYPE") == "wayland" || qEnvironmentVariableIsSet("WAYLAND_DISPLAY");
 
@@ -53,14 +52,14 @@ std::unique_ptr<xdesk::platform::IScreenCapture> xdesk::platform::create_screen_
             #ifdef XDESK_HAS_DBUS
                 capture = std::make_unique<PortalCapture>();
                 if (capture->start()) return capture;
-                std::cerr << "xdesk: capture: portal: " << capture->error().toStdString() << std::endl;
+                error = "portal: " + capture->error() + "; ";
             #else
-                std::cerr << "xdesk: capture: Wayland session but xdesk was built without Qt DBus (portal)" << std::endl;
+                error = "Wayland session but xdesk was built without Qt DBus (portal); ";
             #endif
         }
     #endif
     capture = std::make_unique<QtCapture>();
     if (capture->start()) return capture;
-    std::cerr << "xdesk: capture: qt: " << capture->error().toStdString() << std::endl;
+    error += "qt: " + capture->error();
     return nullptr;
 }

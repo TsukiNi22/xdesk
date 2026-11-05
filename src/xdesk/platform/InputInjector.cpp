@@ -34,17 +34,16 @@ File Description:
     #endif
 #endif
 #include <QtGlobal>
-#include <iostream>
 #include <QString>
 
-std::unique_ptr<xdesk::platform::IInputInjector> xdesk::platform::create_input_injector(const QSize& screen)
+std::unique_ptr<xdesk::platform::IInputInjector> xdesk::platform::create_input_injector(const QSize& screen, QString& error)
 {
     std::unique_ptr<IInputInjector> injector = nullptr;
 
     #ifdef _WIN32
         injector = std::make_unique<SendInputInjector>();
         if (injector->start(screen)) return injector;
-        std::cerr << "xdesk: input: " << injector->error().toStdString() << std::endl;
+        error = injector->error();
         return nullptr;
     #elif defined(__linux__)
         const QString session = qEnvironmentVariable("XDG_SESSION_TYPE");
@@ -55,18 +54,19 @@ std::unique_ptr<xdesk::platform::IInputInjector> xdesk::platform::create_input_i
             if (!wayland && qEnvironmentVariableIsSet("DISPLAY")) {
                 injector = std::make_unique<XTestInjector>();
                 if (injector->start(screen)) return injector;
-                std::cerr << "xdesk: input: xtest: " << injector->error().toStdString() << std::endl;
+                error = "xtest: " + injector->error() + "; ";
             }
         #else
             (void)wayland;
         #endif
         injector = std::make_unique<UInputInjector>();
         if (injector->start(screen)) return injector;
-        std::cerr << "xdesk: input: " << injector->error().toStdString() << std::endl;
+        error += injector->error();
         return nullptr;
     #else
         // macOS: no backend yet (CGEvent planned), the session stays view only
         (void)screen;
+        error = "no input backend on this platform";
         return nullptr;
     #endif
 }

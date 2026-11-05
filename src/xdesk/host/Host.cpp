@@ -93,8 +93,16 @@ void xdesk::host::Host::start(void)
     tls.setPrivateKey(this->_cert.key());
     security::configure_tls(tls);
     this->_server.setFilter([this](const QHostAddress& address) {
+        const QString refusal = this->_exposure.refusal(address);
         QString ip = address.toString();
         if (ip.startsWith("::ffff:")) ip = ip.mid(7);
+
+        // Outside the chosen exposure: dropped before TLS, logged once per address
+        if (!refusal.isEmpty()) {
+            if (!this->_refused.contains(ip)) this->_log.warn("server", "", "Connection from " + ip + " refused: it " + refusal);
+            this->_refused.insert(ip);
+            return false;
+        }
         return !this->_registry.addressBan(ip).has_value();
     });
     this->_server.setInfo([this]() {
@@ -116,8 +124,17 @@ void xdesk::host::Host::start(void)
     QObject::connect(this->_stream, &Stream::ready, this, [this](const QSize& size, const QString& backend) {
         this->_screen = size;
         this->_captureBackend = backend;
-        this->_injector = platform::create_input_injector(size);
+        this->openInjector_();
         this->_log.info("server", "", "Capture " + backend + " " + QString::number(size.width()) + "x" + QString::number(size.height()) + ", input " + this->inputBackend());
+        for (Session* s: this->_sessions)
+            if (s->state() == State::Active) s->sendJson({{"t", "screen"}, {"w", size.width()}, {"h", size.height()}});
+        emit this->stateChanged();
+    });
+    QObject::connect(this->_stream, &Stream::closed, this, [this]() {
+        this->_captureBackend = "";
+        if (this->_injector) this->_injector->releaseAll();
+        this->_injector.reset();
+        this->_log.info("server", "", "Capture released (no viewer)");
         emit this->stateChanged();
     });
     QObject::connect(this->_stream, &Stream::failed, this, [this](const QString& error) {
@@ -140,7 +157,7 @@ void xdesk::host::Host::start(void)
     });
     QObject::connect(this->_stream, &Stream::resized, this, [this](const QSize& size) {
         this->_screen = size;
-        this->_injector = platform::create_input_injector(size);
+        this->openInjector_();
         for (Session* s: this->_sessions)
             if (s->state() == State::Active) s->sendJson({{"t", "screen"}, {"w", size.width()}, {"h", size.height()}});
         emit this->stateChanged();
@@ -169,6 +186,8 @@ void xdesk::host::Host::stop(void)
     if (this->_streamThread.isRunning()) loop.exec();
     this->_stream = nullptr;
     if (this->_injector) this->_injector->releaseAll();
+    this->_injector.reset();
+    this->_captureBackend = "";
     this->_guard.writeMarker({});
     this->_log.info("server", "", "Sharing stopped");
 }
@@ -332,7 +351,7 @@ void xdesk::host::Host::admit_(Session* session, const bool remember)
 
     // Welcome
     extra["host"] = QHostInfo::localHostName();
-    extra["screen"] = QJsonObject{{"w", this->_screen.width()}, {"h", this->_screen.height()}};
+    extra["screen"] = QJsonObject{{"w", std::max(0, this->_screen.width())}, {"h", std::max(0, this->_screen.height())}}; // 0 x 0 while the capture waits for its first viewer
     extra["capture"] = this->_captureBackend;
     if (this->_pendingProof.contains(session->id())) extra["proof"] = this->_pendingProof.take(session->id());
     session->accept(this->defaultPermissions_(session), extra);
@@ -703,8 +722,18 @@ bool xdesk::host::Host::applySettings(const core::Settings& settings)
         this->_server.stop();
         this->_server.listen(settings.bind, settings.port, tls);
     }
-    if (old.exposure != settings.exposure || old.publicHost != settings.publicHost || old.port != settings.port || old.discovery != settings.discovery)
+    if (old.exposure != settings.exposure || old.publicHost != settings.publicHost || old.port != settings.port || old.discovery != settings.discovery) {
+        QStringList outside;
+
         this->_exposure.start(settings, this->_server.port(), QHostInfo::localHostName(), security::fingerprint_short(this->_cert.fingerprint()));
+        this->_refused.clear();
+
+        // The sessions that came through a path the new exposure closes are dropped
+        for (Session* s: this->_sessions)
+            if (!this->_exposure.refusal(s->peer()).isEmpty()) outside.append(s->id());
+        for (const QString& id: outside)
+            this->kick(id, "The host closed the way you were connected through (" + core::exposure_name(settings.exposure) + " only now)");
+    }
     this->_log.info("settings", "", "Settings changed locally");
     emit this->stateChanged();
     return true;
@@ -734,4 +763,24 @@ void xdesk::host::Host::updateMarker_(void)
         if (s->state() == State::Active && ((s->permissions().control && s->mode() == "control") || terminal)) alive.append(s->deviceId() + "|" + s->address());
     }
     this->_guard.writeMarker(alive);
+}
+
+void xdesk::host::Host::openInjector_(void)
+{
+    QString error = "";
+
+    if (this->_injector) this->_injector->releaseAll();
+    this->_injector = platform::create_input_injector(this->_screen, error);
+    if (this->_injector) {this->_inputError = ""; return;}
+    if (error != this->_inputError) this->_log.warn("server", "", "Remote control unavailable: " + error);
+    this->_inputError = error;
+}
+
+void xdesk::host::Host::setTheme(const QString& theme)
+{
+    if (this->_config.settings().theme == theme) return;
+    this->_config.settings().theme = theme;
+    this->_guard.beginTrustedWrite();
+    this->_config.save();
+    this->_guard.endTrustedWrite();
 }

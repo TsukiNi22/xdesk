@@ -30,8 +30,7 @@ File Description:
 xdesk::host::Stream::Stream(QObject* parent)
 : QObject(parent)
 {
-    this->_timer.setTimerType(Qt::PreciseTimer);
-    QObject::connect(&this->_timer, &QTimer::timeout, this, &Stream::tick_);
+    /* Nothing */
 }
 
 xdesk::host::Stream::~Stream()
@@ -41,23 +40,46 @@ xdesk::host::Stream::~Stream()
 
 void xdesk::host::Stream::start(void)
 {
-    this->_capture = platform::create_screen_capture();
-    if (!this->_capture) {
-        emit this->failed("No screen capture backend available on this system");
-        return;
-    }
-    this->_size = this->_capture->size();
-    this->_backend = this->_capture->name();
-    this->_timer.start(4);
-    emit this->ready(this->_size, this->_backend);
+    // Timers of the stream thread: created here so they belong to it
+    this->_timer = new QTimer(this);
+    this->_timer->setTimerType(Qt::PreciseTimer);
+    QObject::connect(this->_timer, &QTimer::timeout, this, &Stream::tick_);
+    this->_idle = new QTimer(this);
+    this->_idle->setSingleShot(true);
+    QObject::connect(this->_idle, &QTimer::timeout, this, &Stream::closeCapture_);
 }
 
 void xdesk::host::Stream::stop(void)
 {
-    this->_timer.stop();
     this->_clients.clear();
-    if (this->_capture) this->_capture->stop();
+    if (this->_idle) this->_idle->stop();
+    this->closeCapture_();
+}
+
+void xdesk::host::Stream::openCapture_(void)
+{
+    QString error = "";
+
+    if (this->_capture) return;
+    this->_capture = platform::create_screen_capture(error);
+    if (!this->_capture) {
+        emit this->failed(error.isEmpty() ? QString("no screen capture backend on this system") : error);
+        return;
+    }
+    this->_size = this->_capture->size();
+    this->_backend = this->_capture->name();
+    this->_cursor = {-1, -1};
+    if (this->_timer) this->_timer->start(4);
+    emit this->ready(this->_size, this->_backend);
+}
+
+void xdesk::host::Stream::closeCapture_(void)
+{
+    if (!this->_capture || !this->_clients.isEmpty()) return;
+    if (this->_timer) this->_timer->stop();
+    this->_capture->stop();
     this->_capture.reset();
+    emit this->closed();
 }
 
 void xdesk::host::Stream::addClient(const QString& session, const int quality, const double scale, const int fps)
@@ -68,11 +90,15 @@ void xdesk::host::Stream::addClient(const QString& session, const int quality, c
     client.scale = scale;
     client.fps = fps;
     this->_clients.insert(session, client);
+    if (this->_idle) this->_idle->stop();
+    if (!this->_capture) this->openCapture_();
+    else if (this->_timer && !this->_timer->isActive()) this->_timer->start(4);
 }
 
 void xdesk::host::Stream::removeClient(const QString& session)
 {
     this->_clients.remove(session);
+    if (this->_clients.isEmpty() && this->_idle) this->_idle->start(15000); // a quick reconnect keeps the portal session
 }
 
 void xdesk::host::Stream::ack(const QString& session, const std::uint32_t id)

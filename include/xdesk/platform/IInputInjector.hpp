@@ -60,7 +60,7 @@ class IInputInjector {
 //----------------------------------------------------------------//
 /* PROTOTYPE */
 
-_cold _nodiscard std::unique_ptr<IInputInjector> create_input_injector(const QSize& screen); // best backend (started), nullptr when none works
+_cold _nodiscard std::unique_ptr<IInputInjector> create_input_injector(const QSize& screen, QString& error); // best backend (started), nullptr when none works (error = why)
 
 } // namespace end
 #endif /* IINPUTINJECTOR_H */

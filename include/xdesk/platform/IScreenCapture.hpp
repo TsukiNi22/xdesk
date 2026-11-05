@@ -58,7 +58,7 @@ class IScreenCapture {
 //----------------------------------------------------------------//
 /* PROTOTYPE */
 
-_cold _nodiscard std::unique_ptr<IScreenCapture> create_screen_capture(void); // best backend of the platform (started), nullptr when none works
+_cold _nodiscard std::unique_ptr<IScreenCapture> create_screen_capture(QString& error); // best backend of the platform (started), nullptr when none works (error = why)
 
 } // namespace end
 #endif /* ISCREENCAPTURE_H */
