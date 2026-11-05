@@ -151,7 +151,6 @@ class HostWindow: public QMainWindow {
         void refreshEndpoints_(void);
         void refreshShare_(void); // button, pill, tray
         void toggleSharing_(void);
-        Q_INVOKABLE void showPage_(const int page) {this->_nav->setCurrentRow(page);}; // snapshots
         Q_INVOKABLE void showQr_(const int endpoint); // QR code of an address + the code (-1 = the first one a phone can reach)
         Q_INVOKABLE void retheme_(void); // icons drawn again in the new colours (called by Theme::apply)
         void refreshSession_(host::Session* session);
@@ -170,6 +169,9 @@ class HostWindow: public QMainWindow {
         _nodiscard int sessionRow_(const QString& id) const;
         _nodiscard TerminalWidget* mirror_(const QString& session, const std::uint8_t id);
         _nodiscard bool confirmPresence_(const QString& action); // typed random code
+
+        // ------------ Function ---------- //
+        Q_INVOKABLE inline void showPage_(const int page) {this->_nav->setCurrentRow(page);}; // snapshots (XDESK_SNAPSHOT_PAGE)
 
     protected:
         // ---------- Pre-Function -------- //
