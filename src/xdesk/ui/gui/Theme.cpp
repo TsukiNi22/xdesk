@@ -21,6 +21,7 @@ File Description:
 #define _Attribute
 #include <utils/utils.hpp>
 #include "xdesk/ui/gui/Theme.hpp"
+#include <QStyledItemDelegate>
 #include <QTemporaryDir>
 #include <QFontDatabase>
 #include <QStyleFactory>
@@ -87,11 +88,31 @@ static xdesk::ui::gui::Palette light_palette(void)
     return p;
 }
 
-// Check mark of the checked boxes: drawn once per colour in a private temporary folder (the style sheets only take files)
-static QString check_image(const QColor& color)
+// Rows of the tables / trees: no focus frame on the clicked cell, one accent bar at the start of the selected row
+class RowDelegate final: public QStyledItemDelegate {
+    public:
+        // ------------ Function ---------- //
+        void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override
+        {
+            QStyleOptionViewItem item = option;
+
+            item.state &= ~QStyle::State_HasFocus;
+            QStyledItemDelegate::paint(painter, item, index);
+            if ((option.state & QStyle::State_Selected) && index.column() == 0)
+                painter->fillRect(QRect(option.rect.left(), option.rect.top(), 3, option.rect.height()), xdesk::ui::gui::Theme::palette().accent);
+        };
+
+        QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override {return QStyledItemDelegate::sizeHint(option, index) + QSize(24, 0);}; // + the 10 px padding of each side (style sheet)
+
+        // ---------- Constructor --------- //
+        explicit RowDelegate(QObject* parent): QStyledItemDelegate(parent) { /* Nothing */ };
+};
+
+// Glyphs of the style sheet (check mark, chevrons): drawn once per colour in a private temporary folder (the style sheets only take files)
+static QString glyph_image(const QString& glyph, const QColor& color)
 {
     static QTemporaryDir dir;
-    const QString path = dir.path() + "/check-" + color.name().mid(1) + ".png";
+    const QString path = dir.path() + "/" + glyph + "-" + color.name().mid(1) + ".png";
 
     if (QFile::exists(path)) return path;
     for (const int scale: {1, 2}) {
@@ -99,8 +120,16 @@ static QString check_image(const QColor& color)
         pix.fill(Qt::transparent);
         QPainter p(&pix);
         p.setRenderHint(QPainter::Antialiasing);
-        p.setPen(QPen(color, 2.2 * scale, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin));
-        p.drawPolyline(QPolygonF({QPointF(3.5 * scale, 8.5 * scale), QPointF(6.5 * scale, 11.5 * scale), QPointF(12.5 * scale, 4.5 * scale)}));
+        p.scale(scale, scale);
+        if (glyph == "check") {
+            p.setPen(QPen(color, 2.2, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin));
+            p.drawPolyline(QPolygonF({QPointF(3.5, 8.5), QPointF(6.5, 11.5), QPointF(12.5, 4.5)}));
+        } else {
+            const double tip = glyph == "down" ? 10.5 : 5.5;
+            const double base = glyph == "down" ? 6.0 : 10.0;
+            p.setPen(QPen(color, 1.8, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            p.drawPolyline(QPolygonF({QPointF(4.0, base), QPointF(8.0, tip), QPointF(12.0, base)}));
+        }
         p.end();
         (void)pix.save(scale == 1 ? path : QString(path).replace(".png", "@2x.png"), "PNG");
     }
@@ -185,10 +214,26 @@ QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit, QTextEdit {
     selection-background-color: @accent; selection-color: @accentText;
 }
 QLineEdit#codeInput { font-family: "@mono"; font-size: 16px; letter-spacing: 2px; padding: 7px 10px; }
+QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover, QComboBox:hover { border-color: @borderHover; }
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QPlainTextEdit:focus { border-color: @accent; }
-QComboBox::drop-down { border: none; width: 22px; }
-QComboBox QAbstractItemView { background: @surface; border: 1px solid @border; selection-background-color: @accentSoft; selection-color: @text; }
-QSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::up-button, QDoubleSpinBox::down-button { width: 0; border: none; }
+QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled { color: @muted; background: @surface; }
+
+QComboBox { padding-right: 30px; }
+QComboBox::drop-down { subcontrol-origin: border; subcontrol-position: center right; width: 26px; border: none; border-left: 1px solid @border; }
+QComboBox::down-arrow { image: url(@chevronDown); width: 14px; height: 14px; }
+QComboBox::down-arrow:on { image: url(@chevronUp); }
+QComboBox::down-arrow:disabled { image: url(@chevronOff); }
+QComboBox QAbstractItemView { background: @surface; border: 1px solid @border; padding: 4px; outline: 0; selection-background-color: @accentSoft; selection-color: @text; }
+QComboBox QAbstractItemView::item { min-height: 28px; padding: 0 8px; }
+
+QSpinBox, QDoubleSpinBox { padding-right: 26px; }
+QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-origin: border; subcontrol-position: top right; width: 22px; border: none; border-left: 1px solid @border; border-bottom: 1px solid @border; border-top-right-radius: 3px; }
+QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-origin: border; subcontrol-position: bottom right; width: 22px; border: none; border-left: 1px solid @border; border-bottom-right-radius: 3px; }
+QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover, QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover { background: @accentSoft; }
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow { image: url(@chevronUp); width: 11px; height: 11px; }
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow { image: url(@chevronDown); width: 11px; height: 11px; }
+QSpinBox::up-arrow:disabled, QSpinBox::up-arrow:off, QDoubleSpinBox::up-arrow:disabled, QDoubleSpinBox::up-arrow:off { image: url(@chevronUpOff); }
+QSpinBox::down-arrow:disabled, QSpinBox::down-arrow:off, QDoubleSpinBox::down-arrow:disabled, QDoubleSpinBox::down-arrow:off { image: url(@chevronOff); }
 
 QCheckBox { spacing: 8px; }
 QCheckBox::indicator { width: 16px; height: 16px; border-radius: 2px; border: 1px solid @muted; background: @surfaceAlt; }
@@ -209,7 +254,8 @@ QTableWidget, QTreeWidget, QListWidget {
     alternate-background-color: @surfaceAlt; selection-background-color: @accentSoft; selection-color: @text;
 }
 QTableWidget::item, QTreeWidget::item { padding: 6px 10px; border: none; }
-QTableWidget::item:selected, QTreeWidget::item:selected { border-left: 2px solid @accent; }
+QTableWidget::item:hover, QTreeWidget::item:hover { background: @rowHover; }
+QTableWidget::item:selected, QTreeWidget::item:selected { background: @accentSoft; color: @text; }
 QHeaderView::section { background: @surfaceHead; color: @muted; border: none; border-bottom: 1px solid @border; padding: 8px 10px; font-weight: 700; font-size: 11px; }
 QTableCornerButton::section { background: @surface; border: none; }
 
@@ -248,8 +294,14 @@ QSplitter::handle:vertical { height: 1px; }
     qss.replace("@dangerSoft", rgba(p.danger, p.dark ? 0.12 : 0.10));
     qss.replace("@dangerHover", (p.dark ? p.danger.lighter(110) : p.danger.darker(112)).name());
     qss.replace("@surfaceHead", (p.dark ? p.surface.lighter(112) : p.surface.darker(102)).name());
-    qss.replace("@checkOn", check_image(p.accentText));
-    qss.replace("@checkOff", check_image(p.muted));
+    qss.replace("@checkOn", glyph_image("check", p.accentText));
+    qss.replace("@checkOff", glyph_image("check", p.muted));
+    qss.replace("@chevronDown", glyph_image("down", p.text));
+    qss.replace("@chevronUpOff", glyph_image("up", p.border));
+    qss.replace("@chevronUp", glyph_image("up", p.text));
+    qss.replace("@chevronOff", glyph_image("down", p.border));
+    qss.replace("@borderHover", (p.dark ? p.border.lighter(140) : p.border.darker(118)).name());
+    qss.replace("@rowHover", rgba(p.text, p.dark ? 0.04 : 0.035));
     qss.replace("@accentHover", (p.dark ? p.accent.lighter(112) : p.accent.darker(115)).name());
     qss.replace("@accentText", p.accentText.name());
     qss.replace("@accent", p.accent.name());
@@ -521,4 +573,11 @@ QColor xdesk::ui::gui::Theme::terminalColor(const int index)
     }
     const int gray = 8 + (index - 232) * 10;
     return QColor(gray, gray, gray);
+}
+
+void xdesk::ui::gui::Theme::decorate(QAbstractItemView* view)
+{
+    view->setItemDelegate(new RowDelegate(view));
+    view->setFocusPolicy(Qt::StrongFocus);
+    view->setMouseTracking(true); // hover of the rows
 }

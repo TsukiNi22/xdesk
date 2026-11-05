@@ -31,7 +31,6 @@ File Description:
     #include <QSystemTrayIcon>              // QSystemTrayIcon
     #include <QPlainTextEdit>               // QPlainTextEdit
     #include <QStackedWidget>               // QStackedWidget
-    #include <QDoubleSpinBox>               // QDoubleSpinBox
     #include <QTableWidget>                 // QTableWidget
     #include <QProgressBar>                 // QProgressBar
     #include <QJsonObject>                  // QJsonObject
@@ -44,7 +43,6 @@ File Description:
     #include <QLineEdit>                    // QLineEdit
     #include <QCheckBox>                    // QCheckBox
     #include <QSpinBox>                     // QSpinBox
-    #include <QSlider>                      // QSlider
     #include <QAction>                      // QAction
     #include <QLabel>                       // QLabel
     #include <QTimer>                       // QTimer
@@ -134,8 +132,8 @@ class HostWindow: public QMainWindow {
         QCheckBox* _setBanOnTamper = nullptr;
         QLineEdit* _setShell = nullptr;
         QSpinBox* _setFps = nullptr;
-        QSlider* _setQuality = nullptr;
-        QDoubleSpinBox* _setScale = nullptr;
+        QComboBox* _setResolution = nullptr; // max height presets (0 = native)
+        QComboBox* _setQuality = nullptr; // jpeg quality presets
         QComboBox* _setLanguage = nullptr;
         QCheckBox* _setMinimized = nullptr;
         QPushButton* _settingsSave = nullptr;

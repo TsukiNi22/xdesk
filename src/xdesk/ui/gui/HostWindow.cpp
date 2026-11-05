@@ -167,6 +167,8 @@ static QTableWidget* make_table(const QStringList& headers)
     table->horizontalHeader()->setHighlightSections(false);
     table->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    table->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+    xdesk::ui::gui::Theme::decorate(table);
     return table;
 }
 
@@ -675,6 +677,7 @@ void xdesk::ui::gui::HostWindow::refreshEndpoints_(void)
         // <tag> <address / who can use it> <copy> <qr>
         if (e.host != urlHost) details << "xdesk connect " + e.host;
         if (!e.ip.isEmpty()) details << "IP " + e.ip;
+        if (urlHost == this->_host.exposure().certificateName()) details << "certificate by Tailscale (no browser warning)";
         if (!e.endToEnd) details << "the relay decrypts the traffic";
         reach->setText(details.join("  ·  "));
         reach->setWordWrap(true);
@@ -741,11 +744,14 @@ void xdesk::ui::gui::HostWindow::showQr_(const int endpoint)
     layout->addWidget(make_label("Scan with a phone", "title"));
     lead->setWordWrap(true);
     layout->addWidget(lead);
+    // One entry per address (data = endpoint * 2 + 1 for its numeric address when the link has a name)
     for (int i = 0; i < endpoints.size(); ++i) {
-        address->addItem(endpoints[i].label + "  ·  " + QUrl(endpoints[i].url).host(), i);
-        if (first < 0 && endpoint_kind(endpoints[i]) != "local") first = i;
+        const QString host = QUrl(endpoints[i].url).host();
+        if (i == endpoint || (endpoint < 0 && first < 0 && endpoint_kind(endpoints[i]) != "local")) first = address->count();
+        address->addItem(endpoints[i].label + "  ·  " + host, i * 2);
+        if (!endpoints[i].ip.isEmpty() && endpoints[i].ip != host) address->addItem(endpoints[i].label + "  ·  " + endpoints[i].ip, i * 2 + 1);
     }
-    address->setCurrentIndex(endpoint >= 0 && endpoint < endpoints.size() ? endpoint : std::max(0, first));
+    address->setCurrentIndex(std::max(0, first));
     layout->addWidget(address);
 
     // App link (xdesk://, pinned fingerprint) | browser link (https://, web client)
@@ -777,10 +783,13 @@ void xdesk::ui::gui::HostWindow::showQr_(const int endpoint)
     buttons->addWidget(close);
     layout->addLayout(buttons);
     draw = [this, address, app, image, link, hint, endpoints]() {
-        const net::Endpoint& e = endpoints.value(address->currentData().toInt());
+        const net::Endpoint& e = endpoints.value(address->currentData().toInt() / 2);
         const QUrl url(e.url);
         const QString code = security::normalize_code(this->_host.code().display());
-        const QString hostPort = url.host().contains(':') ? "[" + url.host() + "]:" + QString::number(url.port(e.port)) : url.host() + ":" + QString::number(url.port(e.port));
+        // The app always gets the address: no SNI = the pinned certificate (a tailnet name gets the tailscale one)
+        const QString host = (app->isChecked() || address->currentData().toInt() % 2 == 1) && !e.ip.isEmpty() ? e.ip : url.host();
+        const QString hostPort = (host.contains(':') ? "[" + host + "]" : host) + ":" + QString::number(url.port(e.port));
+        const bool trusted = host.endsWith(".ts.net", Qt::CaseInsensitive) && host == this->_host.exposure().certificateName();
         const QString text = app->isChecked()
             ? "xdesk://" + hostPort + "?fp=" + QString::fromLatin1(this->_host.certificate().fingerprint().toHex()) + "&code=" + code
             : "https://" + hostPort + "/?code=" + code;
@@ -790,6 +799,7 @@ void xdesk::ui::gui::HostWindow::showQr_(const int endpoint)
         link->setToolTip(text);
         hint->setText(app->isChecked()
             ? "Android: the camera (or Google Lens) opens the xdesk app, which trusts this PC without asking. No app yet: use Browser, the web page offers it."
+            : trusted ? "Any device of the tailnet: the camera opens the web client with the code (certificate issued by Tailscale, no warning)."
             : "Any phone: the camera opens the web client with the code. The browser warns once about the self-signed certificate: compare the host identity.");
     };
     QObject::connect(address, &QComboBox::currentIndexChanged, dialog, [draw](const int) {draw();});
@@ -1195,6 +1205,7 @@ QWidget* xdesk::ui::gui::HostWindow::buildLogs_(void)
     this->_logs->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
     this->_logs->header()->setStretchLastSection(true);
     this->_logs->header()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    Theme::decorate(this->_logs);
     bodyLayout->addWidget(this->_logs);
     layout->addWidget(card, 1);
     QObject::connect(this->_logLevel, &QComboBox::currentIndexChanged, this, &HostWindow::filterLogs_);
@@ -1258,6 +1269,7 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     QFormLayout* stream = new QFormLayout(streamBody);
     QVBoxLayout* left = new QVBoxLayout();
     QHBoxLayout* save = new QHBoxLayout();
+    QLabel* streamHint = make_label("Lower = less bandwidth and CPU on this PC. Resolution caps the frames sent (a viewer can ask for less, never for more).", "muted");
 
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
@@ -1289,23 +1301,26 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     // Stream
     this->_setFps = new QSpinBox();
     this->_setFps->setRange(1, 120);
-    this->_setQuality = new QSlider(Qt::Horizontal);
-    this->_setQuality->setRange(10, 100);
-    this->_setScale = new QDoubleSpinBox();
-    this->_setScale->setRange(0.25, 1.0);
-    this->_setScale->setSingleStep(0.05);
+    this->_setFps->setSuffix(" fps");
+    this->_setResolution = new QComboBox();
+    for (const QPair<QString, int>& preset: QList<QPair<QString, int>>{{"Screen size (native)", 0}, {"1440p", 1440}, {"1080p - Full HD", 1080}, {"720p - HD", 720}, {"480p", 480}, {"360p", 360}, {"240p", 240}, {"144p", 144}})
+        this->_setResolution->addItem(preset.first, preset.second);
+    this->_setQuality = new QComboBox();
+    for (const QPair<QString, int>& preset: QList<QPair<QString, int>>{{"Low - 40 (blurry text, very light)", 40}, {"Medium - 55", 55}, {"High - 70 (default)", 70}, {"Very high - 85", 85}, {"Maximum - 100 (heavy)", 100}})
+        this->_setQuality->addItem(preset.first, preset.second);
+    streamHint->setWordWrap(true);
     this->_setLanguage = new QComboBox();
     this->_setLanguage->addItems({"en", "fr"});
     this->_setMinimized = new QCheckBox("Start in the tray");
     stream->addRow(make_label("Max FPS", "muted"), this->_setFps);
-    stream->addRow(make_label("JPEG quality", "muted"), this->_setQuality);
-    stream->addRow(make_label("Scale", "muted"), this->_setScale);
+    stream->addRow(make_label("Resolution", "muted"), this->_setResolution);
+    stream->addRow(make_label("Image quality", "muted"), this->_setQuality);
+    stream->addRow(streamHint);
     stream->addRow(make_label("Language", "muted"), this->_setLanguage);
     stream->addRow("", this->_setMinimized);
     left->setSpacing(16);
     left->addWidget(networkCard);
-    left->addWidget(streamCard);
-    left->addStretch();
+    left->addWidget(streamCard, 1); // both columns end on the same line
 
     // Access
     this->_setCodeLength = new QSpinBox();
@@ -1343,7 +1358,7 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     access->addRow(make_label("Terminal shell", "muted"), this->_setShell);
     columns->setSpacing(16);
     columns->addLayout(left, 1);
-    columns->addWidget(accessCard, 1, Qt::AlignTop);
+    columns->addWidget(accessCard, 1);
     layout->addLayout(columns);
     this->_settingsSave = make_button("Save", "primary");
     QPushButton* reset = make_button("Revert", "ghost");
@@ -1354,6 +1369,10 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     layout->addStretch();
     QObject::connect(this->_settingsSave, &QPushButton::clicked, this, &HostWindow::saveSettings_);
     QObject::connect(reset, &QPushButton::clicked, this, &HostWindow::loadSettings_);
+
+    // One width for the short fields (numbers, lists): the values form a column
+    for (QWidget* field: page->findChildren<QWidget*>())
+        if (qobject_cast<QAbstractSpinBox*>(field) || qobject_cast<QComboBox*>(field)) field->setMinimumWidth(200);
     scroll->setWidget(page);
     return scroll;
 }
@@ -1380,8 +1399,13 @@ void xdesk::ui::gui::HostWindow::loadSettings_(void)
     this->_setBanOnTamper->setChecked(s.banOnTamper);
     this->_setShell->setText(s.shell);
     this->_setFps->setValue(s.fps);
-    this->_setQuality->setValue(s.quality);
-    this->_setScale->setValue(s.scale);
+    this->_setResolution->setCurrentIndex(std::max(0, this->_setResolution->findData(s.maxHeight)));
+    if (this->_setResolution->findData(s.maxHeight) < 0) {
+        this->_setResolution->addItem(QString::number(s.maxHeight) + "p (config.json)", s.maxHeight);
+        this->_setResolution->setCurrentIndex(this->_setResolution->count() - 1);
+    }
+    if (this->_setQuality->findData(s.quality) < 0) this->_setQuality->addItem("Custom - " + QString::number(s.quality) + " (config.json)", s.quality);
+    this->_setQuality->setCurrentIndex(this->_setQuality->findData(s.quality));
     this->_setLanguage->setCurrentText(s.language);
     this->_setMinimized->setChecked(s.startMinimized);
 }
@@ -1408,8 +1432,8 @@ void xdesk::ui::gui::HostWindow::saveSettings_(void)
     s.banOnTamper = this->_setBanOnTamper->isChecked();
     s.shell = this->_setShell->text().trimmed();
     s.fps = this->_setFps->value();
-    s.quality = this->_setQuality->value();
-    s.scale = this->_setScale->value();
+    s.quality = this->_setQuality->currentData().toInt();
+    s.maxHeight = this->_setResolution->currentData().toInt();
     s.language = this->_setLanguage->currentText();
     s.startMinimized = this->_setMinimized->isChecked();
     if (!this->confirmPresence_("change the settings")) return;

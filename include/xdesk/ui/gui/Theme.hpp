@@ -25,14 +25,15 @@ File Description:
 
     /* type */
     #define _Attribute
-    #include <utils/utils.hpp>  // _cold, _nodiscard
-    #include <QApplication>     // QApplication
-    #include <functional>       // std::function
-    #include <QPixmap>          // QPixmap
-    #include <QWidget>          // QWidget
-    #include <QString>          // QString
-    #include <QColor>           // QColor
-    #include <QIcon>            // QIcon
+    #include <utils/utils.hpp>   // _cold, _nodiscard
+    #include <QAbstractItemView> // QAbstractItemView
+    #include <QApplication>      // QApplication
+    #include <functional>        // std::function
+    #include <QPixmap>           // QPixmap
+    #include <QWidget>           // QWidget
+    #include <QString>           // QString
+    #include <QColor>            // QColor
+    #include <QIcon>             // QIcon
 
 namespace xdesk::ui::gui { // namespace start
 //----------------------------------------------------------------//
@@ -75,6 +76,7 @@ class Theme {
         _cold _nodiscard static QPixmap logo(const int size); // xdesk mark
         _cold _nodiscard static QColor terminalColor(const int index); // xterm 256 colors (0 - 15 from the theme)
         _cold _nodiscard static QString monospaceFamily(void);
+        _cold static void decorate(QAbstractItemView* view); // tables / trees: no focus frame on a cell, accent bar at the start of the selected row, columns wide enough for the cell padding
 
         // ---------- Constructor --------- //
         Theme() = delete;
