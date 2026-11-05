@@ -27,8 +27,9 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 
 | Feature | Content |
 | ------- | ------- |
-| Host panel | Qt6 window (light / dark, tray icon) or full screen terminal panel (`--tty`, automatic without display) |
-| Pairing | One time code (`K7F-29Q-XM4`, Crockford base32, 45 bits), rotated after each use and on a timer, copy / new code |
+| Host panel | Qt6 window (Auto / Light / Dark, tray icon) or full screen terminal panel (`--tty`, automatic without display); **sharing starts off**: Start / Stop sharing (bottom left, tray, `s` in the terminal panel) without quitting |
+| Pairing | One time code (`K7F-29Q-XM4`, Crockford base32, 45 bits), rotated after each use, on a timer and at each start of the sharing, copy / new code / **QR code** |
+| QR code | Link of an address + the code: `xdesk://host:port?fp=..&code=..` for the Android app (certificate pinned from the QR code), `https://host:port/?code=..` for a browser; scanned by the phone camera, the app (Scan) or the web client (Scan, BarcodeDetector or jsQR) |
 | Approval | Accept / Accept & trust / Refuse prompt for unknown devices (30 s, refused by default), or always / never |
 | Sessions | Live table: device, client (`gui`, `tty`, `web`, `apk`), address, mode, rights, FPS, latency, bandwidth, last input |
 | Live view of a session | Every input (keys, clicks, wheel, text, clipboard), mirror of its terminals with what it types |
@@ -70,7 +71,7 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 ## Dependencies
 
 > [!CAUTION]
-> The MIT license of this project ([LICENSE](LICENSE)) only applies to the code of `xdesk` itself, not to its dependencies (Qt 6: LGPLv3, OpenSSL: Apache 2.0, libjpeg-turbo: BSD-style, xterm.js: MIT).
+> The MIT license of this project ([LICENSE](LICENSE)) only applies to the code of `xdesk` itself, not to its dependencies (Qt 6: LGPLv3, OpenSSL: Apache 2.0, libjpeg-turbo: BSD-style, xterm.js: MIT, jsQR: Apache 2.0, qrcodegen: MIT).
 
 | Name + Link | Status | Last Update |
 | ----------- | ------ | ----------- |
@@ -264,8 +265,9 @@ cmake --build $BUILD_DIR --target get_unregistered_files  # .cpp files missing f
 | `src/xdesk/client/` | `Client` (pinning, proof, frames, inputs, terminals) |
 | `src/xdesk/platform/` | `FrameEncoder`, capture (Qt, `linux/PortalCapture`, `windows/DxgiCapture`), input (`linux/UInputInjector`, `XTestInjector`, `windows/SendInputInjector`), terminals (`unix/PtyTerminal`, `windows/ConPtyTerminal`), `Keymap` |
 | `src/xdesk/ui/` | `gui/` (Qt: `HostWindow`, `ViewerWindow`, `TerminalWidget` + `VtScreen` emulator, `Theme`), `tty/` (`HostTui`, `ClientTui`, `Ansi`) |
-| `web/` | Web client (embedded in the binary), xterm.js in `web/vendor/` |
-| `android/` | Android application (WebView with certificate pinning and auto update) |
+| `web/` | Web client (embedded in the binary), xterm.js and jsQR in `web/vendor/` |
+| `android/` | Android application (WebView with certificate pinning and auto update, `assets/scan.html` QR code scanner) |
+| `third_party/qrcodegen/` | QR code encoder of the host panel (Nayuki, MIT) |
 | `scripts/` | `install.sh`, `install.ps1`, `bundle_windows.sh`, `build_apk.sh` |
 | `include/xdesk/` | Headers (same tree) |
 | `tests/xdesk/` | Unit tests (one file per module) |
@@ -289,7 +291,7 @@ path it closes. The panel shows, for each path, who can use it and its address.
 | Mode | Adds | How | Encryption |
 | ---- | ---- | --- | ---------- |
 | `lan` | nothing (LAN only) | Every local interface + UDP discovery (`xdesk scan`, port `47801`) | end to end |
-| `tailscale` | your devices of the tailnet | The MagicDNS name of the host (`pc.tailnet.ts.net`, else `100.x.y.z`), nothing to open | end to end (WireGuard + TLS) |
+| `tailscale` | your devices of the tailnet | `https://100.x.y.z:<port>` for the browsers and the app, the MagicDNS name (`pc.tailnet.ts.net`) for `xdesk connect`; nothing to open | end to end (WireGuard + TLS) |
 | `upnp` | the internet | `upnpc` opens the port on the router, shows the public address | end to end |
 | `bore` | the internet (relay) | `bore local <port> --to bore.pub` (TCP tunnel, no account) | end to end |
 | `ngrok` | the internet (relay) | `ngrok tcp <port>` (account) | end to end |
@@ -297,12 +299,16 @@ path it closes. The panel shows, for each path, who can use it and its address.
 | `manual` | the internet | Port forwarded by hand, public address given in the settings | end to end |
 
 > [!NOTE]
-> The tools (`upnpc`, `bore`, `cloudflared`, `ngrok`, `tailscale`) are used only when installed; the panel shows the state of the tunnel and every address (double click to copy).
+> The tools (`upnpc`, `bore`, `cloudflared`, `ngrok`, `tailscale`) are used only when installed; the panel shows the state of the tunnel and every address (copy and QR code buttons on each one).
+
+> [!WARNING]
+> Every `*.ts.net` name is on the HSTS preload list of the browsers: a self-signed certificate is refused there **without any way to accept it** (`MOZILLA_PKIX_ERROR_SELF_SIGNED_CERT`, no exception button). That is why the browser address of the Tailscale path is its `100.x.y.z` IP; the native clients pin the certificate and keep using the name.
 
 ## Phone & browser
 
-- Open `https://<host>:<port>` (shown in the panel): the web client asks the code, then shows the screen (touch: tap = click, long press = right click, two fingers = scroll, keyboard button) and terminals (xterm.js).
-- On Android the page proposes the **xdesk app** (`/app/xdesk.apk`): full screen, certificate pinned on first use, and an update offered as soon as the host serves a newer version.
+- Scan the **QR code** of the panel (Overview, QR code, or the button of an address) with the camera: the xdesk app or the browser opens with the code filled in.
+- Open `https://<host>:<port>` (shown in the panel): the web client asks the code (or scans it: Scan the QR code of the host), then shows the screen (touch: tap = click, long press = right click, two fingers = scroll, keyboard button) and terminals (xterm.js).
+- On Android the page proposes the **xdesk app** (`/app/xdesk.apk`): full screen, certificate pinned on first use (or from the QR code), a QR code scanner (camera asked when it opens), and an update offered as soon as the host serves a newer version.
 - The certificate is self-signed: the browser asks to accept it once (compare the fingerprint with the host panel), or use a Tailscale address / tunnel with a real certificate.
 
 ## Windows (cross compilation)

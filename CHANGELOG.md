@@ -31,9 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Screen stream: dirty tiles (libjpeg-turbo / solid), frames in flight limit, remote cursor; capture DXGI (Windows), Qt (X11 / macOS), xdg-desktop-portal (Wayland), started with the first viewer only
 - Input: `SendInput` (Windows), `uinput` / XTest (Linux), physical key codes
 - Terminals: `forkpty` (Unix), ConPTY (Windows)
-- Exposure: LAN + discovery, Tailscale (MagicDNS name), UPnP, `bore`, `cloudflared`, `ngrok`, manual; the LAN is always open, each mode adds one path and the host refuses the peers coming through another one
+- Exposure: LAN + discovery, Tailscale (IP for the browsers: the `*.ts.net` names are HSTS preloaded, MagicDNS name for the native clients), UPnP, `bore`, `cloudflared`, `ngrok`, manual; the LAN is always open, each mode adds one path and the host refuses the peers coming through another one
+- Sharing switch: the host starts with the sharing off, Start (green) / Stop (red) sharing at the bottom of the panel, in the tray and with `s` in the terminal panel, without quitting xdesk; a new code at each start
+- QR code of an address + the code (`xdesk://` link with the pinned fingerprint for the Android app, `https://` link for a browser), scanners in the Android app and in the web client (BarcodeDetector, else jsQR)
 - Look: own "graphite + signal green" theme (square corners, small capitals, monospace for codes and addresses), Auto / Light / Dark switch in the host panel, the viewer and the web client, the Auto mode follows the system live
 - Scripts: `install.sh`, `install.ps1`, `bundle_windows.sh`, `build_apk.sh`
-- Unit tests: crypto, pairing code, device registry, protocol, frame encoder, command line
+- Unit tests: crypto, pairing code, device registry, protocol, frame encoder, command line, sharing switch of the host
 
 [v1.0.0]: https://github.com/TsukiNi22/external-desktop/releases/tag/v1.0.0
