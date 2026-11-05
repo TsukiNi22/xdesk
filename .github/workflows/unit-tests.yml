@@ -90,8 +90,8 @@ jobs:
       - name: Build unit-tests (MinGW-w64)
         run: |
           set -e
-          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain/mingw-w64.cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON
-          cmake --build build --parallel $(nproc)
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain/mingw-w64.cmake -DXDESK_JOBS=2 -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=ON
+          cmake --build build --parallel 2
         timeout-minutes: 8
 
       - name: Show ccache stats

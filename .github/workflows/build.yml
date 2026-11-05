@@ -96,8 +96,8 @@ jobs:
       - name: Build (Release, MinGW-w64)
         run: |
           set -e
-          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain/mingw-w64.cmake
-          cmake --build build --target release --parallel $(nproc)
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain/mingw-w64.cmake -DXDESK_JOBS=2
+          cmake --build build --target release --parallel 2
         timeout-minutes: 8
 
       - name: Show ccache stats

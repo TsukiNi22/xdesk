@@ -305,6 +305,8 @@ add_custom_target(generated_external_exception_header ALL # ALL: also generated 
 # =========================
 # Release (build Debug, Asan & Optimized)
 # =========================
+cmake_host_system_information(RESULT XDESK_DEFAULT_JOBS QUERY NUMBER_OF_LOGICAL_CORES)
+set(XDESK_JOBS ${XDESK_DEFAULT_JOBS} CACHE STRING "Jobs of the inner builds of release / install_release / package_release (low on small machines: MinGW + Qt is heavy)")
 # Asan: not with MinGW (Windows packages mingw64-*, built with the MinGW toolchain)
 set(RELEASE_ASAN_COMMANDS "")
 set(INSTALL_ASAN_COMMANDS "")
@@ -312,33 +314,33 @@ set(PACKAGE_ASAN_COMMANDS "")
 if(NOT WIN32)
     list(APPEND RELEASE_ASAN_COMMANDS
         COMMAND ${CMAKE_COMMAND} -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR} -DCMAKE_BUILD_TYPE=Asan
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --parallel
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --parallel ${XDESK_JOBS}
     )
     list(APPEND INSTALL_ASAN_COMMANDS
         COMMAND ${CMAKE_COMMAND} -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR} -DCMAKE_BUILD_TYPE=Asan
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target install --parallel
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target install --parallel ${XDESK_JOBS}
     )
     list(APPEND PACKAGE_ASAN_COMMANDS
         COMMAND ${CMAKE_COMMAND} -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR} -DCMAKE_BUILD_TYPE=Asan -DXDESK_DEV_PACKAGE=OFF -DXDESK_PACKAGE=OFF
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target package --parallel
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target package --parallel ${XDESK_JOBS}
     )
 endif()
 
 add_custom_target(release
     COMMAND ${CMAKE_COMMAND} -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR} -DCMAKE_BUILD_TYPE=Debug
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --parallel
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --parallel ${XDESK_JOBS}
     ${RELEASE_ASAN_COMMANDS}
     COMMAND ${CMAKE_COMMAND} -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR} -DCMAKE_BUILD_TYPE=Optimized
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --parallel
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --parallel ${XDESK_JOBS}
     COMMENT "Building the debug versions Debug & Asan (lib${LIB_NAME}_debug.a, lib${LIB_NAME}_asan.a) and the Optimized one (lib${LIB_NAME}.a; the executable at the root is the last one built), no Asan with MinGW"
     VERBATIM
 )
 add_custom_target(install_release
     COMMAND ${CMAKE_COMMAND} -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR} -DCMAKE_BUILD_TYPE=Debug
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target install --parallel
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target install --parallel ${XDESK_JOBS}
     ${INSTALL_ASAN_COMMANDS}
     COMMAND ${CMAKE_COMMAND} -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR} -DCMAKE_BUILD_TYPE=Optimized
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target install --parallel
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target install --parallel ${XDESK_JOBS}
     COMMENT "Installing the debug versions Debug & Asan and the Optimized one (the executable: Optimized only, same path), no Asan with MinGW"
     VERBATIM
 )
@@ -349,16 +351,16 @@ set(PACKAGE_DEV_COMMANDS "")
 if(COMPILED_TARGETS)
     list(APPEND PACKAGE_VARIANT_COMMANDS
         COMMAND ${CMAKE_COMMAND} -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR} -DCMAKE_BUILD_TYPE=Debug -DXDESK_DEV_PACKAGE=OFF -DXDESK_PACKAGE=OFF
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target package --parallel
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target package --parallel ${XDESK_JOBS}
         ${PACKAGE_ASAN_COMMANDS}
         COMMAND ${CMAKE_COMMAND} -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR} -DCMAKE_BUILD_TYPE=Optimized -DXDESK_DEV_PACKAGE=OFF -DXDESK_PACKAGE=OFF
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target package --parallel
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target package --parallel ${XDESK_JOBS}
     )
 endif()
 if(XDESK_PACKAGE_DEV)
     list(APPEND PACKAGE_DEV_COMMANDS
         COMMAND ${CMAKE_COMMAND} -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR} -DCMAKE_BUILD_TYPE=Optimized -DXDESK_DEV_PACKAGE=ON -DXDESK_PACKAGE=OFF
-        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target package --parallel
+        COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target package --parallel ${XDESK_JOBS}
     )
 endif()
 
@@ -366,7 +368,7 @@ add_custom_target(package_release
     ${PACKAGE_VARIANT_COMMANDS}
     ${PACKAGE_DEV_COMMANDS}
     COMMAND ${CMAKE_COMMAND} -S ${CMAKE_SOURCE_DIR} -B ${CMAKE_BINARY_DIR} -DCMAKE_BUILD_TYPE=Optimized -DXDESK_DEV_PACKAGE=OFF -DXDESK_PACKAGE=ON
-    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target package --parallel
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target package --parallel ${XDESK_JOBS}
     COMMENT "Building the packages: the variants -db, -as, -op (executable and/or library), the headers -dev* and the global one, mingw64-* without Asan with the MinGW toolchain"
     VERBATIM
 )

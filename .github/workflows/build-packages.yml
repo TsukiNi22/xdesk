@@ -151,8 +151,8 @@ jobs:
       - name: Build packages (Release, MinGW-w64)
         run: |
           set -e
-          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain/mingw-w64.cmake -DXDESK_STABLE_RELEASE=${{ inputs.stable }} -DPACKAGE_RELEASE=${{ github.run_number }}
-          cmake --build build --target package_release --parallel $(nproc)
+          cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain/mingw-w64.cmake -DXDESK_JOBS=2 -DXDESK_STABLE_RELEASE=${{ inputs.stable }} -DPACKAGE_RELEASE=${{ github.run_number }}
+          cmake --build build --target package_release --parallel 2
         timeout-minutes: 8
 
       - name: Show ccache stats
