@@ -225,6 +225,7 @@ void xdesk::host::Host::startStream_(void)
         this->_log.info("server", "", "Capture " + backend + " " + QString::number(size.width()) + "x" + QString::number(size.height()) + ", input " + this->inputBackend());
         for (Session* s: this->_sessions)
             if (s->state() == State::Active) s->sendJson({{"t", "screen"}, {"w", size.width()}, {"h", size.height()}});
+        this->sendInputState_();
         emit this->stateChanged();
     });
     QObject::connect(this->_stream, &Stream::closed, this, [this]() {
@@ -237,6 +238,7 @@ void xdesk::host::Host::startStream_(void)
     QObject::connect(this->_stream, &Stream::failed, this, [this](const QString& error) {
         this->_captureBackend = "none (" + error + ")";
         this->_log.warn("server", "", "Screen capture unavailable: " + error);
+        this->sendInputState_();
         emit this->stateChanged();
     });
     QObject::connect(this->_stream, &Stream::frame, this, [this](const QString& id, const QByteArray& message) {
@@ -263,6 +265,7 @@ void xdesk::host::Host::startStream_(void)
         this->openInjector_();
         for (Session* s: this->_sessions)
             if (s->state() == State::Active) s->sendJson({{"t", "screen"}, {"w", size.width()}, {"h", size.height()}});
+        this->sendInputState_();
         emit this->stateChanged();
     });
     QObject::connect(this->_stream, &Stream::scaled, this, [this](const QString& id, const double scale) {
@@ -474,6 +477,7 @@ void xdesk::host::Host::admit_(Session* session, const bool remember)
     if (s.lanes && (session->kind() == net::ClientKind::Web || session->kind() == net::ClientKind::Apk))
         extra["lanes"] = this->_lanes.offer(session->id()); // token of its extra sockets, same channel
     session->accept(this->defaultPermissions_(session), extra);
+    this->sendInputState_(session);
     this->_scales[session->id()] = s.scale;
     if (this->_stream)
         QMetaObject::invokeMethod(this->_stream, "addClient", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(int, s.quality), Q_ARG(double, s.scale), Q_ARG(int, s.fps));
@@ -499,9 +503,9 @@ void xdesk::host::Host::onControl_(Session* session, const QJsonObject& message)
         if (mode != "control" && session->mode() == "control" && this->_injector) this->_injector->releaseAll();
         session->setMode(mode);
         this->_log.info("session", session->id(), "Mode " + mode);
-        // Input rights given since the capture started (uinput rule): tried again, else the viewer is told why its clicks do nothing
-        if (mode == "control" && !this->_injector && this->_screen.isValid()) this->openInjector_();
-        if (mode == "control" && !this->_injector) session->sendJson({{"t", "info"}, {"text", "Remote control unavailable on the host: " + (this->_inputError.isEmpty() ? QString("no input backend") : this->_inputError)}});
+        // Input rights given since the capture started (uinput rule): tried again, the viewer shows whether its clicks work (loading while the capture starts)
+        if (mode == "control" && !this->_injector && this->_screen.isValid() && !this->_captureBackend.isEmpty()) this->openInjector_();
+        if (mode == "control") this->sendInputState_(session);
         this->updateMarker_();
     } else if (type == "pause") {
         if (this->_stream) QMetaObject::invokeMethod(this->_stream, "setPaused", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(bool, message.value("paused").toBool()));
@@ -971,6 +975,18 @@ void xdesk::host::Host::openInjector_(void)
     if (this->_injector) {this->_inputError = ""; return;}
     if (error != this->_inputError) this->_log.warn("server", "", "Remote control unavailable: " + error);
     this->_inputError = error;
+}
+
+void xdesk::host::Host::sendInputState_(Session* session) const
+{
+    // No injector yet while the capture starts (it opens on the first frame): loading, not unavailable
+    const bool loading = !this->_injector && this->_stream && this->_captureBackend.isEmpty();
+    const QString state = this->_injector ? "ready" : (loading ? "loading" : "none");
+    QString error = this->_inputError;
+
+    if (state == "none" && error.isEmpty()) error = this->_captureBackend.startsWith("none") ? "screen capture unavailable: " + this->_captureBackend.mid(6).chopped(1) : QString("no input backend");
+    for (Session* s: this->_sessions)
+        if ((session == nullptr || s == session) && s->state() == State::Active) s->sendJson({{"t", "input"}, {"state", state}, {"error", state == "none" ? error : QString()}});
 }
 
 void xdesk::host::Host::setTheme(const QString& theme)

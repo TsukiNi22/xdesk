@@ -318,3 +318,12 @@ input.code { font-family: var(--mono); font-size: 26px !important; letter-spacin
 .scan-bar .btn { min-height: 44px; min-width: 140px; }
 /* Touch: no callout / magnifier on a held button (keys repeat, modifiers) */
 button { -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+
+/* State of the screen / controls over the viewport (loading, unavailable, ready) */
+.screen-state { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; max-width: calc(100% - 24px); padding: 7px 12px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 3px; font-size: 13px; box-shadow: 0 6px 24px rgba(0, 0, 0, .25); z-index: 5; pointer-events: none; }
+.screen-state[hidden] { display: none; }
+.screen-state .dot { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); }
+.screen-state.loading .dot { background: none; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
+.screen-state.warn { border-color: var(--danger); }
+.screen-state.warn .dot { background: var(--danger); }
+.screen-state.ok .dot { background: var(--accent); }

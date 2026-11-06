@@ -45,6 +45,8 @@
             connecting: "Connexion...", closedTitle: "Session terminée", bannedTitle: "Appareil banni", deniedTitle: "Connexion refusée",
             bannedText: "Cet appareil a été banni par l'hôte. Seule une action locale sur l'ordinateur peut le débannir.",
             lostText: "La connexion a été perdue.", codeRequired: "Entrez le code affiché sur l'hôte.",
+            screenLoading: "Chargement de l'écran...", controlLoading: "Contrôles en préparation...", controlReady: "Contrôles prêts",
+            controlNone: "Contrôle indisponible sur l'hôte", controlViewOnly: "Lecture seule : l'hôte n'a pas donné le contrôle",
             controlDenied: "L'hôte n'a pas donné le droit de contrôle.", terminalDenied: "L'hôte n'a pas donné le droit d'ouvrir un terminal.",
             proofMismatch: "L'hôte n'a pas prouvé qu'il connaît le secret de cet appareil : connexion fermée.",
             exited: "processus terminé", copied: "Copié", fullscreenFail: "Plein écran indisponible",
@@ -64,6 +66,8 @@
         connecting: "Connecting...", closedTitle: "Session ended", bannedTitle: "Device banned", deniedTitle: "Connection refused",
         bannedText: "This device was banned by the host. Only a local action on the computer can unban it.",
         lostText: "The connection was lost.", codeRequired: "Enter the code shown on the host.",
+        screenLoading: "Loading the screen...", controlLoading: "Getting the controls ready...", controlReady: "Controls ready",
+        controlNone: "Remote control unavailable on the host", controlViewOnly: "View only: the host did not give the control",
         controlDenied: "The host did not give the control right.", terminalDenied: "The host did not give the terminal right.",
         proofMismatch: "The host did not prove it knows the secret of this device: connection closed.",
         exited: "process exited", copied: "Copied", fullscreenFail: "Fullscreen unavailable",
@@ -84,13 +88,38 @@
     }
 
     // Touch screens: no native tooltip (a long press shows it and it stays on screen after the finger left), only the label
-    const NO_HOVER = !!(window.matchMedia && window.matchMedia("(hover: none)").matches);
+    /* No native tooltip on a touch screen (it shows on a tap and stays): some phones report a hover (stylus, HyperOS
+     * WebView), so the app, a coarse pointer and the first touch turn them off too; every title is then kept as the
+     * aria-label only, the ones added later included
+    */
+    let noTips = IN_APP || !!(window.matchMedia && (window.matchMedia("(hover: none)").matches || window.matchMedia("(any-pointer: coarse)").matches));
+
+    function dropTips(root) {
+        for (const el of root.querySelectorAll("[title]")) {
+            if (!el.getAttribute("aria-label")) el.setAttribute("aria-label", el.title);
+            el.removeAttribute("title");
+        }
+    }
+
+    function tipsOff() {
+        noTips = true;
+        dropTips(document);
+        new MutationObserver((list) => {
+            for (const m of list) {
+                if (m.type === "attributes" && m.target.hasAttribute("title")) dropTips(m.target.parentNode || document);
+                else for (const n of m.addedNodes) if (n.nodeType === 1) {if (n.hasAttribute("title")) dropTips(n.parentNode || document); dropTips(n);}
+            }
+        }).observe(document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ["title"]});
+    }
 
     function setTip(el, text) {
         el.setAttribute("aria-label", text);
-        if (NO_HOVER) el.removeAttribute("title");
+        if (noTips) el.removeAttribute("title");
         else el.title = text;
     }
+
+    document.addEventListener("pointerdown", (e) => {if (e.pointerType === "touch" && !noTips) tipsOff();}, true);
+    if (noTips) tipsOff();
 
     function applyLanguage() {
         document.documentElement.lang = lang;
@@ -105,7 +134,7 @@
             if (!el.dataset.i18nTitleEn) el.dataset.i18nTitleEn = el.title;
             setTip(el, tr !== undefined ? tr : el.dataset.i18nTitleEn);
         }
-        if (NO_HOVER) for (const el of document.querySelectorAll("[title]")) setTip(el, el.getAttribute("aria-label") || el.title);
+        if (noTips) dropTips(document);
         setStatus(state.status);
         if (typeof renderKeys === "function" && $("keysMain").childElementCount) renderKeys();
     }
@@ -392,12 +421,14 @@
         state.tileIds = new Uint32Array(0);
         state.frameW = 0;
         state.frameH = 0;
+        state.input = {state: "loading", error: ""}; // until the host says (its capture starts with the first viewer)
         if (msg.udp) bridgeSend({t: "start", offer: msg.udp});
         state.perms = Object.assign({view: false, control: false, terminal: false, clipboard: false}, msg.perms || {});
         setStatus("active");
         showView("sessionView");
         applyPerms();
         setMode(state.perms.control ? "control" : "view", true);
+        updateScreenState();
         sendQuality();
         state.paused = false; // a new session streams until told otherwise
         state.drawing = 0;
@@ -563,6 +594,7 @@
             case "perms": state.perms = Object.assign(state.perms, msg.perms || {}); applyPerms(); break;
             case "screen": /* the next frame carries the new size */ break;
             case "info": toast(msg.text || ""); break;
+            case "input": onInputState(msg); break;
             case "lanes": setLanes(msg.n); break;
             case "term_exit": onTermExit(msg.id, msg.code); break;
             case "clip": if (msg.text && navigator.clipboard && document.hasFocus()) navigator.clipboard.writeText(msg.text).catch(() => {}); break;
@@ -794,6 +826,7 @@
                     state.frameW = w;
                     state.frameH = h;
                     state.sizeId = id;
+                    updateScreenState();
                     state.tileCols = Math.ceil(w / TILE_SIZE);
                     state.tileIds = new Uint32Array(state.tileCols * Math.ceil(h / TILE_SIZE));
                     canvas.width = w;
@@ -913,6 +946,43 @@
         if (!state.perms.control && state.mode === "control") setMode("view", false);
         if (!state.perms.terminal) destroyTerms();
         updateKeybar();
+        updateScreenState();
+    }
+
+    /* State of the screen and of the controls, over the screen:
+     * no frame yet -> spinner "Loading the screen", control asked while the host opens its input -> "Getting the controls ready",
+     * no input backend on the host -> its reason (kept on screen), ready -> "Controls ready" for a moment
+    */
+    let readyTimer = 0;
+
+    function onInputState(msg) {
+        const before = state.input ? state.input.state : "";
+        state.input = {state: msg.state || "none", error: msg.error || ""};
+        updateScreenState();
+        if (state.input.state === "ready" && before !== "ready" && state.mode === "control") {
+            const el = $("screenState");
+            el.hidden = false;
+            el.className = "screen-state ok";
+            $("screenStateText").textContent = t("controlReady");
+            clearTimeout(readyTimer);
+            readyTimer = setTimeout(updateScreenState, 1500);
+        }
+    }
+
+    function updateScreenState() {
+        const el = $("screenState");
+        const input = state.input || {state: "loading", error: ""};
+        let kind = "";
+        let text = "";
+
+        clearTimeout(readyTimer);
+        if (state.status !== "active" || !state.perms.view) kind = "";
+        else if (!state.frameW) {kind = "loading"; text = t("screenLoading");}
+        else if (state.mode === "control" && input.state === "loading") {kind = "loading"; text = t("controlLoading");}
+        else if (state.mode === "control" && input.state === "none") {kind = "warn"; text = t("controlNone") + (input.error ? ": " + input.error : "");}
+        el.hidden = !kind;
+        el.className = "screen-state " + kind;
+        $("screenStateText").textContent = text;
     }
 
     function setMode(mode, send) {
@@ -922,6 +992,7 @@
         }
         if (mode !== "control") releaseAll();
         state.mode = mode;
+        if (typeof updateScreenState === "function" && state.status === "active") updateScreenState();
         $("modeView").classList.toggle("on", mode === "view");
         $("modeControl").classList.toggle("on", mode === "control");
         $("screenPane").classList.toggle("control", mode === "control");
@@ -1447,7 +1518,7 @@
         {mod: "ctrl", label: "Ctrl", gap: true},
         {mod: "alt", label: "Alt"},
         {mod: "shift", label: "Shift"},
-        {mod: "meta", label: "Win"},
+        {mod: "meta", label: "Win", press: "MetaLeft"}, // tap = the key at once (menu / activities), hold = sticky for a combination
         {code: "ArrowLeft", label: "←", repeat: true, gap: true},
         {code: "ArrowUp", label: "↑", repeat: true},
         {code: "ArrowDown", label: "↓", repeat: true},
@@ -1623,6 +1694,7 @@
         b.className = "key" + (k.gap ? " gap" : "");
         if (k.code) b.dataset.code = k.code;
         if (k.mod) {b.dataset.mod = k.mod; b.setAttribute("aria-pressed", "false");}
+        if (k.press) b.dataset.press = k.press;
         if (k.act) b.dataset.act = k.act;
         if (k.repeat) b.dataset.repeat = "1";
         if (k.screen) b.dataset.screen = "1";
@@ -1662,7 +1734,9 @@
 
     function activate(b) {
         const d = b.dataset;
-        if (d.mod) tapModifier(d.mod);
+        if (d.press && mods[d.mod]) {mods[d.mod] = 0; renderMods();} // sticky (held before): a tap turns it off
+        else if (d.press) pressKey(d.press); // a tap sends the key itself (with the other sticky modifiers)
+        else if (d.mod) tapModifier(d.mod);
         else if (d.code) pressKey(d.code);
         else if (d.act === "fn") {$("keysFn").hidden = !$("keysFn").hidden; renderKeys(); requestAnimationFrame(() => {layoutCanvas(); fitActiveTerm();});}
         else if (d.act === "kbd") toggleKeyboard();
@@ -1692,6 +1766,17 @@
         const b = e.target.closest(".key");
         stopRepeat();
         repeat.fired = false;
+        if (b && b.dataset.press) {
+            // Held: sticky for the next key (win + e...), a second hold locks it
+            repeat.timer = setTimeout(() => {
+                repeat.fired = true;
+                if (mods[b.dataset.mod] === 1) mods[b.dataset.mod] = 2;
+                else mods[b.dataset.mod] = mods[b.dataset.mod] ? 0 : 1;
+                renderMods();
+                if (navigator.vibrate) navigator.vibrate(15);
+            }, LONG_PRESS);
+            return;
+        }
         if (!b || !b.dataset.repeat) return;
         repeat.timer = setTimeout(() => {
             repeat.fired = true;
