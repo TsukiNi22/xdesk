@@ -55,6 +55,7 @@ set(SRC
     ## Network (sub-part: net)
     xdesk/net/Protocol.cpp
     xdesk/net/Server.cpp
+    xdesk/net/Datagram.cpp
 
     ## Host (sub-part: host)
     xdesk/host/Host.cpp

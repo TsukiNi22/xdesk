@@ -301,8 +301,10 @@ void xdesk::net::Exposure::stop(void)
     }
 
     // Remove the router mapping (best effort, detached)
-    if (this->_mode == core::Exposure::Upnp && this->_port != 0 && !QStandardPaths::findExecutable("upnpc").isEmpty())
+    if (this->_mode == core::Exposure::Upnp && this->_port != 0 && !QStandardPaths::findExecutable("upnpc").isEmpty()) {
         QProcess::startDetached("upnpc", {"-d", QString::number(this->_port), "TCP"});
+        QProcess::startDetached("upnpc", {"-d", QString::number(this->_port), "UDP"}); // the video of the native viewers
+    }
     this->_endpoints.clear();
     this->_status = "";
 }
@@ -344,7 +346,7 @@ void xdesk::net::Exposure::startTool_(void)
     QStringList args;
 
     switch (this->_mode) {
-        case core::Exposure::Upnp:        program = "upnpc";       args = {"-e", "xdesk", "-r", port, "TCP"}; break;
+        case core::Exposure::Upnp:        program = "upnpc";       args = {"-e", "xdesk", "-r", port, "TCP", port, "UDP"}; break;
         case core::Exposure::Bore:        program = "bore";        args = {"local", port, "--to", "bore.pub"}; break;
         case core::Exposure::Cloudflared: program = "cloudflared"; args = {"tunnel", "--no-autoupdate", "--url", "https://localhost:" + port, "--no-tls-verify"}; break;
         case core::Exposure::Ngrok:       program = "ngrok";       args = {"tcp", port, "--log", "stdout", "--log-format", "logfmt"}; break;

@@ -121,6 +121,7 @@ class HostWindow: public QMainWindow {
         QComboBox* _setExposure = nullptr;
         QLineEdit* _setPublicHost = nullptr;
         QCheckBox* _setDiscovery = nullptr;
+        QCheckBox* _setUdp = nullptr;
         QSpinBox* _setCodeLength = nullptr;
         QSpinBox* _setCodeLifetime = nullptr;
         QComboBox* _setApproval = nullptr;

@@ -46,16 +46,15 @@ void xdesk::host::FlowControl::sent(const std::uint32_t id, const std::int64_t b
 void xdesk::host::FlowControl::acked(const std::uint32_t id, const std::int64_t now)
 {
     FlowFrame last;
-    bool found = false;
+    qsizetype index = 0;
 
-    // Acks come in order: every frame up to this one arrived
-    while (!this->_flight.isEmpty() && static_cast<std::int32_t>(this->_flight.first().id - id) <= 0) {
-        last = this->_flight.takeFirst();
-        this->_bytes -= last.bytes;
-        this->_delivered += last.bytes;
-        found = true;
-    }
-    if (!found) return;
+    // Selective: over udp the frames complete in any order (a late one never holds the next ones)
+    while (index < this->_flight.size() && this->_flight[index].id != id)
+        ++index;
+    if (index == this->_flight.size()) return;
+    last = this->_flight.takeAt(index);
+    this->_bytes -= last.bytes;
+    this->_delivered += last.bytes;
     this->_deliveredAt = now;
 
     // Samples: delivery rate since the frame was sent, ping

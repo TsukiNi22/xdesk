@@ -87,7 +87,7 @@ class FlowControl {
         // ---------- Pre-Function -------- //
         void reset(void); // everything measured again (frames in flight forgotten)
         void sent(const std::uint32_t id, const std::int64_t bytes, const std::int64_t now);
-        void acked(const std::uint32_t id, const std::int64_t now); // acks the frames up to id (in order)
+        void acked(const std::uint32_t id, const std::int64_t now); // this frame arrived (any order)
         void expire(const std::int64_t now); // frames without ack for too long: given up (lost acks, a sleeping viewer)
         _hot _nodiscard bool canSend(const int fps) const; // one more frame fits in the window (fps: the rate asked)
         _hot _nodiscard int quality(const int asked); // jpeg quality to use: the asked one, lowered while the path is congested

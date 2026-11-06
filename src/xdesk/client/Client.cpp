@@ -30,6 +30,7 @@ File Description:
 #include <QHostInfo>
 #include <QDateTime>
 #include <QSaveFile>
+#include <functional>
 #include <algorithm>
 #include <QSysInfo>
 #include <cstring>
@@ -64,6 +65,16 @@ xdesk::client::Client::Client(QObject* parent)
 {
     QObject::connect(&this->_ping, &QTimer::timeout, this, [this]() {
         if (this->_ws) this->_ws->sendText(QString(R"({"t":"ping","ts":%1})").arg(QDateTime::currentMSecsSinceEpoch()));
+    });
+    QObject::connect(&this->_udp, &UdpLink::frame, this, [this](const QByteArray& message) {
+        if (this->_state == State::Active) this->decodeFrame_(message, true);
+    });
+    QObject::connect(&this->_udp, &UdpLink::gaveUp, this, [this]() {
+        if (this->_ws && this->_state == State::Active) this->_ws->sendText(R"({"t":"refresh"})"); // a frame lost for good: a complete one
+    });
+    QObject::connect(&this->_udp, &UdpLink::activeChanged, this, [this](const bool active) {
+        if (!active && this->_ws && this->_state == State::Active) this->_ws->sendText(R"({"t":"udp_off"})"); // blocked / silent: the host sends on tcp
+        emit this->message(active ? "Video over encrypted UDP" : "Video over TCP");
     });
 }
 
@@ -110,6 +121,7 @@ void xdesk::client::Client::connectToHost(const Options& options)
 void xdesk::client::Client::disconnectFromHost(void)
 {
     this->_ping.stop();
+    this->_udp.stop();
     if (!this->_ws) return;
     this->_ws->disconnect(this);
     this->_ws->close(1000, "bye");
@@ -230,6 +242,7 @@ void xdesk::client::Client::onText_(const QString& text)
         this->_perms = m.value("perms").toObject();
         this->setState_(State::Active);
         this->_ping.start(1000);
+        if (m.contains("udp")) (void)this->_udp.start(this->_ws->peerAddress(), m.value("udp").toObject()); // tcp until the host answers there
         this->requestMode(!this->_options.viewOnly && this->_perms.value("control").toBool() ? "control" : "view");
         emit this->permissionsChanged(this->_perms);
     } else if (type == "denied") {
@@ -245,6 +258,7 @@ void xdesk::client::Client::onText_(const QString& text)
         this->_ws->sendText(QString(R"({"t":"pong","ts":%1})").arg(m.value("ts").toInteger()));
     } else if (type == "pong") {
         this->_latency = static_cast<int>(QDateTime::currentMSecsSinceEpoch() - m.value("ts").toInteger());
+        this->_udp.setRtt(this->_latency);
         emit this->latencyChanged(this->_latency);
     } else if (type == "term_exit") {
         emit this->terminalClosed(static_cast<std::uint8_t>(m.value("id").toInt()), m.value("code").toInt());
@@ -275,7 +289,7 @@ void xdesk::client::Client::onBinary_(const QByteArray& data)
     }
 }
 
-void xdesk::client::Client::decodeFrame_(const QByteArray& data)
+void xdesk::client::Client::decodeFrame_(const QByteArray& data, const bool udp)
 {
     net::ByteReader r(data);
     const std::uint32_t id = r.u32();
@@ -288,39 +302,63 @@ void xdesk::client::Client::decodeFrame_(const QByteArray& data)
     if (!r.ok() || width == 0 || height == 0) return;
 
     // Ack at once: the host encodes the next frame while this one is decoded (latency over throughput)
-    net::ByteWriter ack(net::Binary::FrameAck, 5);
-    this->_ws->sendBinary(ack.u32(id).data());
+    if (!udp) {
+        net::ByteWriter ack(net::Binary::FrameAck, 5);
+        this->_ws->sendBinary(ack.u32(id).data());
+    }
     if (this->_canvas.size() != QSize(width, height)) {
         this->_canvas = QImage(width, height, QImage::Format_RGB32);
         this->_canvas.fill(Qt::black);
+        this->_tileColumns = (width + XDESK_TILE_SIZE - 1) / XDESK_TILE_SIZE;
+        this->_tiles = QVector<std::uint32_t>(this->_tileColumns * ((height + XDESK_TILE_SIZE - 1) / XDESK_TILE_SIZE), 0);
         dirty = this->_canvas.rect();
     }
 
-    // Solid tiles at once, the jpeg ones decoded in parallel (the tiles of a frame never overlap)
+    // Tiles of this frame not covered yet by a newer one (udp frames complete in any order), marked as from this frame
     const QRect bounds = this->_canvas.rect();
+    const std::function<QList<QRect>(const QRect&)> newer = [this, id, bounds](const QRect& area) {
+        QList<QRect> kept;
+        const QRect r = area.intersected(bounds);
+        for (int y = r.top() / XDESK_TILE_SIZE * XDESK_TILE_SIZE; y <= r.bottom(); y += XDESK_TILE_SIZE)
+            for (int x = r.left() / XDESK_TILE_SIZE * XDESK_TILE_SIZE; x <= r.right(); x += XDESK_TILE_SIZE) {
+                std::uint32_t& from = this->_tiles[(y / XDESK_TILE_SIZE) * this->_tileColumns + x / XDESK_TILE_SIZE];
+                if (from != 0 && static_cast<std::int32_t>(id - from) < 0) continue;
+                from = id;
+                kept.append(QRect(x, y, XDESK_TILE_SIZE, XDESK_TILE_SIZE).intersected(r));
+            }
+        return kept;
+    };
+
+    // Solid tiles at once, the jpeg ones decoded in parallel (the tiles of a frame never overlap)
+    QList<QList<QRect>> keep; // per jpeg: its tiles to draw
     for (int i = 0; i < count && r.ok(); ++i) {
         const QRect tile(r.u16(), r.u16(), r.u16(), r.u16());
         const std::uint8_t encoding = r.u8();
-        if (encoding == static_cast<std::uint8_t>(net::TileEncoding::Jpeg)) jpegs.append({tile, r.bytes(static_cast<qsizetype>(r.u32()))});
-        else if (encoding == static_cast<std::uint8_t>(net::TileEncoding::Solid)) {
+        if (encoding == static_cast<std::uint8_t>(net::TileEncoding::Jpeg)) {
+            jpegs.append({tile, r.bytes(static_cast<qsizetype>(r.u32()))});
+            keep.append(newer(tile));
+        } else if (encoding == static_cast<std::uint8_t>(net::TileEncoding::Solid)) {
             const int red = r.u8();
             const int green = r.u8();
             const int blue = r.u8();
-            const QRect area = tile.intersected(bounds);
             const QRgb color = qRgb(red, green, blue);
-            for (int y = area.top(); y <= area.bottom(); ++y)
-                std::fill_n(reinterpret_cast<QRgb*>(this->_canvas.scanLine(y)) + area.left(), area.width(), color);
+            for (const QRect& area: newer(tile))
+                for (int y = area.top(); y <= area.bottom(); ++y)
+                    std::fill_n(reinterpret_cast<QRgb*>(this->_canvas.scanLine(y)) + area.left(), area.width(), color);
         } else break;
         dirty = dirty.united(tile);
     }
     uchar* bits = this->_canvas.bits(); // detached here, before the threads write their own rectangles
     const qsizetype stride = this->_canvas.bytesPerLine();
-    platform::parallel_for(static_cast<int>(jpegs.size()), [&jpegs, bits, stride, bounds](const int i) {
-        const QImage image = platform::FrameEncoder::decodeJpeg(jpegs[i].second);
-        const QRect area = QRect(jpegs[i].first.topLeft(), image.size()).intersected(bounds);
-        if (image.isNull() || area.isEmpty()) return;
-        for (int y = 0; y < area.height(); ++y)
-            std::memcpy(bits + (area.top() + y) * stride + area.left() * 4, image.constScanLine(y), static_cast<std::size_t>(area.width()) * 4);
+    platform::parallel_for(static_cast<int>(jpegs.size()), [&jpegs, &keep, bits, stride](const int i) {
+        const QImage image = keep[i].isEmpty() ? QImage() : platform::FrameEncoder::decodeJpeg(jpegs[i].second);
+        const QPoint origin = jpegs[i].first.topLeft();
+        if (image.isNull()) return;
+        for (const QRect& tile: keep[i]) {
+            const QRect area = tile.intersected(QRect(origin, image.size()));
+            for (int y = 0; y < area.height(); ++y)
+                std::memcpy(bits + (area.top() + y) * stride + area.left() * 4, image.constScanLine(area.top() - origin.y() + y) + (area.left() - origin.x()) * 4, static_cast<std::size_t>(area.width()) * 4);
+        }
     });
     if (!dirty.isEmpty()) emit this->frameUpdated(dirty);
 }

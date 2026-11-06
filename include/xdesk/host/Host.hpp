@@ -37,6 +37,7 @@ File Description:
     #include "../core/Config.hpp"                       // xdesk::core::Config
     #include "../net/Server.hpp"                        // xdesk::net::Server
     #include "Session.hpp"                              // xdesk::host::Session, Permissions
+    #include "UdpServer.hpp"                            // xdesk::host::UdpServer
     #include "Stream.hpp"                               // xdesk::host::Stream
     #include <QSslConfiguration>                        // QSslConfiguration
     #include <QStringList>                              // QStringList
@@ -81,6 +82,7 @@ class Host: public QObject {
         security::PairingCode _code;
         security::IntegrityGuard _guard;
         net::Server _server;
+        UdpServer _udp; // video of the native viewers over encrypted udp (same port)
         net::Exposure _exposure;
         Stream* _stream = nullptr; // lives in _streamThread
         QThread _streamThread;
@@ -119,6 +121,7 @@ class Host: public QObject {
         void openInjector_(void); // input backend for the captured screen (logs once why it fails)
         void startStream_(void); // capture thread (a new stream for each sharing)
         void stopStream_(void);
+        void listenUdp_(void); // the udp port of the video (when the setting allows it)
         _cold _nodiscard QSslConfiguration tls_(void) const; // certificate + post-quantum groups
         _cold _nodiscard Permissions defaultPermissions_(const Session* session) const;
 
@@ -152,6 +155,7 @@ class Host: public QObject {
 
         // ------------ Function ---------- //
         /* getter */
+        _cold _nodiscard inline QString transport(const QString& session) const {return this->_udp.describe(session).isEmpty() ? QString("tcp") : this->_udp.describe(session);}; // path of the video of a session
         _cold _nodiscard inline core::Config& config(void)                           {return this->_config;};
         _cold _nodiscard inline core::AuditLog& log(void)                            {return this->_log;};
         _cold _nodiscard inline security::DeviceRegistry& registry(void)             {return this->_registry;};

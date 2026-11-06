@@ -975,7 +975,7 @@ void xdesk::ui::gui::HostWindow::refreshSession_(host::Session* session)
     if (p.terminal) rights << "terminal";
     if (p.clipboard) rights << "clipboard";
     cells << session->name() << net::client_kind_name(session->kind()) << session->address() << STATES[static_cast<int>(session->state())]
-        << session->mode() << rights.join(", ") << QString::number(st.fps) << (st.latency >= 0 ? QString::number(st.latency) + " ms" : "-")
+        << session->mode() + " · " + this->_host.transport(session->id()) << rights.join(", ") << QString::number(st.fps) << (st.latency >= 0 ? QString::number(st.latency) + " ms" : "-")
         << QString::number(st.kbps) << since_text(session->since()) << session->lastActivity();
     if (row < 0) {
         row = this->_sessions->rowCount();
@@ -1352,11 +1352,13 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     this->_setPublicHost = new QLineEdit();
     this->_setPublicHost->setPlaceholderText("my.domain.tld (manual exposure)");
     this->_setDiscovery = new QCheckBox("Announce on the LAN (xdesk scan)");
+    this->_setUdp = new QCheckBox("Video over encrypted UDP for the native viewers (faster on lossy links)");
     network->addRow(make_label("Port", "muted"), this->_setPort);
     network->addRow(make_label("Listen on", "muted"), this->_setBind);
     network->addRow(make_label("Exposure", "muted"), this->_setExposure);
     network->addRow(make_label("Public address", "muted"), this->_setPublicHost);
     network->addRow("", this->_setDiscovery);
+    network->addRow("", this->_setUdp);
 
     // Stream
     this->_setFps = new QSpinBox();
@@ -1449,6 +1451,7 @@ void xdesk::ui::gui::HostWindow::loadSettings_(void)
     this->_setExposure->setCurrentIndex(std::max(0, this->_setExposure->findData(core::exposure_name(s.exposure))));
     this->_setPublicHost->setText(s.publicHost);
     this->_setDiscovery->setChecked(s.discovery);
+    this->_setUdp->setChecked(s.udp);
     this->_setCodeLength->setValue(s.codeLength);
     this->_setCodeLifetime->setValue(s.codeLifetime);
     this->_setApproval->setCurrentText(core::approval_name(s.approval));
@@ -1482,6 +1485,7 @@ void xdesk::ui::gui::HostWindow::saveSettings_(void)
     s.exposure = core::exposure_from(this->_setExposure->currentData().toString());
     s.publicHost = this->_setPublicHost->text().trimmed();
     s.discovery = this->_setDiscovery->isChecked();
+    s.udp = this->_setUdp->isChecked();
     s.codeLength = this->_setCodeLength->value();
     s.codeLifetime = this->_setCodeLifetime->value();
     s.approval = core::approval_from(this->_setApproval->currentText());

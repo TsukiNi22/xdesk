@@ -147,16 +147,19 @@ set(SRC_SHARED
     src/xdesk/net/Protocol.cpp
     src/xdesk/net/WebSocket.cpp
     src/xdesk/net/Server.cpp
+    src/xdesk/net/Datagram.cpp
     src/xdesk/net/Exposure.cpp
 
     ## Host (sub-part: host)
     src/xdesk/host/Session.cpp
     src/xdesk/host/Stream.cpp
     src/xdesk/host/FlowControl.cpp
+    src/xdesk/host/UdpServer.cpp
     src/xdesk/host/Host.cpp
 
     ## Client (sub-part: client)
     src/xdesk/client/Client.cpp
+    src/xdesk/client/UdpLink.cpp
 
     ## Platform (sub-part: platform)
     src/xdesk/platform/FrameEncoder.cpp
@@ -218,10 +221,12 @@ endif()
 # Headers of the Q_OBJECT classes: given to the targets so that AUTOMOC finds them (include/ and src/ are split)
 set(HDR_MOC
     ${CMAKE_SOURCE_DIR}/include/xdesk/client/Client.hpp
+    ${CMAKE_SOURCE_DIR}/include/xdesk/client/UdpLink.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/core/AuditLog.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/host/Host.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/host/Session.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/host/Stream.hpp
+    ${CMAKE_SOURCE_DIR}/include/xdesk/host/UdpServer.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/net/Exposure.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/net/Server.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/net/WebSocket.hpp

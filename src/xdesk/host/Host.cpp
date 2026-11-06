@@ -70,6 +70,17 @@ xdesk::host::Host::Host(core::Config& config, QObject* parent)
         if (!name.isEmpty()) this->_log.info("server", "", "Tailscale certificate for " + name + " (valid until " + this->_exposure.certificateChain().first().expiryDate().toString("yyyy-MM-dd") + "): the browsers can use the name");
     });
     QObject::connect(&this->_server, &net::Server::newSocket, this, &Host::onSocket_);
+    QObject::connect(&this->_udp, &UdpServer::acked, this, [this](const QString& id, const std::uint32_t frame) {
+        if (this->_stream) QMetaObject::invokeMethod(this->_stream, "ack", Qt::QueuedConnection, Q_ARG(QString, id), Q_ARG(std::uint32_t, frame));
+    });
+    QObject::connect(&this->_udp, &UdpServer::activeChanged, this, [this](const QString& id, const bool active) {
+        Session* s = this->_sessions.value(id);
+        if (!s) return;
+        this->_log.info("session", id, active ? "Video over encrypted UDP" : "Video back on TCP (UDP silent or blocked)");
+        emit this->activity(id, active ? "video over encrypted UDP" : "video back on TCP");
+        if (!active && this->_stream) QMetaObject::invokeMethod(this->_stream, "refresh", Qt::QueuedConnection, Q_ARG(QString, id)); // the pieces lost with the udp path
+        emit this->sessionChanged(s);
+    });
 }
 
 xdesk::host::Host::~Host()
@@ -140,6 +151,7 @@ void xdesk::host::Host::setSharing(const bool share)
         this->kickAll("The host stopped sharing");
         this->_exposure.stop();
         this->_server.stop();
+        this->_udp.stop();
         this->stopStream_();
         this->_refused.clear();
         this->_log.info("server", "", "Sharing stopped");
@@ -149,12 +161,23 @@ void xdesk::host::Host::setSharing(const bool share)
 
     // Server first: a busy port throws before anything else starts
     this->_server.listen(s.bind, s.port, this->tls_());
+    this->listenUdp_();
     this->_sharing = true;
     this->_exposure.start(s, this->_server.port(), QHostInfo::localHostName(), security::fingerprint_short(this->_cert.fingerprint()));
     this->startStream_();
     this->_code.rotate(); // a fresh code for each sharing
     this->_log.info("server", "", "Sharing started on " + s.bind + ":" + QString::number(this->_server.port()) + " (" + core::exposure_name(s.exposure) + ", " + security::tls_summary() + ")");
     emit this->stateChanged();
+}
+
+void xdesk::host::Host::listenUdp_(void)
+{
+    const core::Settings& s = this->_config.settings();
+
+    this->_udp.stop();
+    if (!s.udp) return;
+    if (!this->_udp.listen(QHostAddress(s.bind), this->_server.port()))
+        this->_log.warn("server", "", "UDP port " + QString::number(this->_server.port()) + " unavailable: the video stays on TCP");
 }
 
 QSslConfiguration xdesk::host::Host::tls_(void) const
@@ -196,7 +219,8 @@ void xdesk::host::Host::startStream_(void)
     });
     QObject::connect(this->_stream, &Stream::frame, this, [this](const QString& id, const QByteArray& message) {
         Session* s = this->_sessions.value(id);
-        if (s && s->state() == State::Active) s->sendBinary(message, true);
+        if (!s || s->state() != State::Active) return;
+        if (!this->_udp.sendFrame(id, message)) s->sendBinary(message, true); // udp when the viewer reached it, else its websocket
     });
     QObject::connect(this->_stream, &Stream::cursor, this, [this](const QPoint& position) {
         for (Session* s: this->_sessions) {
@@ -408,6 +432,8 @@ void xdesk::host::Host::admit_(Session* session, const bool remember)
     extra["screen"] = QJsonObject{{"w", std::max(0, this->_screen.width())}, {"h", std::max(0, this->_screen.height())}}; // 0 x 0 while the capture waits for its first viewer
     extra["capture"] = this->_captureBackend;
     if (this->_pendingProof.contains(session->id())) extra["proof"] = this->_pendingProof.take(session->id());
+    if (s.udp && this->_udp.isListening() && (session->kind() == net::ClientKind::Gui || session->kind() == net::ClientKind::Tty))
+        extra["udp"] = this->_udp.offer(session->id()); // keys inside the authenticated TLS session only
     session->accept(this->defaultPermissions_(session), extra);
     this->_scales[session->id()] = s.scale;
     if (this->_stream)
@@ -439,6 +465,8 @@ void xdesk::host::Host::onControl_(Session* session, const QJsonObject& message)
         if (this->_stream) QMetaObject::invokeMethod(this->_stream, "setPaused", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(bool, message.value("paused").toBool()));
     } else if (type == "refresh") {
         if (this->_stream) QMetaObject::invokeMethod(this->_stream, "refresh", Qt::QueuedConnection, Q_ARG(QString, session->id()));
+    } else if (type == "udp_off") {
+        this->_udp.remove(session->id()); // the viewer could not reach the udp port: its video stays on tcp
     } else if (type == "term_open") {
         this->openTerminal_(session, static_cast<std::uint8_t>(message.value("id").toInt()), message.value("cols").toInt(80), message.value("rows").toInt(24));
     } else if (type == "term_resize") {
@@ -632,6 +660,7 @@ void xdesk::host::Host::onClosed_(Session* session)
     if (this->_stream) QMetaObject::invokeMethod(this->_stream, "removeClient", Qt::QueuedConnection, Q_ARG(QString, id));
     if (session->mode() == "control" && this->_injector) this->_injector->releaseAll();
     this->closeTerminals_(id);
+    this->_udp.remove(id);
     this->_sessions.remove(id);
     this->_scales.remove(id);
     this->_remember.remove(id);
@@ -808,6 +837,7 @@ bool xdesk::host::Host::applySettings(const core::Settings& settings)
         this->_server.stop();
         this->_server.listen(settings.bind, settings.port, this->tls_());
     }
+    if (this->_sharing && (old.port != settings.port || old.bind != settings.bind || old.udp != settings.udp)) this->listenUdp_();
     if (this->_sharing && (old.exposure != settings.exposure || old.publicHost != settings.publicHost || old.port != settings.port || old.discovery != settings.discovery)) {
         QStringList outside;
 

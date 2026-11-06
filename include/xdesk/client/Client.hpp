@@ -28,6 +28,7 @@ File Description:
     #include <utils/utils.hpp>          // _hot, _cold, _nodiscard
     #include "../net/WebSocket.hpp"     // xdesk::net::WebSocket
     #include "../net/Protocol.hpp"      // xdesk::net::ClientKind, xdesk::net::MouseButton
+    #include "UdpLink.hpp"              // xdesk::client::UdpLink
     #include <QJsonObject>              // QJsonObject
     #include <QByteArray>               // QByteArray
     #include <QObject>                  // QObject
@@ -35,6 +36,7 @@ File Description:
     #include <cstdint>                  // std::uint8_t
     #include <QTimer>                   // QTimer
     #include <QSet>                     // QSet
+    #include <QVector>                  // QVector
     #include <QImage>                   // QImage
     #include <QPoint>                   // QPoint
 
@@ -88,6 +90,9 @@ class Client: public QObject {
         QImage _canvas; // composed screen
         QTimer _ping; // latency every second
         int _latency = -1;
+        UdpLink _udp; // video over encrypted udp when the host offers it
+        QVector<std::uint32_t> _tiles; // id of the frame each 64 x 64 tile comes from (udp frames complete in any order: an older one never covers a newer tile)
+        int _tileColumns = 0;
         QSet<std::uint8_t> _openTerminals; // ids in use: a new terminal takes the smallest free one (1 again after a close or a reconnection)
 
         // ---------- Pre-Function -------- //
@@ -97,7 +102,7 @@ class Client: public QObject {
         void sendHello_(void);
         void sendAuth_(void);
         void setState_(const State state);
-        void decodeFrame_(const QByteArray& data);
+        void decodeFrame_(const QByteArray& data, const bool udp = false); // udp: already acked by the link
 
     public:
         // ---------- Pre-Function -------- //
@@ -126,6 +131,7 @@ class Client: public QObject {
 
         // ------------ Function ---------- //
         /* getter */
+        _cold _nodiscard inline bool overUdp(void) const {return this->_udp.isActive();}; // the video comes over udp
         _cold _nodiscard inline State state(void) const                    {return this->_state;};
         _cold _nodiscard inline const QByteArray& fingerprint(void) const  {return this->_fingerprint;};
         _cold _nodiscard inline const QString& hostName(void) const        {return this->_hostName;};

@@ -119,6 +119,7 @@ static const QList<SettingField>& settings_fields(void)
             [](const S& s) {return QVariant(xdesk::core::exposure_name(s.exposure));}, [](S& s, const QVariant& v) {s.exposure = xdesk::core::exposure_from(v.toString());}},
         {"Network", "Public address", FieldKind::Text, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.publicHost);}, [](S& s, const QVariant& v) {s.publicHost = v.toString().trimmed();}},
         {"Network", "Announce on the LAN", FieldKind::Toggle, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.discovery);}, [](S& s, const QVariant& v) {s.discovery = v.toBool();}},
+        {"Network", "Video over UDP (native viewers)", FieldKind::Toggle, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.udp);}, [](S& s, const QVariant& v) {s.udp = v.toBool();}},
         {"Stream", "Max FPS", FieldKind::Number, 1, 120, 5, " fps", {}, [](const S& s) {return QVariant(s.fps);}, [](S& s, const QVariant& v) {s.fps = v.toInt();}},
         {"Stream", "Resolution", FieldKind::Choice, 0, 0, 0, "", {{"Screen size (native)", 0}, {"1440p", 1440}, {"1080p - Full HD", 1080}, {"720p - HD", 720}, {"480p", 480}, {"360p", 360}, {"240p", 240}, {"144p", 144}},
             [](const S& s) {return QVariant(s.maxHeight);}, [](S& s, const QVariant& v) {s.maxHeight = v.toInt();}},
@@ -894,7 +895,7 @@ void xdesk::ui::tty::HostTui::drawSessions_(const QRect& area)
             this->_hits.append(Hit{QRect(start, y, x - start, 1), [this, key]() {this->pageKey_(key);}});
         }
     }
-    this->_canvas.text(inside.left(), y + 1, "Mode " + s->mode() + " · last input " + (s->lastInput() > 0 ? ago(s->lastInput()) + " ago" : QString("never")) + " · sent " + bytes_text(s->stats().bytesOut) + " · received " + bytes_text(s->stats().bytesIn) + " · " + QString::number(s->stats().inputs) + " inputs · device " + (s->deviceId().isEmpty() ? "-" : s->deviceId()), st(MUTED), inside.width());
+    this->_canvas.text(inside.left(), y + 1, "Mode " + s->mode() + " · video " + this->_host.transport(s->id()) + " · last input " + (s->lastInput() > 0 ? ago(s->lastInput()) + " ago" : QString("never")) + " · sent " + bytes_text(s->stats().bytesOut) + " · received " + bytes_text(s->stats().bytesIn) + " · " + QString::number(s->stats().inputs) + " inputs · device " + (s->deviceId().isEmpty() ? "-" : s->deviceId()), st(MUTED), inside.width());
     if (terminals.isEmpty()) this->_canvas.text(inside.left(), y + 2, "Terminals: none", st(MUTED));
     else {
         QStringList ids;
@@ -1028,7 +1029,7 @@ void xdesk::ui::tty::HostTui::drawSettings_(const QRect& area)
         const Style base = current ? st(QColor(), SELECTED) : st();
         const int labelW = std::min(38, width * 3 / 5);
         QString value = field_value(field, this->_draft);
-        if (field.kind == FieldKind::Text && value.isEmpty()) value = index == 3 ? "my.domain.tld (manual exposure)" : (index == 21 ? "default shell" : "-");
+        if (field.kind == FieldKind::Text && value.isEmpty()) value = field.label == "Public address" ? "my.domain.tld (manual exposure)" : (field.label == "Terminal shell" ? "default shell" : "-");
         if (current) this->select_(QRect(x - 2, y, width + 4, 1));
         this->_canvas.text(x, y, (changed ? "● " : "  ") + field.label, changed ? st(ACCENT, base.bg, true) : st(current ? QColor() : MUTED, base.bg, current), labelW);
         const bool on = field.kind == FieldKind::Toggle && field.get(this->_draft).toBool();
