@@ -33,11 +33,13 @@ File Description:
     #include <QStackedWidget>               // QStackedWidget
     #include <QTableWidget>                 // QTableWidget
     #include <QProgressBar>                 // QProgressBar
+    #include <QScrollArea>                  // QScrollArea
     #include <QJsonObject>                  // QJsonObject
     #include <QListWidget>                  // QListWidget
     #include <QMainWindow>                  // QMainWindow
     #include <QTreeWidget>                  // QTreeWidget
     #include <QPushButton>                  // QPushButton
+    #include <QBoxLayout>                   // QBoxLayout
     #include <QTabWidget>                   // QTabWidget
     #include <QComboBox>                    // QComboBox
     #include <QLineEdit>                    // QLineEdit
@@ -137,6 +139,8 @@ class HostWindow: public QMainWindow {
         QComboBox* _setLanguage = nullptr;
         QCheckBox* _setMinimized = nullptr;
         QPushButton* _settingsSave = nullptr;
+        QScrollArea* _settingsScroll = nullptr;
+        QBoxLayout* _settingsColumns = nullptr; // side by side while they fit, else one under the other
 
         // ---------- Pre-Function -------- //
         _nodiscard QWidget* buildOverview_(void);
@@ -164,9 +168,11 @@ class HostWindow: public QMainWindow {
         void showApproval_(host::Session* session);
         void showTamper_(const QString& session, const QString& reason);
         void quit_(void);
+        void fitPage_(void); // window grown to show the whole page (never past the screen: the page scrolls then)
+        void flowSettings_(void); // settings columns side by side or stacked for the width
         _nodiscard int sessionRow_(const QString& id) const;
         _nodiscard TerminalWidget* mirror_(const QString& session, const std::uint8_t id);
-        _nodiscard bool confirmPresence_(const QString& action); // typed random code
+        _nodiscard bool confirmLocal_(const QString& question, const bool unban); // refused while locked, then yes / no, or the word unban typed (a ban lifted)
 
         // ------------ Function ---------- //
         Q_INVOKABLE inline void showPage_(const int page) {this->_nav->setCurrentRow(page);}; // snapshots (XDESK_SNAPSHOT_PAGE)
@@ -176,6 +182,7 @@ class HostWindow: public QMainWindow {
         void closeEvent(QCloseEvent* event) override;
         void changeEvent(QEvent* event) override;
         void showEvent(QShowEvent* event) override;
+        bool eventFilter(QObject* watched, QEvent* event) override; // settings viewport resized
 
     public:
         // ---------- Constructor --------- //

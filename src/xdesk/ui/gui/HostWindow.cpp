@@ -42,12 +42,15 @@ File Description:
 #include <QToolButton>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
+#include <QScrollBar>
 #include <functional>
 #include <QClipboard>
+#include <algorithm>
 #include <QDateTime>
 #include <QHostInfo>
 #include <QSplitter>
 #include <QPainter>
+#include <QScreen>
 #include <QDialog>
 #include <QAction>
 #include <QImage>
@@ -322,7 +325,10 @@ xdesk::ui::gui::HostWindow::HostWindow(host::Host& host, QWidget* parent)
     this->_pages->addWidget(this->buildLogs_());
     this->_pages->addWidget(this->buildSettings_());
     mainLayout->addWidget(this->_pages, 1);
-    QObject::connect(this->_nav, &QListWidget::currentRowChanged, this->_pages, &QStackedWidget::setCurrentIndex);
+    QObject::connect(this->_nav, &QListWidget::currentRowChanged, this, [this](const int row) {
+        this->_pages->setCurrentIndex(row);
+        QTimer::singleShot(0, this, &HostWindow::fitPage_); // once the page is laid out
+    });
     this->_nav->setCurrentRow(0);
     rootLayout->addWidget(sidebar);
     rootLayout->addWidget(main, 1);
@@ -375,10 +381,61 @@ xdesk::ui::gui::HostWindow::HostWindow(host::Host& host, QWidget* parent)
 void xdesk::ui::gui::HostWindow::showEvent(QShowEvent* event)
 {
     QMainWindow::showEvent(event);
+    QTimer::singleShot(0, this, &HostWindow::fitPage_);
     #ifdef _WIN32
         // The remote sessions never see the panel (Windows 10 2004+)
         SetWindowDisplayAffinity(reinterpret_cast<HWND>(this->winId()), 0x00000011); // WDA_EXCLUDEFROMCAPTURE
     #endif
+}
+
+bool xdesk::ui::gui::HostWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    if (this->_settingsScroll && watched == this->_settingsScroll->viewport() && event->type() == QEvent::Resize) this->flowSettings_();
+    return QMainWindow::eventFilter(watched, event);
+}
+
+void xdesk::ui::gui::HostWindow::fitPage_(void)
+{
+    QWidget* page = this->_pages->currentWidget();
+    QScrollArea* scroll = qobject_cast<QScrollArea*>(page);
+    const QRect screen = this->screen() ? this->screen()->availableGeometry() : QRect();
+    const QSize frame = this->frameGeometry().size() - this->geometry().size(); // title bar + borders
+    QSize want;
+    QRect placed;
+
+    if (!page || !this->isVisible() || screen.isEmpty() || this->isMaximized() || this->isFullScreen()) return;
+
+    // Size the page asks for (a scrolled page: its content, the settings with their columns side by side)
+    if (scroll == this->_settingsScroll && this->_settingsColumns) {
+        this->_settingsColumns->setDirection(QBoxLayout::LeftToRight);
+        scroll->widget()->layout()->invalidate(); // the page hint is cached: computed again with the new direction
+    }
+    want = scroll && scroll->widget() ? scroll->widget()->sizeHint() + QSize(scroll->verticalScrollBar()->sizeHint().width() + 2, 2) : page->sizeHint();
+    want += this->size() - page->size(); // sidebar, margins, banner
+
+    // Only grows, never past the screen (the page scrolls then)
+    want = want.boundedTo(screen.size() - frame).expandedTo(this->size());
+    if (want != this->size()) {
+        this->resize(want);
+        placed = QRect(this->frameGeometry().topLeft(), want + frame);
+        placed.moveLeft(std::max(screen.left(), std::min(placed.left(), screen.right() + 1 - placed.width())));
+        placed.moveTop(std::max(screen.top(), std::min(placed.top(), screen.bottom() + 1 - placed.height())));
+        if (placed.topLeft() != this->frameGeometry().topLeft()) this->move(placed.topLeft());
+    }
+    this->flowSettings_();
+}
+
+void xdesk::ui::gui::HostWindow::flowSettings_(void)
+{
+    int wide = 0;
+
+    if (!this->_settingsScroll || !this->_settingsColumns) return;
+
+    // Width of the columns side by side at their preferred size: less room = one under the other, no horizontal scroll
+    for (int i = 0; i < this->_settingsColumns->count(); ++i)
+        wide += this->_settingsColumns->itemAt(i)->sizeHint().width();
+    wide += this->_settingsColumns->spacing() * std::max(0, this->_settingsColumns->count() - 1) + 4; // + right margin of the page
+    this->_settingsColumns->setDirection(this->_settingsScroll->viewport()->width() >= wide ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
 }
 
 void xdesk::ui::gui::HostWindow::changeEvent(QEvent* event)
@@ -1090,7 +1147,7 @@ QWidget* xdesk::ui::gui::HostWindow::buildDevices_(void)
     this->_localButtons = {trust, untrust, unban, forget, unbanAddress};
     QObject::connect(trust, &QPushButton::clicked, this, [this, selected]() {
         const QString id = selected(this->_devices);
-        if (!id.isEmpty() && this->confirmPresence_("trust this device")) (void)this->_host.setTrusted(id, true);
+        if (!id.isEmpty() && this->confirmLocal_("Trust this device? It will connect without a code.", false)) (void)this->_host.setTrusted(id, true);
     });
     QObject::connect(untrust, &QPushButton::clicked, this, [this, selected]() {
         const QString id = selected(this->_devices);
@@ -1098,15 +1155,16 @@ QWidget* xdesk::ui::gui::HostWindow::buildDevices_(void)
     });
     QObject::connect(unban, &QPushButton::clicked, this, [this, selected]() {
         const QString id = selected(this->_devices);
-        if (!id.isEmpty() && this->confirmPresence_("unban this device")) (void)this->_host.unban(id);
+        if (!id.isEmpty() && this->confirmLocal_("Unban this device?", true)) (void)this->_host.unban(id);
     });
     QObject::connect(forget, &QPushButton::clicked, this, [this, selected]() {
         const QString id = selected(this->_devices);
-        if (!id.isEmpty() && QMessageBox::question(this, "Forget", "Forget this device (and its ban)?") == QMessageBox::Yes && this->confirmPresence_("forget this device")) (void)this->_host.forget(id);
+        const bool banned = this->_host.registry().isBanned(id);
+        if (!id.isEmpty() && this->confirmLocal_(banned ? "Forget this banned device? Its ban is lifted too." : "Forget this device? It will need a code again.", banned)) (void)this->_host.forget(id);
     });
     QObject::connect(unbanAddress, &QPushButton::clicked, this, [this, selected]() {
         const QString address = selected(this->_addresses);
-        if (!address.isEmpty() && this->confirmPresence_("unban " + address)) (void)this->_host.unbanAddress(address);
+        if (!address.isEmpty() && this->confirmLocal_("Unban the address " + address + "?", true)) (void)this->_host.unbanAddress(address);
     });
     return page;
 }
@@ -1151,9 +1209,8 @@ void xdesk::ui::gui::HostWindow::refreshLock_(void)
     set_tone(this->_lockInfo, locked ? "warning" : "");
 }
 
-bool xdesk::ui::gui::HostWindow::confirmPresence_(const QString& action)
+bool xdesk::ui::gui::HostWindow::confirmLocal_(const QString& question, const bool unban)
 {
-    const QString challenge = security::random_code(6).remove('-');
     bool ok = false;
     QString typed;
 
@@ -1161,10 +1218,13 @@ bool xdesk::ui::gui::HostWindow::confirmPresence_(const QString& action)
         QMessageBox::warning(this, "Locked", "A remote session controls this PC or has a terminal: this action needs the person in front of the PC.");
         return false;
     }
-    typed = QInputDialog::getText(this, "Confirm on this PC", "To " + action + ", type the code below (proof that you are in front of this PC):\n\n" + challenge, QLineEdit::Normal, "", &ok);
+    if (!unban) return QMessageBox::question(this, "xdesk", question) == QMessageBox::Yes && !this->_host.localActionsLocked();
+
+    // Lifting a ban: the word typed (a click alone could be a mistake)
+    typed = QInputDialog::getText(this, "Unban", question + "\n\nType " + XDESK_UNBAN_WORD + " to confirm:", QLineEdit::Normal, "", &ok);
     if (!ok) return false;
-    if (security::normalize_code(typed) != security::normalize_code(challenge)) {
-        QMessageBox::warning(this, "Wrong code", "The code does not match: nothing was changed.");
+    if (typed.trimmed().compare(XDESK_UNBAN_WORD, Qt::CaseInsensitive) != 0) {
+        QMessageBox::warning(this, "Unban", "Not confirmed: nothing was changed.");
         return false;
     }
     return !this->_host.localActionsLocked();
@@ -1257,7 +1317,7 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     QScrollArea* scroll = new QScrollArea();
     QWidget* page = new QWidget();
     QVBoxLayout* layout = new QVBoxLayout(page);
-    QHBoxLayout* columns = new QHBoxLayout();
+    QBoxLayout* columns = new QBoxLayout(QBoxLayout::LeftToRight);
     QWidget* networkBody = nullptr;
     QWidget* accessBody = nullptr;
     QWidget* streamBody = nullptr;
@@ -1374,6 +1434,9 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     for (QWidget* field: page->findChildren<QWidget*>())
         if (qobject_cast<QAbstractSpinBox*>(field) || qobject_cast<QComboBox*>(field)) field->setMinimumWidth(200);
     scroll->setWidget(page);
+    this->_settingsScroll = scroll;
+    this->_settingsColumns = columns;
+    scroll->viewport()->installEventFilter(this);
     return scroll;
 }
 
@@ -1436,7 +1499,6 @@ void xdesk::ui::gui::HostWindow::saveSettings_(void)
     s.maxHeight = this->_setResolution->currentData().toInt();
     s.language = this->_setLanguage->currentText();
     s.startMinimized = this->_setMinimized->isChecked();
-    if (!this->confirmPresence_("change the settings")) return;
     try {
         if (!this->_host.applySettings(s)) {QMessageBox::warning(this, "Locked", "A remote session controls this PC: settings unchanged."); return;}
     } catch (const std::exception& e) {
