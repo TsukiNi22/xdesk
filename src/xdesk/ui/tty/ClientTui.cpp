@@ -48,6 +48,8 @@ static const QColor BAD(240, 110, 110);
 static const QColor BAR(26, 30, 36);
 static const QColor SELECTED(34, 66, 54);
 static const QColor DARK(12, 14, 16);
+static const QColor BORDER(58, 66, 74);
+static const QColor BORDER_TEXT(100, 108, 118);
 static const QByteArray BRIGHTNESS(" .:-=+*#%@"); // remote screen without blocks or colors: one character per cell, darkest first
 
 static xdesk::ui::tty::Style st(const QColor& fg = QColor(), const QColor& bg = QColor(), const bool bold = false)
@@ -613,72 +615,87 @@ void xdesk::ui::tty::ClientTui::drawConnect_(void)
 {
     const int w = this->_canvas.width();
     const int h = this->_canvas.height();
-    const int left = std::max(2, (w - 76) / 2);
-    const int width = std::min(76, w - 4);
-    int y = 1;
+    const int width = std::min(84, w - 2);
+    const int left = (w - width) / 2;
+    const int listRows = std::clamp(static_cast<int>(this->_hosts.size()), 1, std::max(1, h - 19));
+    const int first = std::clamp(this->_hostRow - listRows + 1, 0, std::max(0, static_cast<int>(this->_hosts.size()) - listRows));
+    QRect inside;
+    int y = 2;
 
+    // Bar
     this->_canvas.fill(QRect(0, 0, w, 1), st(QColor(), BAR));
-    this->_canvas.text(0, 0, " xdesk ", st(DARK, ACCENT, true));
-    this->_canvas.text(8, 0, "  connect to a PC  ·  tab / ↑ ↓ / click move  ·  enter connect  ·  esc quit", st(MUTED, BAR));
-    if (w > 12) {
+    const int brand = this->_canvas.text(0, 0, " ◆ xdesk ", st(DARK, ACCENT, true));
+    this->_canvas.text(brand + 1, 0, "Connect to a PC", st(QColor(Qt::white), BAR, true));
+    if (w > 20) {
         this->_canvas.text(w - 4, 0, " ✕ ", st(DARK, MUTED, true));
         this->_hits.append(Hit{QRect(w - 4, 0, 3, 1), [this]() {this->finish_("Cancelled", 1);}});
     }
-    y = 2;
 
     // Known and found hosts
-    {
-        const int end = this->_canvas.text(left, y, "HOSTS" + QString(this->_scanning ? "  (scanning the LAN...)" : "  (s or click: scan the LAN again)"), st(this->_focus == 0 ? ACCENT : MUTED, QColor(), true));
-        if (!this->_scanning) this->_hits.append(Hit{QRect(left, y, end - left, 1), [this]() {this->scan_();}});
-        y++;
-    }
-    if (this->_hosts.isEmpty()) this->_canvas.text(left + 2, y++, this->_scanning ? "looking for hosts announced on this network..." : "none known yet: type the address shown by the host", st(MUTED), width - 2);
-    const int rows = std::max(1, h - 16);
-    const int first = std::clamp(this->_hostRow - rows + 1, 0, std::max(0, static_cast<int>(this->_hosts.size()) - rows));
-    for (int i = first; i < this->_hosts.size() && i < first + rows; ++i, ++y) {
+    inside = this->_canvas.card(QRect(left, y, width, listRows + 2), "Hosts", st(this->_focus == 0 ? ACCENT : BORDER), st(ACCENT, QColor(), true), this->_scanning ? "scanning the LAN…" : "s / click here: scan the LAN", st(BORDER_TEXT));
+    if (!this->_scanning) this->_hits.append(Hit{QRect(left, y, width, 1), [this]() {this->scan_();}});
+    if (this->_hosts.isEmpty()) this->_canvas.text(inside.left(), inside.top(), this->_scanning ? "looking for hosts announced on this network…" : "none known yet: type the address shown by the host below", st(MUTED), inside.width());
+    for (int i = first, row = inside.top(); i < this->_hosts.size() && row <= inside.bottom(); ++i, ++row) {
         const QJsonObject& host = this->_hosts[i];
         const bool current = i == this->_hostRow && this->_focus == 0;
+        const bool trusted = host.value("trusted").toBool();
         const Style base = current ? st(QColor(), SELECTED) : st();
-        this->_canvas.fill(QRect(left, y, width, 1), base);
-        this->_canvas.text(left + 1, y, current ? "▸" : " ", st(ACCENT, base.bg, true));
-        this->_canvas.text(left + 3, y, host.value("label").toString(), st(QColor(), base.bg, current), 24);
-        const int x = this->_canvas.text(left + 28, y, host.value("host").toString() + ":" + QString::number(host.value("port").toInt()), st(MUTED, base.bg), 28);
-        this->_canvas.text(std::max(x + 1, left + 57), y, host.value("trusted").toBool() ? "trusted: no code" : (host.value("found").toBool() ? "on this LAN" : "known"), st(host.value("trusted").toBool() ? ACCENT : MUTED, base.bg), width - 57);
-        this->_hits.append(Hit{QRect(left, y, width, 1), [this, i]() {
-            if (this->_focus == 0 && this->_hostRow == i) this->connectKey_("enter", "\r");
+        if (current) this->_canvas.selectRow(QRect(left, row, width, 1), st(QColor(), SELECTED), st(ACCENT, SELECTED));
+        this->_canvas.text(inside.left(), row, host.value("label").toString(), st(QColor(), base.bg, true), 26);
+        this->_canvas.text(inside.left() + 27, row, host.value("host").toString() + ":" + QString::number(host.value("port").toInt()), st(MUTED, base.bg), 28);
+        this->_canvas.text(inside.left() + 56, row, trusted ? "✓ trusted: no code" : (host.value("found").toBool() ? "● on this LAN" : "· known"), st(trusted ? ACCENT : MUTED, base.bg, trusted), inside.width() - 56);
+        this->_hits.append(Hit{QRect(left, row, width, 1), [this, i]() {
+            if (this->_focus == 0 && this->_hostRow == i) this->connectKey_("enter", "\r"); // second click: connect
             this->_focus = 0;
             this->_hostRow = i;
         }});
     }
-    y++;
+    y = inside.bottom() + 2;
 
     // Form
+    inside = this->_canvas.card(QRect(left, y, width, 11), "New connection", st(this->_focus >= 1 ? ACCENT : BORDER), st(ACCENT, QColor(), true));
+    if (inside.isEmpty()) return;
     const QList<std::tuple<int, QString, QString>> fields = {{1, "Address", this->_formHost.isEmpty() && this->_focus != 1 ? "192.168.1.20 or https://name:47800" : this->_formHost}, {2, "Port", this->_formPort}, {3, "Code", this->_formCode.isEmpty() && this->_focus != 3 ? "XXX-XXX-XXX (empty for a trusted device)" : this->_formCode}};
+    int row = inside.top();
     for (const std::tuple<int, QString, QString>& f: fields) {
         const int index = std::get<0>(f);
         const bool focused = this->_focus == index;
         const bool hint = (index == 1 && this->_formHost.isEmpty() && !focused) || (index == 3 && this->_formCode.isEmpty() && !focused);
-        this->_canvas.text(left, y, std::get<1>(f), st(focused ? ACCENT : MUTED, QColor(), focused));
-        this->_canvas.fill(QRect(left + 10, y, width - 10, 1), st(QColor(), focused ? SELECTED : BAR));
-        const int end = this->_canvas.text(left + 11, y, std::get<2>(f), st(hint ? MUTED : QColor(), focused ? SELECTED : BAR, !hint), width - 13);
-        if (focused) this->_canvas.text(end, y, "█", st(ACCENT, SELECTED));
-        this->_hits.append(Hit{QRect(left, y, width, 1), [this, index]() {this->_focus = index;}});
-        y += 2;
+        const Style field = st(QColor(), focused ? SELECTED : BAR);
+        this->_canvas.text(inside.left(), row, (focused ? "▸ " : "  ") + std::get<1>(f), st(focused ? ACCENT : MUTED, QColor(), focused));
+        this->_canvas.fill(QRect(inside.left() + 11, row, inside.width() - 11, 1), field);
+        const int end = this->_canvas.text(inside.left() + 12, row, std::get<2>(f), st(hint ? BORDER_TEXT : QColor(), field.bg, !hint), inside.width() - 14);
+        if (focused) this->_canvas.text(end, row, "▏", st(ACCENT, field.bg, true));
+        this->_hits.append(Hit{QRect(left, row, width, 1), [this, index]() {this->_focus = index;}});
+        row += 2;
     }
     {
         const bool focused = this->_focus == 4;
-        const int end = this->_canvas.text(left + 10, y, QString(this->_formViewOnly ? "[x]" : "[ ]") + " View only (never send keyboard / mouse)", st(focused ? ACCENT : QColor(), focused ? SELECTED : QColor(), focused));
-        this->_hits.append(Hit{QRect(left + 10, y, end - left - 10, 1), [this]() {this->_focus = 4; this->_formViewOnly = !this->_formViewOnly;}});
-        y += 2;
+        const int start = inside.left() + 11;
+        int end = this->_canvas.text(start, row, this->_formViewOnly ? " ● View only " : " ○ View only ", this->_formViewOnly ? st(DARK, ACCENT, true) : st(focused ? QColor() : MUTED, focused ? SELECTED : BAR, focused));
+        end = this->_canvas.text(end + 1, row, "never send keyboard / mouse", st(BORDER_TEXT));
+        this->_hits.append(Hit{QRect(start, row, end - start, 1), [this]() {this->_focus = 4; this->_formViewOnly = !this->_formViewOnly;}});
+        row += 2;
     }
     {
-        const int end = this->_canvas.text(left + 10, y, "  Connect  ", st(DARK, ACCENT, true));
-        if (this->_focus == 5) this->_canvas.text(left + 8, y, "▸", st(ACCENT, QColor(), true));
-        this->_hits.append(Hit{QRect(left + 10, y, end - left - 10, 1), [this]() {this->connectNow_();}});
-        y += 2;
+        const int start = inside.left() + 11;
+        const int end = this->_canvas.text(start, row, "  ▸ Connect  ", st(DARK, ACCENT, true));
+        if (this->_focus == 5) this->_canvas.text(start - 2, row, "▸", st(ACCENT, QColor(), true));
+        this->_hits.append(Hit{QRect(start, row, end - start, 1), [this]() {this->connectNow_();}});
     }
-    if (!this->_error.isEmpty()) this->_canvas.text(left, y, this->_error, st(BAD, QColor(), true), width);
-    if (!this->_note.isEmpty() && QDateTime::currentMSecsSinceEpoch() - this->_noteAt < NOTE_TIME) this->_canvas.text(left, h - 1, this->_note, st(MUTED), width);
+    y = inside.bottom() + 2;
+    if (!this->_error.isEmpty()) this->_canvas.text(left + 2, y, "✗ " + this->_error, st(BAD, QColor(), true), width - 2);
+
+    // Keys (or the last note)
+    this->_canvas.fill(QRect(0, h - 1, w, 1), st(QColor(), BAR));
+    if (!this->_note.isEmpty() && QDateTime::currentMSecsSinceEpoch() - this->_noteAt < NOTE_TIME) this->_canvas.text(1, h - 1, this->_note, st(QColor(Qt::white), BAR), w - 2);
+    else {
+        int x = 1;
+        for (const QPair<QString, QString>& k: QList<QPair<QString, QString>>{{"tab ↑ ↓", "move"}, {"enter", "connect"}, {"s", "scan"}, {"esc", "quit"}}) {
+            x = this->_canvas.text(x, h - 1, " " + k.first + " ", st(DARK, MUTED, true));
+            x = this->_canvas.text(x, h - 1, " " + k.second + "  ", st(QColor(220, 224, 228), BAR));
+        }
+    }
 }
 
 void xdesk::ui::tty::ClientTui::drawStatus_(void)

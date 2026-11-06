@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Confirmations: only lifting a ban asks a typed word (`unban`), trust and forget are a yes / no, untrust and the settings need nothing more (all of them stay refused while a remote session has control or a terminal)
 - Host window: grows to show the whole page (up to the screen, then the page scrolls), settings columns stacked when the window is too narrow (no horizontal scroll)
+- Terminal panel and client restyled: rounded cards titled on their border (sharing with the code and a colored countdown, reach, addresses, system; sessions, devices, log; settings in two columns), selected rows with an accent bar, `● on` / `○ off` toggles, state marks (`✓ trusted`, `⊘ banned`, `● control`), underlined current page, connect page in cards; small terminals stack the cards and drop the ones that do not fit
 
 ### Fixed
 - A device that came back under a new id (a browser keeps one id per site address) left a second record; a ban now also bans the other records of the same machine and removes their trust

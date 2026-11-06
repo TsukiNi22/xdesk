@@ -437,6 +437,27 @@ void xdesk::ui::tty::Canvas::box(const QRect& area, const QString& title, const 
     }
 }
 
+QRect xdesk::ui::tty::Canvas::card(const QRect& area, const QString& title, const Style& border, const Style& heading, const QString& note, const Style& noteStyle)
+{
+    if (area.width() < 6 || area.height() < 2) return QRect();
+    this->box(area, "", border, Style());
+    if (!note.isEmpty() && note.size() + title.size() + 10 < area.width())
+        (void)this->text(area.right() - static_cast<int>(note.size()) - 3, area.top(), " " + note + " ", noteStyle);
+    if (!title.isEmpty()) (void)this->text(area.left() + 2, area.top(), " " + title + " ", heading, area.width() - 4);
+    return area.adjusted(2, 1, -2, -1);
+}
+
+void xdesk::ui::tty::Canvas::selectRow(const QRect& row, const Style& fill, const Style& bar)
+{
+    const QRect r = row.intersected(QRect(0, 0, this->_w, this->_h));
+
+    if (!r.isValid()) return;
+    const TextCell right = this->at(r.right(), r.top());
+    this->fill(r, fill);
+    this->at(r.left(), r.top()) = TextCell{U'▌', bar};
+    if (right.ch == U'│') this->at(r.right(), r.top()) = right;
+}
+
 void xdesk::ui::tty::Canvas::vtLine(const int x, const int y, const gui::Line& line, const int max)
 {
     if (y < 0 || y >= this->_h) return;

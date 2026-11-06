@@ -143,7 +143,8 @@ class HostTui: public QObject {
         void saveSettings_(void);
         void changeField_(const int delta, const bool edit); // ← → / enter on a setting
         void addLog_(const QJsonObject& entry);
-        void button_(const int x, const int y, const QString& key, const QString& label); // footer button (click = key)
+        QRect card_(const QRect& area, const QString& title, const QString& note = ""); // card of the panel (returns its inside)
+        void select_(const QRect& row); // selected row of a list
         _nodiscard QList<host::Session*> ordered_(void) const;
         _nodiscard host::Session* currentSession_(void) const;
         _nodiscard QList<QJsonObject> filteredLogs_(void) const;

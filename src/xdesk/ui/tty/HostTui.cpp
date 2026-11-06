@@ -76,6 +76,8 @@ static const QColor BAD(240, 110, 110);
 static const QColor BAR(26, 30, 36);
 static const QColor SELECTED(34, 66, 54);
 static const QColor DARK(12, 14, 16);
+static const QColor BORDER(58, 66, 74);
+static const QColor BORDER_TEXT(100, 108, 118);
 
 static const QStringList PAGE_NAMES = {"Overview", "Sessions", "Devices", "Logs", "Settings"};
 static const QStringList LOG_LEVELS = {"all", "info", "warn", "alert"};
@@ -142,13 +144,27 @@ static const QList<SettingField>& settings_fields(void)
     return FIELDS;
 }
 
+// Words of a text in lines of at most width cells
+static QStringList wrap(const QString& text, const int width)
+{
+    QStringList lines;
+    QString line;
+
+    for (const QString& word: text.split(' ', Qt::SkipEmptyParts)) {
+        if (!line.isEmpty() && line.size() + 1 + word.size() > width) {lines.append(line); line.clear();}
+        line += (line.isEmpty() ? "" : " ") + word;
+    }
+    if (!line.isEmpty()) lines.append(line);
+    return lines;
+}
+
 // Text of a setting value
 static QString field_value(const SettingField& field, const xdesk::core::Settings& settings)
 {
     const QVariant value = field.get(settings);
 
     switch (field.kind) {
-        case FieldKind::Toggle: return value.toBool() ? "[x] on" : "[ ] off";
+        case FieldKind::Toggle: return value.toBool() ? "● on" : "○ off";
         case FieldKind::Number: return "◂ " + QString::number(value.toInt()) + field.suffix + " ▸";
         case FieldKind::Text:   return value.toString();
         case FieldKind::Choice:
@@ -660,13 +676,6 @@ void xdesk::ui::tty::HostTui::pageKey_(const QString& key)
 //----------------------------------------------------------------//
 // Drawing
 
-void xdesk::ui::tty::HostTui::button_(const int x, const int y, const QString& key, const QString& label)
-{
-    const int end = this->_canvas.text(this->_canvas.text(x, y, " " + key + " ", st(DARK, MUTED, true)), y, " " + label + "  ", st(QColor(), BAR));
-
-    this->_hits.append(Hit{QRect(x, y, end - x, 1), [this, key]() {this->onKey_(key, key.size() == 1 ? key.toUtf8() : QByteArray());}});
-}
-
 void xdesk::ui::tty::HostTui::draw_(void)
 {
     const QSize size = this->_term.size();
@@ -701,29 +710,42 @@ void xdesk::ui::tty::HostTui::draw_(void)
     this->_term.present(this->_canvas);
 }
 
+QRect xdesk::ui::tty::HostTui::card_(const QRect& area, const QString& title, const QString& note)
+{
+    return this->_canvas.card(area, title, st(BORDER), st(ACCENT, QColor(), true), note, st(BORDER_TEXT));
+}
+
+void xdesk::ui::tty::HostTui::select_(const QRect& row)
+{
+    this->_canvas.selectRow(row, st(QColor(), SELECTED), st(ACCENT, SELECTED));
+}
+
 void xdesk::ui::tty::HostTui::drawHeader_(void)
 {
     const int w = this->_canvas.width();
     const bool on = this->_host.isSharing();
     const QString pill = on ? " ● SHARING " : " ○ OFF ";
+    const QString host = QHostInfo::localHostName();
     int x = 0;
 
     this->_canvas.fill(QRect(0, 0, w, 1), st(QColor(), BAR));
-    x = this->_canvas.text(x, 0, " xdesk ", st(DARK, ACCENT, true));
+    x = this->_canvas.text(x, 0, " ◆ xdesk ", st(DARK, ACCENT, true));
     x = this->_canvas.text(x, 0, " ", st(QColor(), BAR));
     for (int i = 0; i < PAGE_NAMES.size(); ++i) {
         QString label = " " + QString::number(i + 1) + " " + PAGE_NAMES[i];
-        if (i == 1 && !this->_host.sessions().isEmpty()) label += " (" + QString::number(this->_host.sessions().size()) + ")";
+        if (i == 1 && !this->_host.sessions().isEmpty()) label += " · " + QString::number(this->_host.sessions().size());
         label += " ";
         const bool current = static_cast<int>(this->_page) == i;
         const int start = x;
-        x = this->_canvas.text(x, 0, label, current ? st(ACCENT, SELECTED, true) : st(MUTED, BAR));
+        x = this->_canvas.text(x, 0, label, current ? st(QColor(Qt::white), SELECTED, true) : st(MUTED, BAR));
+        if (current) this->_canvas.fill(QRect(start, 1, x - start, 1), st(ACCENT, QColor()), U'▔'); // the current tab underlined
         this->_hits.append(Hit{QRect(start, 0, x - start, 1), [this, i]() {this->_page = static_cast<Page>(i);}});
     }
     const int start = w - static_cast<int>(pill.size()) - 1;
     if (start > x) {
         this->_canvas.text(start, 0, pill, st(DARK, on ? GOOD : BAD, true));
         this->_hits.append(Hit{QRect(start, 0, static_cast<int>(pill.size()), 1), [this]() {this->toggleSharing_();}});
+        if (start - static_cast<int>(host.size()) - 3 > x) this->_canvas.text(start - static_cast<int>(host.size()) - 2, 0, host, st(MUTED, BAR));
     }
 }
 
@@ -734,75 +756,93 @@ void xdesk::ui::tty::HostTui::drawOverview_(const QRect& area)
     const security::PairingCode& code = this->_host.code();
     const core::Settings& settings = this->_host.config().settings();
     const QList<host::Session*> sessions = this->_host.sessions();
+    const bool wide = w >= 100;
+    const int leftW = wide ? w * 11 / 20 : w - 2;
+    const bool on = this->_host.isSharing();
+    QRect inside;
     int y = area.top();
     int pending = 0;
 
-    const std::function<void(const int, const QString&)> label = [this](const int row, const QString& text) {(void)this->_canvas.text(2, row, text, st(MUTED));};
-
-    // Sharing + code
-    label(y, "Sharing");
-    if (this->_host.isSharing()) this->_canvas.text(14, y, "on", st(GOOD, QColor(), true));
-    else this->_canvas.text(14, y, "off: nobody can connect (s or click OFF to start)", st(BAD, QColor(), true));
-    y += 2;
-    label(y, "Code");
-    if (this->_host.isSharing()) {
+    // Sharing: state, code and its lifetime, identity
+    inside = this->card_(QRect(1, y, leftW, 7), "Sharing");
+    if (on) this->_canvas.text(inside.left(), inside.top(), "● ON   anyone with the code and an address can ask to connect", st(GOOD, QColor(), true), inside.width());
+    else this->_canvas.text(inside.left(), inside.top(), "○ OFF  nobody can connect (s or the OFF pill to start)", st(BAD, QColor(), true), inside.width());
+    this->_canvas.text(inside.left(), inside.top() + 2, "Code", st(MUTED));
+    if (on) {
         const int left = code.secondsLeft();
         const int lifetime = std::max(1, settings.codeLifetime);
-        int x = this->_canvas.text(14, y, code.display(), st(ACCENT, QColor(), true));
-        this->_hits.append(Hit{QRect(14, y, x - 14, 1), [this]() {this->onKey_("y", "y");}}); // a click copies it
+        int x = this->_canvas.text(inside.left() + 10, inside.top() + 2, " " + QString(code.display()).replace("-", " · ") + " ", st(DARK, ACCENT, true));
+        this->_hits.append(Hit{QRect(inside.left() + 10, inside.top() + 2, x - inside.left() - 10, 1), [this]() {this->onKey_("y", "y");}}); // a click copies it
         if (left >= 0) {
-            const int filled = std::clamp(left * 20 / lifetime, 0, 20);
-            x = this->_canvas.text(x + 3, y, QString(filled, QChar(0x2588)), st(left < 30 ? WARN : ACCENT));
-            x = this->_canvas.text(x, y, QString(20 - filled, QChar(0x2591)), st(MUTED));
-            this->_canvas.text(x + 1, y, QString::number(left / 60) + ":" + QString::number(left % 60).rightJustified(2, '0'), st(MUTED));
-        } else this->_canvas.text(x + 3, y, "one time (changes once used)", st(MUTED));
-    } else this->_canvas.text(14, y, "shown once sharing is on", st(MUTED));
-    y++;
-    label(y, "Identity");
-    this->_canvas.text(14, y, security::fingerprint_short(this->_host.certificate().fingerprint()) + "   " + QHostInfo::localHostName(), st(), w - 16);
-    y++;
-    label(y, "Open to");
+            const int bar = std::clamp(inside.width() - 26, 6, 24);
+            const int filled = std::clamp(left * bar / lifetime, 0, bar);
+            const QColor color = left < 30 ? BAD : (left * 3 < lifetime ? WARN : ACCENT);
+            x = this->_canvas.text(x + 2, inside.top() + 2, QString(filled, QChar(0x2501)), st(color));
+            x = this->_canvas.text(x, inside.top() + 2, QString(bar - filled, QChar(0x2500)), st(BORDER));
+            this->_canvas.text(x + 1, inside.top() + 2, QString::number(left / 60) + ":" + QString::number(left % 60).rightJustified(2, '0'), st(color, QColor(), true));
+        } else this->_canvas.text(x + 2, inside.top() + 2, "one time (changes once used)", st(MUTED), inside.right() - x - 2);
+    } else this->_canvas.text(inside.left() + 10, inside.top() + 2, "shown once sharing is on", st(MUTED));
+    this->_canvas.text(inside.left(), inside.top() + 4, "Identity", st(MUTED));
+    this->_canvas.text(inside.left() + 10, inside.top() + 4, security::fingerprint_short(this->_host.certificate().fingerprint()), st(QColor(), QColor(), true), inside.width() - 10);
+
+    // Reach: who can connect
+    const QRect reach = wide ? QRect(leftW + 2, y, w - leftW - 3, 7) : QRect(1, y + 7, w - 2, 5);
+    inside = this->card_(reach, "Reach");
     {
         const SettingField& field = settings_fields()[2];
-        const int start = 14;
-        const int end = this->_canvas.text(start, y, field_value(field, settings), st(QColor(), QColor(), true));
-        this->_hits.append(Hit{QRect(start, y, end - start, 1), [this]() {this->setExposure_(1);}});
-        this->_canvas.text(end + 2, y, "(e / ← → to change)", st(MUTED));
+        const int start = inside.left() + 9;
+        this->_canvas.text(inside.left(), inside.top(), "Open to", st(MUTED));
+        const int end = this->_canvas.text(start, inside.top(), field_value(field, settings), st(QColor(), QColor(), true), inside.width() - 9);
+        this->_hits.append(Hit{QRect(start, inside.top(), 2, 1), [this]() {this->setExposure_(-1);}});
+        this->_hits.append(Hit{QRect(start + 2, inside.top(), std::max(1, end - start - 2), 1), [this]() {this->setExposure_(1);}});
+        const QStringList lines = wrap(this->_host.exposure().status(), inside.width());
+        for (int i = 0; i < lines.size() && inside.top() + 1 + i < inside.bottom(); ++i)
+            this->_canvas.text(inside.left(), inside.top() + 1 + i, lines[i], st(MUTED));
+        this->_canvas.text(inside.left(), inside.bottom(), "e / ← → / click: change", st(BORDER_TEXT), inside.width());
     }
-    y++;
-    this->_canvas.text(14, y, this->_host.exposure().status(), st(MUTED), w - 16);
-    y += 2;
+    y = reach.bottom() + 1;
 
-    // Addresses
-    this->_canvas.text(2, y++, "ADDRESSES", st(MUTED, QColor(), true));
-    if (!this->_host.isSharing() || endpoints.isEmpty()) this->_canvas.text(4, y++, "none while sharing is off", st(MUTED));
-    for (int i = 0; i < endpoints.size() && y < area.bottom() - 5; ++i, ++y) {
-        const net::Endpoint& e = endpoints[i];
-        const bool current = i == std::clamp(this->_endpoint, 0, std::max(0, static_cast<int>(endpoints.size()) - 1));
-        const Style base = current ? st(QColor(), SELECTED) : st();
-        this->_canvas.fill(QRect(1, y, w - 2, 1), base);
-        this->_canvas.text(2, y, current ? "▸" : " ", st(ACCENT, base.bg, true));
-        this->_canvas.text(4, y, e.label, st(MUTED, base.bg), 11);
-        int x = this->_canvas.text(16, y, e.url, st(QColor(), base.bg, current), w - 18);
-        this->_canvas.text(x + 2, y, e.reach + (e.ip.isEmpty() ? "" : "  ·  " + e.ip) + (e.endToEnd ? "" : "  ·  the relay sees the traffic"), st(MUTED, base.bg), w - x - 4);
-        this->_hits.append(Hit{QRect(1, y, w - 2, 1), [this, i, current]() {
-            this->_endpoint = i;
-            if (current) this->showQr_(); // second click: its QR code
-        }});
+    // Addresses (the room left, the system card under them when it fits)
+    const int rows = std::max(1, static_cast<int>(endpoints.size()));
+    const int addressesH = std::min(rows + 2, area.bottom() - y + 1);
+    if (addressesH < 3) return;
+    inside = this->card_(QRect(1, y, w - 2, addressesH), "Addresses", on && !endpoints.isEmpty() ? "enter: QR code · c: copy" : "");
+    if (!on || endpoints.isEmpty()) this->_canvas.text(inside.left(), inside.top(), on ? "no address for this exposure yet" : "none while sharing is off", st(MUTED));
+    else {
+        for (int i = 0; i < endpoints.size() && inside.top() + i <= inside.bottom(); ++i) {
+            const int row = inside.top() + i;
+            const net::Endpoint& e = endpoints[i];
+            const bool current = i == std::clamp(this->_endpoint, 0, std::max(0, static_cast<int>(endpoints.size()) - 1));
+            const Style base = current ? st(QColor(), SELECTED) : st();
+            if (current) this->select_(QRect(inside.left() - 2, row, inside.width() + 4, 1));
+            this->_canvas.text(inside.left(), row, e.label, st(current ? ACCENT : MUTED, base.bg, current), 12);
+            const int x = this->_canvas.text(inside.left() + 13, row, e.url, st(QColor(), base.bg, true), inside.width() - 13);
+            this->_canvas.text(x + 2, row, e.reach + (e.ip.isEmpty() ? "" : " · " + e.ip) + (e.endToEnd ? "" : " · the relay sees the traffic"), st(MUTED, base.bg), inside.right() - x - 1);
+            this->_hits.append(Hit{QRect(1, row, w - 2, 1), [this, i, current]() {
+                this->_endpoint = i;
+                if (current) this->showQr_(); // second click: its QR code
+            }});
+        }
     }
-    y++;
+    y += addressesH;
 
-    // State
+    // System
     for (host::Session* s: sessions)
         if (s->state() == host::State::Pending) pending++;
-    label(y, "Screen");
-    this->_canvas.text(14, y++, this->_host.captureBackend().isEmpty() ? "idle (starts with the first viewer)" : this->_host.captureBackend(), st(), w - 16);
-    label(y, "Input");
-    this->_canvas.text(14, y++, this->_host.inputError().isEmpty() ? this->_host.inputBackend() : "unavailable: " + this->_host.inputError(), this->_host.inputError().isEmpty() ? st() : st(WARN), w - 16);
-    label(y, "Security");
-    this->_canvas.text(14, y++, security::tls_summary(), st(), w - 16);
-    label(y, "Sessions");
-    this->_canvas.text(14, y, QString::number(sessions.size() - pending) + " connected" + (pending ? "  ·  " + QString::number(pending) + " waiting for you" : ""), pending ? st(WARN, QColor(), true) : st());
+    if (area.bottom() - y + 1 < 3) return;
+    inside = this->card_(QRect(1, y, w - 2, std::min(6, area.bottom() - y + 1)), "System");
+    {
+        const QList<std::tuple<QString, QString, QColor>> rowsInfo = {
+            {"Screen", this->_host.captureBackend().isEmpty() ? "idle (starts with the first viewer)" : this->_host.captureBackend(), QColor()},
+            {"Input", this->_host.inputError().isEmpty() ? this->_host.inputBackend() : "unavailable: " + this->_host.inputError(), this->_host.inputError().isEmpty() ? QColor() : WARN},
+            {"Security", security::tls_summary(), QColor()},
+            {"Sessions", QString::number(sessions.size() - pending) + " connected" + (pending ? " · " + QString::number(pending) + " waiting for you" : ""), pending ? WARN : QColor()},
+        };
+        for (int i = 0; i < rowsInfo.size() && inside.top() + i <= inside.bottom(); ++i) {
+            this->_canvas.text(inside.left(), inside.top() + i, std::get<0>(rowsInfo[i]), st(MUTED));
+            this->_canvas.text(inside.left() + 10, inside.top() + i, std::get<1>(rowsInfo[i]), st(std::get<2>(rowsInfo[i])), inside.width() - 10);
+        }
+    }
 }
 
 void xdesk::ui::tty::HostTui::drawSessions_(const QRect& area)
@@ -812,11 +852,12 @@ void xdesk::ui::tty::HostTui::drawSessions_(const QRect& area)
     const int selected = std::clamp(this->_session, 0, std::max(0, static_cast<int>(sessions.size()) - 1));
     const int listRows = std::clamp(static_cast<int>(sessions.size()), 1, std::max(1, area.height() / 3));
     const int first = std::clamp(selected - listRows + 1, 0, std::max(0, static_cast<int>(sessions.size()) - listRows));
-    int y = area.top();
+    QRect inside = this->card_(QRect(1, area.top(), w - 2, listRows + 3), "Sessions", QString::number(sessions.size()) + " connected");
+    int y = inside.top();
 
-    this->_canvas.text(2, y++, fit("DEVICE", 24) + " " + fit("CLIENT", 6) + " " + fit("ADDRESS", 16) + " " + fit("STATE", 9) + " " + fit("RIGHTS", 9) + " " + fit("FPS", 4) + " " + fit("LAT.", 6) + " " + fit("KBIT/S", 7) + " SINCE", st(MUTED, QColor(), true), w - 3);
+    this->_canvas.text(inside.left(), y++, fit("DEVICE", 24) + " " + fit("CLIENT", 6) + " " + fit("ADDRESS", 16) + " " + fit("STATE", 9) + " " + fit("RIGHTS", 7) + " " + fit("FPS", 4) + " " + fit("LAT.", 6) + " " + fit("KBIT/S", 7) + " SINCE", st(BORDER_TEXT, QColor(), true), inside.width());
     if (sessions.isEmpty()) {
-        this->_canvas.text(2, y + 1, "No session yet: give the code and an address of the Overview page (or its QR code).", st(MUTED), w - 4);
+        this->_canvas.text(inside.left(), y, "No session yet: give the code and an address of the Overview page (or its QR code)", st(MUTED), inside.width());
         return;
     }
     for (int i = first; i < first + listRows && i < sessions.size(); ++i, ++y) {
@@ -824,50 +865,57 @@ void xdesk::ui::tty::HostTui::drawSessions_(const QRect& area)
         const host::Permissions& p = s->permissions();
         const bool current = i == selected;
         const Style base = current ? st(QColor(), SELECTED) : st();
-        const QString state = s->state() == host::State::Pending ? "WAITING" : (s->state() == host::State::Handshake ? "auth" : s->mode());
-        const QString rights = QString(p.view ? "V" : "-") + (p.control ? "C" : "-") + (p.terminal ? "T" : "-") + (p.clipboard ? "P" : "-");
-        this->_canvas.fill(QRect(1, y, w - 2, 1), base);
-        this->_canvas.text(2, y, fit(s->name(), 24) + " " + fit(net::client_kind_name(s->kind()), 6) + " " + fit(s->address(), 16) + " ", st(QColor(), base.bg, current), w - 3);
-        this->_canvas.text(51, y, fit(state, 9), st(s->state() == host::State::Pending ? WARN : (s->mode() == "control" ? ACCENT : QColor()), base.bg, true));
-        this->_canvas.text(61, y, fit(rights, 9) + " " + fit(QString::number(s->stats().fps), 4) + " " + fit(s->stats().latency >= 0 ? QString::number(s->stats().latency) + "ms" : "-", 6) + " " + fit(QString::number(s->stats().kbps), 7) + " " + ago(s->since()), st(QColor(), base.bg), w - 62);
+        const bool waiting = s->state() == host::State::Pending;
+        const QString state = waiting ? "WAITING" : (s->state() == host::State::Handshake ? "auth" : s->mode());
+        const QString rights = QString(p.view ? "V" : "·") + (p.control ? "C" : "·") + (p.terminal ? "T" : "·") + (p.clipboard ? "P" : "·");
+        if (current) this->select_(QRect(1, y, w - 2, 1));
+        int x = this->_canvas.text(inside.left(), y, fit(s->name(), 24) + " " + fit(net::client_kind_name(s->kind()), 6) + " " + fit(s->address(), 16) + " ", st(QColor(), base.bg, current), inside.width());
+        x = this->_canvas.text(x, y, fit((waiting ? "◌ " : (s->mode() == "control" ? "● " : "○ ")) + state, 9) + " ", st(waiting ? WARN : (s->mode() == "control" ? ACCENT : QColor()), base.bg, true));
+        this->_canvas.text(x, y, fit(rights, 7) + " " + fit(QString::number(s->stats().fps), 4) + " " + fit(s->stats().latency >= 0 ? QString::number(s->stats().latency) + "ms" : "-", 6) + " " + fit(QString::number(s->stats().kbps), 7) + " " + ago(s->since()), st(MUTED, base.bg), inside.right() - x + 1);
         this->_hits.append(Hit{QRect(1, y, w - 2, 1), [this, i]() {this->_session = i;}});
     }
-    y++;
+    y = area.top() + listRows + 3;
 
-    // Detail of the selected one
+    // The selected one
     const host::Session* s = sessions[selected];
     const host::Permissions& p = s->permissions();
     const QStringList terminals = this->mirrorsOf_(s->id());
-    this->_canvas.fill(QRect(1, y, w - 2, 1), st(QColor(), BAR));
-    this->_canvas.text(2, y++, s->name() + "  ·  " + net::client_kind_name(s->kind()) + ", " + s->os() + "  ·  " + s->address() + "  ·  device " + (s->deviceId().isEmpty() ? "-" : s->deviceId()), st(QColor(), BAR, true), w - 4);
+    if (area.bottom() - y + 1 < 5) return;
+    inside = this->card_(QRect(1, y, w - 2, 5), s->name(), net::client_kind_name(s->kind()) + " · " + s->os() + " · " + s->address());
+    y = inside.top();
     {
-        int x = this->_canvas.text(2, y, "Rights  ", st(MUTED));
+        int x = this->_canvas.text(inside.left(), y, "Rights  ", st(MUTED));
         const QList<std::tuple<QString, QString, bool>> toggles = {{"v", "view", p.view}, {"c", "control", p.control}, {"t", "terminal", p.terminal}, {"p", "clipboard", p.clipboard}};
         for (const std::tuple<QString, QString, bool>& t: toggles) {
             const int start = x;
-            x = this->_canvas.text(x, y, (std::get<2>(t) ? "[x] " : "[ ] ") + std::get<1>(t), std::get<2>(t) ? st(ACCENT, QColor(), true) : st(MUTED));
-            x = this->_canvas.text(x, y, " (" + std::get<0>(t) + ")   ", st(MUTED));
             const QString key = std::get<0>(t);
+            x = this->_canvas.text(x, y, (std::get<2>(t) ? " ● " : " ○ ") + std::get<1>(t) + " ", std::get<2>(t) ? st(DARK, ACCENT, true) : st(MUTED, BAR));
+            x = this->_canvas.text(x, y, " " + key + "  ", st(BORDER_TEXT));
             this->_hits.append(Hit{QRect(start, y, x - start, 1), [this, key]() {this->pageKey_(key);}});
         }
-        y++;
     }
-    this->_canvas.text(2, y++, "Mode " + s->mode() + "  ·  last input " + (s->lastInput() > 0 ? ago(s->lastInput()) + " ago" : QString("never")) + "  ·  sent " + bytes_text(s->stats().bytesOut) + ", received " + bytes_text(s->stats().bytesIn) + "  ·  " + QString::number(s->stats().inputs) + " inputs", st(MUTED), w - 4);
-    if (terminals.isEmpty()) this->_canvas.text(2, y++, "Terminals: none", st(MUTED));
+    this->_canvas.text(inside.left(), y + 1, "Mode " + s->mode() + " · last input " + (s->lastInput() > 0 ? ago(s->lastInput()) + " ago" : QString("never")) + " · sent " + bytes_text(s->stats().bytesOut) + " · received " + bytes_text(s->stats().bytesIn) + " · " + QString::number(s->stats().inputs) + " inputs · device " + (s->deviceId().isEmpty() ? "-" : s->deviceId()), st(MUTED), inside.width());
+    if (terminals.isEmpty()) this->_canvas.text(inside.left(), y + 2, "Terminals: none", st(MUTED));
     else {
         QStringList ids;
         for (const QString& key: terminals)
             ids.append(key.section('/', 1));
-        const int end = this->_canvas.text(2, y, "Terminals: " + ids.join(", ") + "   (m or enter: watch them live)", st(WARN), w - 4);
-        this->_hits.append(Hit{QRect(2, y, end - 2, 1), [this]() {this->pageKey_("m");}});
-        y++;
+        const int end = this->_canvas.text(inside.left(), y + 2, "Terminals " + ids.join(", ") + "  ▸ m / enter / click: watch them live", st(WARN, QColor(), true), inside.width());
+        this->_hits.append(Hit{QRect(inside.left(), y + 2, end - inside.left(), 1), [this]() {this->pageKey_("m");}});
     }
-    y++;
-    this->_canvas.text(2, y++, "LIVE ACTIVITY", st(MUTED, QColor(), true));
+    y += 5;
+
+    // Live activity
+    if (area.bottom() - y + 1 < 3) return;
+    inside = this->card_(QRect(1, y, w - 2, area.bottom() - y + 1), "Live activity");
     const QStringList& activity = this->_activity.value(s->id());
-    const int room = area.bottom() - y + 1;
-    for (qsizetype i = std::max<qsizetype>(0, activity.size() - room); i < activity.size() && y <= area.bottom(); ++i)
-        this->_canvas.text(2, y++, activity[i], st(activity[i].contains(" $ ") ? WARN : QColor()), w - 4);
+    const int room = inside.height();
+    if (activity.isEmpty()) this->_canvas.text(inside.left(), inside.top(), "nothing yet", st(MUTED));
+    for (qsizetype i = std::max<qsizetype>(0, activity.size() - room), row = inside.top(); i < activity.size() && row <= inside.bottom(); ++i, ++row) {
+        const QString& line = activity[i];
+        const int x = this->_canvas.text(inside.left(), row, line.left(8), st(BORDER_TEXT));
+        this->_canvas.text(x + 1, row, line.mid(9), st(line.contains(" $ ") ? WARN : QColor()), inside.right() - x);
+    }
 }
 
 void xdesk::ui::tty::HostTui::drawDevices_(const QRect& area)
@@ -877,69 +925,81 @@ void xdesk::ui::tty::HostTui::drawDevices_(const QRect& area)
     const QList<security::AddressBan>& addresses = this->_host.registry().addresses();
     const int total = static_cast<int>(devices.size() + addresses.size());
     const int selected = std::clamp(this->_device, 0, std::max(0, total - 1));
-    int y = area.top();
+    const bool locked = this->_host.localActionsLocked();
+    const int bansRows = std::max(1, static_cast<int>(addresses.size()));
+    const int room = area.height() - (locked ? 1 : 0) - std::min(bansRows, 6) - 3;
+    const int devicesH = std::clamp(static_cast<int>(devices.size()) + 3, 4, std::max(4, room));
+    QRect inside = this->card_(QRect(1, area.top(), w - 2, devicesH), "Devices", QString::number(devices.size()) + " known");
+    int y = inside.top();
 
-    this->_canvas.text(2, y++, fit("DEVICE", 24) + " " + fit("CLIENT", 6) + " " + fit("OS", 10) + " " + fit("LAST ADDRESS", 16) + " " + fit("STATE", 8) + " " + fit("SESSIONS", 8) + " " + fit("LAST SEEN", 12) + " REASON", st(MUTED, QColor(), true), w - 3);
-    if (devices.isEmpty()) this->_canvas.text(2, y++, "No device yet: every client that connects gets one (bans and trust follow it).", st(MUTED), w - 4);
-    for (int i = 0; i < devices.size() && y < area.bottom() - 4; ++i, ++y) {
+    this->_canvas.text(inside.left(), y++, fit("DEVICE", 24) + " " + fit("CLIENT", 6) + " " + fit("OS", 10) + " " + fit("LAST ADDRESS", 16) + " " + fit("STATE", 10) + " " + fit("SESSIONS", 8) + " " + fit("LAST SEEN", 12) + " REASON", st(BORDER_TEXT, QColor(), true), inside.width());
+    if (devices.isEmpty()) this->_canvas.text(inside.left(), y, "No device yet: every client that connects gets one (bans and trust follow it)", st(MUTED), inside.width());
+    for (int i = 0; i < devices.size() && y <= inside.bottom(); ++i, ++y) {
         const security::Device& d = devices[i];
         const bool current = i == selected;
         const Style base = current ? st(QColor(), SELECTED) : st();
         const QColor color = d.banned ? BAD : (d.trusted ? GOOD : MUTED);
-        this->_canvas.fill(QRect(1, y, w - 2, 1), base);
-        this->_canvas.text(2, y, fit(d.name, 24) + " " + fit(d.kind, 6) + " " + fit(d.os, 10) + " " + fit(d.address, 16) + " ", st(QColor(), base.bg, current), w - 3);
-        this->_canvas.text(62, y, fit(d.banned ? "banned" : (d.trusted ? "trusted" : "known"), 8), st(color, base.bg, true));
-        this->_canvas.text(71, y, fit(QString::number(d.sessions), 8) + " " + fit(d.seen > 0 ? QDateTime::fromMSecsSinceEpoch(d.seen).toString("MM-dd HH:mm") : "-", 12) + " " + d.banReason, st(QColor(), base.bg), w - 72);
+        if (current) this->select_(QRect(1, y, w - 2, 1));
+        int x = this->_canvas.text(inside.left(), y, fit(d.name, 24) + " " + fit(d.kind, 6) + " " + fit(d.os, 10) + " " + fit(d.address, 16) + " ", st(QColor(), base.bg, current), inside.width());
+        x = this->_canvas.text(x, y, fit(d.banned ? "⊘ banned" : (d.trusted ? "✓ trusted" : "· known"), 10) + " ", st(color, base.bg, true));
+        this->_canvas.text(x, y, fit(QString::number(d.sessions), 8) + " " + fit(d.seen > 0 ? QDateTime::fromMSecsSinceEpoch(d.seen).toString("MM-dd HH:mm") : "-", 12) + " " + d.banReason, st(MUTED, base.bg), inside.right() - x + 1);
         this->_hits.append(Hit{QRect(1, y, w - 2, 1), [this, i]() {this->_device = i;}});
     }
-    y++;
-    this->_canvas.text(2, y++, "BANNED ADDRESSES", st(MUTED, QColor(), true));
-    if (addresses.isEmpty()) this->_canvas.text(2, y++, "none", st(MUTED));
-    for (int i = 0; i < addresses.size() && y <= area.bottom() - 1; ++i, ++y) {
+    y = area.top() + devicesH;
+    if (area.bottom() - y + 1 - (locked ? 1 : 0) < 3) {
+        if (locked) this->_canvas.text(2, area.bottom(), "▲ Locked: a remote session controls this PC or has a terminal (trust / unban / forget need the person in front of it)", st(WARN, QColor(), true), w - 4);
+        return;
+    }
+    inside = this->card_(QRect(1, y, w - 2, std::min(bansRows + 2, area.bottom() - y + 1 - (locked ? 1 : 0))), "Banned addresses");
+    if (addresses.isEmpty()) this->_canvas.text(inside.left(), inside.top(), "none", st(MUTED));
+    for (int i = 0; i < addresses.size() && inside.top() + i <= inside.bottom(); ++i) {
+        const int row = inside.top() + i;
         const security::AddressBan& a = addresses[i];
         const int index = static_cast<int>(devices.size()) + i;
         const bool current = index == selected;
         const Style base = current ? st(QColor(), SELECTED) : st();
-        this->_canvas.fill(QRect(1, y, w - 2, 1), base);
-        this->_canvas.text(2, y, fit(a.address, 24), st(BAD, base.bg, true));
-        this->_canvas.text(27, y, a.reason + "  ·  since " + QDateTime::fromMSecsSinceEpoch(a.since).toString("MM-dd HH:mm") + (a.until ? "  ·  until " + QDateTime::fromMSecsSinceEpoch(a.until).toString("HH:mm") : QString("  ·  until a local unban")), st(QColor(), base.bg), w - 28);
-        this->_hits.append(Hit{QRect(1, y, w - 2, 1), [this, index]() {this->_device = index;}});
+        if (current) this->select_(QRect(1, row, w - 2, 1));
+        this->_canvas.text(inside.left(), row, fit(a.address, 24), st(BAD, base.bg, true));
+        this->_canvas.text(inside.left() + 25, row, a.reason + " · since " + QDateTime::fromMSecsSinceEpoch(a.since).toString("MM-dd HH:mm") + (a.until ? " · until " + QDateTime::fromMSecsSinceEpoch(a.until).toString("HH:mm") : QString(" · until a local unban")), st(MUTED, base.bg), inside.width() - 25);
+        this->_hits.append(Hit{QRect(1, row, w - 2, 1), [this, index]() {this->_device = index;}});
     }
-    if (this->_host.localActionsLocked()) this->_canvas.text(2, area.bottom(), "Locked: a remote session controls this PC or has a terminal (trust / unban / forget need the person in front of it)", st(WARN, QColor(), true), w - 4);
+    if (locked) this->_canvas.text(2, area.bottom(), "▲ Locked: a remote session controls this PC or has a terminal (trust / unban / forget need the person in front of it)", st(WARN, QColor(), true), w - 4);
 }
 
 void xdesk::ui::tty::HostTui::drawLogs_(const QRect& area)
 {
     const int w = area.width();
     const QList<QJsonObject> logs = this->filteredLogs_();
-    const int rows = area.height() - 2;
     const int selected = logs.isEmpty() ? -1 : (this->_logRow < 0 ? static_cast<int>(logs.size()) - 1 : std::clamp(this->_logRow, 0, static_cast<int>(logs.size()) - 1));
-    const int first = std::clamp(selected - rows + 1, 0, std::max(0, static_cast<int>(logs.size()) - rows));
-    int y = area.top();
     int x = 2;
+    int y = area.top();
 
-    // Filters (clickable)
+    // Filters (clickable chips)
     for (const std::tuple<QString, QString, QString>& f: QList<std::tuple<QString, QString, QString>>{{"l", "Level", LOG_LEVELS[this->_logLevel]}, {"c", "Category", LOG_CATEGORIES[this->_logCategory]}, {"/", "Search", this->_logSearch.isEmpty() ? QString("-") : this->_logSearch}}) {
         const int start = x;
         const QString key = std::get<0>(f);
         x = this->_canvas.text(x, y, std::get<1>(f) + " ", st(MUTED));
-        x = this->_canvas.text(x, y, " " + std::get<2>(f) + " ", st(QColor(), SELECTED, true));
-        x = this->_canvas.text(x, y, " (" + key + ")    ", st(MUTED));
+        x = this->_canvas.text(x, y, " " + std::get<2>(f) + " ▾ ", st(QColor(Qt::white), SELECTED, true));
+        x = this->_canvas.text(x, y, " " + key + "   ", st(BORDER_TEXT));
         this->_hits.append(Hit{QRect(start, y, x - start, 1), [this, key]() {this->pageKey_(key);}});
     }
-    this->_canvas.text(x, y, QString::number(logs.size()) + " entries" + (this->_logRow < 0 ? "  ·  following" : ""), st(MUTED));
     y += 2;
-    for (int i = first; i < logs.size() && y <= area.bottom(); ++i, ++y) {
+    const QRect inside = this->card_(QRect(1, y, w - 2, area.bottom() - y + 1), "Log", QString::number(logs.size()) + " entries" + (this->_logRow < 0 ? " · following" : ""));
+    const int rows = inside.height();
+    const int first = std::clamp(selected - rows + 1, 0, std::max(0, static_cast<int>(logs.size()) - rows));
+    if (logs.isEmpty()) this->_canvas.text(inside.left(), inside.top(), "nothing matches these filters", st(MUTED));
+    for (int i = first, row = inside.top(); i < logs.size() && row <= inside.bottom(); ++i, ++row) {
         const QJsonObject& e = logs[i];
         const QString level = e.value("level").toString();
         const bool current = i == selected && this->_logRow >= 0;
         const Style base = current ? st(QColor(), SELECTED) : st();
-        this->_canvas.fill(QRect(1, y, w - 2, 1), base);
-        this->_canvas.text(2, y, QDateTime::fromMSecsSinceEpoch(e.value("ts").toInteger()).toString("MM-dd HH:mm:ss"), st(MUTED, base.bg));
-        this->_canvas.text(17, y, fit(level, 5), st(level == "alert" ? BAD : (level == "warn" ? WARN : MUTED), base.bg, level != "info"));
-        this->_canvas.text(23, y, fit(e.value("cat").toString(), 9) + " " + fit(e.value("session").toString(), 8), st(MUTED, base.bg));
-        this->_canvas.text(42, y, e.value("msg").toString(), st(QColor(), base.bg), w - 43);
-        this->_hits.append(Hit{QRect(1, y, w - 2, 1), [this, i, current]() {
+        const QColor color = level == "alert" ? BAD : (level == "warn" ? WARN : MUTED);
+        if (current) this->select_(QRect(1, row, w - 2, 1));
+        this->_canvas.text(inside.left(), row, QDateTime::fromMSecsSinceEpoch(e.value("ts").toInteger()).toString("MM-dd HH:mm:ss"), st(BORDER_TEXT, base.bg));
+        this->_canvas.text(inside.left() + 15, row, (level == "info" ? "· " : "▲ ") + fit(level, 5), st(color, base.bg, level != "info"));
+        this->_canvas.text(inside.left() + 23, row, fit(e.value("cat").toString(), 9) + " " + fit(e.value("session").toString(), 8), st(MUTED, base.bg));
+        this->_canvas.text(inside.left() + 42, row, e.value("msg").toString(), st(level == "alert" ? BAD : QColor(), base.bg), inside.width() - 42);
+        this->_hits.append(Hit{QRect(1, row, w - 2, 1), [this, i, current]() {
             this->_logRow = i;
             if (current) this->onKey_("enter", "\r"); // second click: the details
         }});
@@ -952,56 +1012,94 @@ void xdesk::ui::tty::HostTui::drawSettings_(const QRect& area)
     const QList<SettingField>& fields = settings_fields();
     const core::Settings& saved = this->_host.config().settings();
     const int selected = std::clamp(this->_field, 0, static_cast<int>(fields.size()) - 1);
-    QList<int> rows; // field index per line (-1 - section = header)
+    QStringList sections;
     int dirty = 0;
-    int y = area.top();
 
-    for (int i = 0; i < fields.size(); ++i) {
-        if (i == 0 || fields[i].section != fields[i - 1].section) {
-            if (i > 0) rows.append(-1000);
-            rows.append(-1 - i);
-        }
-        rows.append(i);
-        if (fields[i].get(this->_draft) != fields[i].get(saved)) dirty++;
+    for (const SettingField& field: fields) {
+        if (!sections.contains(field.section)) sections.append(field.section);
+        if (field.get(this->_draft) != field.get(saved)) dirty++;
     }
 
-    // Lines around the selected one
-    const int room = area.height() - 2;
-    int at = 0;
-    for (int i = 0; i < rows.size(); ++i)
-        if (rows[i] == selected) at = i;
-    const int first = std::clamp(at - room / 2, 0, std::max(0, static_cast<int>(rows.size()) - room));
-    for (int i = first; i < rows.size() && y < area.top() + room; ++i, ++y) {
-        const int index = rows[i];
-        if (index == -1000) continue;
-        if (index < 0) {this->_canvas.text(2, y, fields[-1 - index].section.toUpper(), st(MUTED, QColor(), true)); continue;}
+    // One field row: label, value (arrows and toggles clickable)
+    const std::function<void(const int, const int, const int, const int)> row = [&](const int index, const int x, const int y, const int width) {
         const SettingField& field = fields[index];
         const bool current = index == selected;
         const bool changed = field.get(this->_draft) != field.get(saved);
         const Style base = current ? st(QColor(), SELECTED) : st();
+        const int labelW = std::min(38, width * 3 / 5);
         QString value = field_value(field, this->_draft);
         if (field.kind == FieldKind::Text && value.isEmpty()) value = index == 3 ? "my.domain.tld (manual exposure)" : (index == 21 ? "default shell" : "-");
-        this->_canvas.fill(QRect(1, y, w - 2, 1), base);
-        this->_canvas.text(1, y, changed ? "*" : " ", st(ACCENT, base.bg, true));
-        this->_canvas.text(3, y, field.label, st(current ? QColor() : MUTED, base.bg), 34);
-        const int end = this->_canvas.text(38, y, value, field.kind == FieldKind::Text && field.get(this->_draft).toString().isEmpty() ? st(MUTED, base.bg) : st(field.kind == FieldKind::Toggle && field.get(this->_draft).toBool() ? ACCENT : QColor(), base.bg, current), w - 40);
-        this->_hits.append(Hit{QRect(1, y, w - 2, 1), [this, index]() {
+        if (current) this->select_(QRect(x - 2, y, width + 4, 1));
+        this->_canvas.text(x, y, (changed ? "● " : "  ") + field.label, changed ? st(ACCENT, base.bg, true) : st(current ? QColor() : MUTED, base.bg, current), labelW);
+        const bool on = field.kind == FieldKind::Toggle && field.get(this->_draft).toBool();
+        const Style look = field.kind == FieldKind::Text && field.get(this->_draft).toString().isEmpty() ? st(BORDER_TEXT, base.bg) : st(field.kind == FieldKind::Toggle ? (on ? ACCENT : MUTED) : QColor(), base.bg, current || on);
+        const int end = this->_canvas.text(x + labelW + 1, y, value, look, width - labelW - 1);
+        this->_hits.append(Hit{QRect(x - 2, y, width + 4, 1), [this, index]() {
             if (this->_field == index) this->changeField_(0, true); // second click: change it
             this->_field = index;
         }});
         if (field.kind == FieldKind::Choice || field.kind == FieldKind::Number) {
-            // The arrows of a choice (the ends of a number) step it at once
-            this->_hits.append(Hit{QRect(38, y, 2, 1), [this, index]() {this->_field = index; this->changeField_(-1, false);}});
-            this->_hits.append(Hit{QRect(std::max(38, end - 2), y, 2, 1), [this, index]() {this->_field = index; this->changeField_(1, false);}});
+            // The arrows step the value at once
+            this->_hits.append(Hit{QRect(x + labelW + 1, y, 2, 1), [this, index]() {this->_field = index; this->changeField_(-1, false);}});
+            this->_hits.append(Hit{QRect(std::max(x + labelW + 1, end - 2), y, 2, 1), [this, index]() {this->_field = index; this->changeField_(1, false);}});
+        }
+    };
+
+    const int bottom = area.bottom() - 1;
+    if (w >= 110 && area.height() >= 18) {
+        // Two columns of cards: network and stream on the left, access on the right
+        const int half = (w - 3) / 2;
+        int columnY[2] = {area.top(), area.top()};
+        for (const QString& section: sections) {
+            QList<int> indexes;
+            for (int i = 0; i < fields.size(); ++i)
+                if (fields[i].section == section) indexes.append(i);
+            const int column = section == sections.last() ? 1 : 0;
+            const int x = column == 0 ? 1 : 2 + half;
+            const int height = std::min(static_cast<int>(indexes.size()) + 2, bottom - columnY[column] + 1);
+            if (height < 3) continue;
+            const QRect inside = this->card_(QRect(x, columnY[column], half, height), section);
+            for (int i = 0; i < indexes.size() && inside.top() + i <= inside.bottom(); ++i)
+                row(indexes[i], inside.left(), inside.top() + i, inside.width());
+            columnY[column] += height + 1;
+        }
+    } else {
+        // One column: section titles and the lines around the selected field
+        QList<int> rows; // field index per line (-1 - section = its title, -1000 = a gap)
+        for (int i = 0; i < fields.size(); ++i) {
+            if (i == 0 || fields[i].section != fields[i - 1].section) {
+                if (i > 0) rows.append(-1000);
+                rows.append(-1 - i);
+            }
+            rows.append(i);
+        }
+        const int room = bottom - area.top();
+        int at = 0;
+        for (int i = 0; i < rows.size(); ++i)
+            if (rows[i] == selected) at = i;
+        const int first = std::clamp(at - room / 2, 0, std::max(0, static_cast<int>(rows.size()) - room));
+        for (int i = first, y = area.top(); i < rows.size() && y < area.top() + room; ++i, ++y) {
+            const int index = rows[i];
+            if (index == -1000) continue;
+            if (index < 0) {
+                const int end = this->_canvas.text(2, y, "─ " + fields[-1 - index].section + " ", st(ACCENT, QColor(), true));
+                this->_canvas.fill(QRect(end, y, w - end - 2, 1), st(BORDER), U'─');
+                continue;
+            }
+            row(index, 4, y, w - 8);
         }
     }
-    y = area.bottom();
-    if (this->_host.localActionsLocked()) this->_canvas.text(2, y, "Locked: a remote session controls this PC or has a terminal: settings cannot be saved now", st(WARN, QColor(), true), w - 4);
+
+    // Save line
+    const int y = area.bottom();
+    if (this->_host.localActionsLocked()) this->_canvas.text(2, y, "▲ Locked: a remote session controls this PC or has a terminal: settings cannot be saved now", st(WARN, QColor(), true), w - 4);
     else if (dirty > 0) {
-        const int end = this->_canvas.text(2, y, QString::number(dirty) + " unsaved change(s): ctrl+s or w to save, r to revert   ", st(WARN, QColor(), true), w - 4);
-        const int save = this->_canvas.text(end, y, " Save ", st(DARK, ACCENT, true));
+        const int end = this->_canvas.text(2, y, "● " + QString::number(dirty) + " unsaved change(s)   ", st(WARN, QColor(), true), w - 4);
+        const int save = this->_canvas.text(end, y, " ✓ Save  ctrl+s ", st(DARK, ACCENT, true));
+        const int revert = this->_canvas.text(save + 1, y, " ↺ Revert  r ", st(DARK, MUTED, true));
         this->_hits.append(Hit{QRect(end, y, save - end, 1), [this]() {this->saveSettings_();}});
-    } else this->_canvas.text(2, y, "Saved in " + core::Config::configDir() + "/config.json", st(MUTED), w - 4);
+        this->_hits.append(Hit{QRect(save + 1, y, revert - save - 1, 1), [this]() {this->pageKey_("r");}});
+    } else this->_canvas.text(2, y, "✓ Saved in " + core::Config::configDir() + "/config.json", st(BORDER_TEXT), w - 4);
 }
 
 void xdesk::ui::tty::HostTui::drawFooter_(void)
@@ -1012,7 +1110,7 @@ void xdesk::ui::tty::HostTui::drawFooter_(void)
     int x = 1;
 
     // Status line
-    if (!this->_flash.isEmpty() && now - this->_flashAt < FLASH_TIME) this->_canvas.text(2, h - 2, this->_flash, st(this->_flashBad ? BAD : ACCENT, QColor(), true), w - 4);
+    if (!this->_flash.isEmpty() && now - this->_flashAt < FLASH_TIME) this->_canvas.text(2, h - 2, (this->_flashBad ? "✗ " : "✓ ") + this->_flash, st(this->_flashBad ? BAD : ACCENT, QColor(), true), w - 4);
 
     // Buttons of the page (a click = the key)
     this->_canvas.fill(QRect(0, h - 1, w, 1), st(QColor(), BAR));
@@ -1030,7 +1128,8 @@ void xdesk::ui::tty::HostTui::drawFooter_(void)
         if (x + b.first.size() + b.second.size() + 5 > w) break;
         const QString key = b.first == "v/c/t/p" ? "v" : (b.first == "←→" ? "right" : b.first);
         const int start = x;
-        x = this->_canvas.text(this->_canvas.text(x, h - 1, " " + b.first + " ", st(DARK, MUTED, true)), h - 1, " " + b.second + "  ", st(QColor(), BAR));
+        x = this->_canvas.text(this->_canvas.text(x, h - 1, " " + b.first + " ", st(DARK, b.first == "q" ? BAD : MUTED, true)), h - 1, " " + b.second + " ", st(QColor(220, 224, 228), BAR));
+        x = this->_canvas.text(x, h - 1, " ", st(QColor(), BAR));
         this->_hits.append(Hit{QRect(start, h - 1, x - start, 1), [this, key]() {this->onKey_(key, key.size() == 1 ? key.toUtf8() : QByteArray());}});
     }
 }

@@ -143,6 +143,8 @@ class Canvas {
         int text(const int x, const int y, const QString& text, const Style& style, const int max = -1); // returns the column after the text (cut at max cells)
         void fill(const QRect& area, const Style& style, const char32_t ch = U' ');
         void box(const QRect& area, const QString& title, const Style& border, const Style& inside); // rounded frame
+        QRect card(const QRect& area, const QString& title, const Style& border, const Style& heading, const QString& note = "", const Style& noteStyle = Style()); // rounded frame, title on the left of its top border, note on the right, returns its inside (2 cells of margin)
+        void selectRow(const QRect& row, const Style& fill, const Style& bar); // selected row: filled, a bar on its left cell, a right border kept
         void vtLine(const int x, const int y, const gui::Line& line, const int max); // a row of a VtScreen
         _hot _nodiscard QByteArray row(const int y, const Capabilities& caps = Capabilities()) const; // ANSI bytes of a row (starts and ends with a reset), colors / characters lowered to what the terminal shows
 
