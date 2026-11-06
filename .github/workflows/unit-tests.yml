@@ -110,5 +110,8 @@ jobs:
         working-directory: build
         run: |
           set -euo pipefail
+          # wineserver and the prefix started once: the first tests run in parallel no longer wait for them (timeouts)
+          wineserver -p 60
+          wine ../unit_tests.exe --gtest_list_tests > /dev/null 2>&1 || true
           ctest --output-on-failure --timeout 60 --parallel $(nproc)
         timeout-minutes: 6
