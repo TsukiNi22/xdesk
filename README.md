@@ -27,21 +27,21 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 
 | Feature | Content |
 | ------- | ------- |
-| Host panel | Qt6 window (Auto / Light / Dark, tray icon) or full screen terminal panel (`--tty`, automatic without display); **sharing starts off**: Start / Stop sharing (bottom left, tray, `s` in the terminal panel) without quitting |
+| Host panel | Qt6 window (Auto / Light / Dark, tray icon, grows to show the whole page up to the screen size) or full screen terminal panel (`--tty`, automatic without display) with the same 5 pages, keys and mouse; **sharing starts off**: Start / Stop sharing (bottom left, tray, `s` in the terminal panel) without quitting |
 | Pairing | One time code (`K7F-29Q-XM4`, Crockford base32, 45 bits), rotated after each use, on a timer and at each start of the sharing, copy / new code / **QR code** |
 | QR code | Link of an address + the code: `xdesk://host:port?fp=..&code=..` for the Android app (certificate pinned from the QR code), `https://host:port/?code=..` for a browser; scanned by the phone camera, the app (Scan) or the web client (Scan, BarcodeDetector or jsQR) |
 | Approval | Accept / Accept & trust / Refuse prompt for unknown devices (30 s, refused by default), or always / never |
 | Sessions | Live table: device, client (`gui`, `tty`, `web`, `apk`), address, mode, rights, FPS, latency, bandwidth, last input |
 | Live view of a session | Every input (keys, clicks, wheel, text, clipboard), mirror of its terminals with what it types |
 | Rights | Per session: see the screen, control keyboard / mouse, open terminals, clipboard - changed live |
-| Devices | Trusted (reconnect without code), known, banned devices and banned addresses; unban / trust only locally |
+| Devices | Trusted (reconnect without code), known, banned devices and banned addresses, one record per machine (a browser coming back with a new id replaces its old records, their trust is not kept); unban / trust only locally |
 | Tamper protection | A session touching xdesk (its binary, config, data, process) is banned at once (see [Security](#security)) |
 | Audit log | `jsonl` per day (connections, decisions, inputs, terminal commands) + full terminal transcripts |
-| Screen | Dirty 64x64 tiles (JPEG via libjpeg-turbo or solid color), max 2 frames in flight (latency over throughput), remote cursor |
+| Screen | Dirty 64x64 tiles (JPEG via libjpeg-turbo or solid color) hashed and encoded on every core, lighter JPEG while a large part moves (scroll, video) then the same tiles sent again sharp once still, nothing computed while the capture has no new frame, max 2 frames in flight acked on arrival, paused while the client shows a terminal, remote cursor |
 | Capture | Windows DXGI Desktop Duplication, X11 / macOS through Qt, Wayland through the xdg-desktop-portal ScreenCast + PipeWire video stream (no screenshots: no flash, no shutter sound, only the changed tiles sent) |
 | Input | Windows `SendInput` (scancodes + unicode), Linux `uinput` (Wayland and X11) or XTest, physical key codes (layout of the host) |
-| Terminals | Linux / macOS `forkpty`, Windows ConPTY; up to 4 per session, resizable, `xterm-256color` |
-| Clients | Qt viewer (fit / 1:1 / full screen, terminals in tabs), terminal client (shell passthrough or the screen in truecolor half blocks), web client, Android APK |
+| Terminals | Linux / macOS `forkpty`, Windows ConPTY; up to 4 per session, resizable, `xterm-256color` + truecolor, UTF-8 (`C.UTF-8` when started without a locale); web client: xterm.js with the WebGL renderer, Unicode 11 widths and Nerd / powerline fonts when installed |
+| Clients | Qt viewer (fit / 1:1 / full screen, terminals in tabs), terminal client (connect page with LAN scan and known hosts, terminals and the screen in truecolor half blocks in tabs, control, quality, mouse), web client, Android APK |
 | Exposure | LAN (+ discovery), Tailscale, UPnP, `bore`, `cloudflared`, `ngrok`, manual port forward |
 
 ## Security
@@ -55,15 +55,15 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 | Trusted devices | 256 bits device secret, same HMAC proof, given only when the host trusts the device |
 | Brute force | `maxAuthFailures` wrong codes from one address -> 1 h ban + new code |
 | Registry | `devices.json` signed with an HMAC key (`registry.key`, `0600`): edited outside xdesk -> refused, every trusted device must pair again |
-| Web | Strict CSP (`default-src 'self'`), no-store, no inline script, `frame-ancestors 'none'` |
+| Web | Strict CSP (`default-src 'self'`), no-store, no inline script (inline styles only, for the terminal renderer), `frame-ancestors 'none'` |
 
 > [!IMPORTANT]
 > **Tamper protection**: a connected session must never change or stop the program it is connected through.
-> - the binary, the config folder and the data folder are hashed and watched: a change while a session controls the PC or has a terminal bans those sessions;
+> - the binary, the config folder and the data folder are hashed and watched: a change made while a session is acting (a command running in one of its terminals, keyboard / mouse input in the last 5 s) bans those sessions; a change while no session acts is logged as a local change (a rebuild, an update);
 > - every line typed in a remote terminal is checked **before** its Enter reaches the shell (paths of xdesk, its name, `kill` / `taskkill` / `systemctl` of its pid...) and the processes started from the remote terminals are scanned (Linux: command line and open files);
 > - the host process is hardened (Linux: not dumpable / not traceable; Windows: terminate, memory and thread rights removed), a host killed during a remote session bans those devices at the next start;
 > - remote input is paused while the local user uses the panel (Windows: the panel is excluded from the capture);
-> - unban, trust and settings are refused while a remote session has control or a terminal, and need a code typed on the PC (proof of presence); `xdesk unban` refuses pipes and shells started by xdesk.
+> - unban, trust, forget and settings are refused while a remote session has control or a terminal; lifting a ban also asks the word `unban` typed (trust and forget: yes / no); `xdesk unban` refuses pipes and shells started by xdesk.
 
 > [!WARNING]
 > A remote terminal runs with the rights of your user: the checks above stop the usual ways of touching xdesk, not a determined attacker with a shell. Give terminals only to people you trust (the right can be removed live).
@@ -206,25 +206,38 @@ xdesk                                        # share this PC: graphical panel (t
 xdesk host --tty                             # share this PC with the terminal panel
 xdesk host --expose tailscale -p 47900       # this run only: exposure and port
 xdesk connect 192.168.1.20 -c K7F-29Q-XM4    # control a PC (Qt viewer)
-xdesk connect my-pc.ts.net --tty             # remote shell in this terminal (ctrl+] q to quit)
-xdesk connect bore.pub:41234 --tty --screen  # the remote screen in this terminal (ctrl+] c control)
+xdesk connect my-pc.ts.net --tty             # remote terminal in this terminal (ctrl+] ? keys, ctrl+] q quit)
+xdesk connect bore.pub:41234 --tty --screen  # starts on the remote screen (ctrl+] c control)
+xdesk connect --tty                          # connect page: known hosts, LAN scan, address and code
 xdesk connect 192.168.1.20 --view-only       # never send keyboard / mouse
 xdesk viewer                                 # Qt viewer with its connect page (LAN scan, known hosts)
 xdesk scan                                   # hosts announced on the LAN
 xdesk devices                                # known / trusted / banned devices and addresses
-xdesk unban <device id | address>            # local unban (host stopped, typed confirmation)
+xdesk unban <device id | address>            # local unban (host stopped, the word unban typed)
 xdesk paths                                  # config / data / logs folders
 xdesk --regen-cert                           # new host identity (clients confirm the new fingerprint)
 ```
 
-| Panel key (`--tty`) | Effect |
+| Panel key (`--tty`, `?` shows them, every button is clickable) | Effect |
 | ------------------- | ------ |
-| `↑` `↓`, `tab` / `1` `2` `3` | Select a session, pages sessions / devices / logs |
-| `a` `A` `r` | Accept / accept & trust / refuse a connection |
-| `k` `b` | Kick / ban the selected session |
-| `v` `c` `t` `p` | Toggle view / control / terminal / clipboard rights |
-| `u` `T` `U` `f` `a` (devices) | Unban, trust, untrust, forget a device, unban the first address (typed confirmation) |
-| `r`, `q q` | New code, quit |
+| `1`-`5`, `tab` | Pages overview / sessions / devices / logs / settings |
+| `↑` `↓` `pgup` `pgdn`, wheel | Select a row |
+| `s`, `q` | Start / stop sharing, quit |
+| `a` `t` `r` | Accept / accept & trust / refuse a connection |
+| `n` `y` `enter` `c` `e` (overview) | New code, copy the code, QR code of the address, copy its link, exposure |
+| `v` `c` `t` `p` `m` `k` `b` `K` (sessions) | Rights view / control / terminal / clipboard, watch its terminals, disconnect, ban, disconnect all |
+| `T` `U` `f` `u` (devices) | Trust, untrust, forget, unban (the word `unban` typed) |
+| `l` `c` `/` `enter` (logs) | Level, category, search, details |
+| `←` `→` `space` `enter` `ctrl+s` `r` (settings) | Change, toggle, edit, save, revert |
+
+| Client key (`--tty`), after `ctrl+]` | Effect |
+| ------------------- | ------ |
+| `s` / `0`, `1`-`9`, `n` `p` | Screen tab, terminal N, next / previous tab |
+| `t`, `w` | New terminal, close this one |
+| `c`, `d` | Control on / off, ctrl+alt+del |
+| `+` `-`, `f`, `r` | Image quality, frame rate, refresh |
+| `pgup` `pgdn` | Scroll back (the wheel too) |
+| `q`, `?`, `ctrl+]` | Disconnect, keys, a real ctrl+] |
 
 | File | Content |
 | ---- | ------- |

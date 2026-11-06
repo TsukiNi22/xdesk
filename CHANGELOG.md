@@ -36,7 +36,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - QR code of an address + the code (`xdesk://` link with the pinned fingerprint for the Android app, `https://` link for a browser), scanners in the Android app and in the web client (BarcodeDetector, else jsQR)
 - Stream settings: resolution presets (native, 1440p ... 144p, `maxHeight`) and image quality presets instead of a bare slider and scale
 - Look: own "graphite + signal green" theme (square corners, small capitals, monospace for codes and addresses), Auto / Light / Dark switch in the host panel, the viewer and the web client, the Auto mode follows the system live; lists and number fields with chevrons, tables without a focus frame on the cells (one accent bar on the selected row), settings columns of the same height
+- Terminal panel of the host (`--tty`): the 5 pages of the graphical one (overview with the code countdown, addresses, QR code in half blocks and exposure; sessions with rights, live activity and their terminals watched live; devices and banned addresses; logs with level / category / search / details; every setting editable), approval and confirmation boxes, mouse (tabs, rows, buttons, wheel), copy through OSC 52, frames drawn by changed rows only
+- Terminal client: connect page (known hosts, LAN scan, address, port, code, view only), remote terminals in tabs drawn by the `VtScreen` emulator (status bar, scroll back, application cursor keys, bracketed paste, remote mouse programs), screen tab in truecolor half blocks with control, ctrl+alt+del, quality and frame rate; `xdesk connect --tty` without an address opens the connect page
+- Stream: tiles hashed and encoded on every core, lighter JPEG while a large part of the screen moves then the same tiles sent again sharp once still, nothing computed while the capture has no new frame, PipeWire buffers reused and converted once, frames acked on arrival and decoded on every core by the native client, video paused while a client shows a terminal (the capture only starts once a client looks at the screen)
+- Web terminal: xterm.js WebGL renderer, Unicode 11 widths, Nerd / powerline fonts when installed, styles allowed by the CSP (colors and attributes kept)
 - Scripts: `install.sh`, `install.ps1`, `bundle_windows.sh`, `build_apk.sh`
-- Unit tests: crypto, pairing code, device registry, protocol, frame encoder, command line, sharing switch of the host, certificate chosen by name (SNI)
+- Unit tests: crypto, pairing code, device registry, protocol, frame encoder (motion then sharp), command line, sharing switch of the host, certificate chosen by name (SNI), terminal keys / mouse / canvas / QR code
+
+### Changed
+- Confirmations: only lifting a ban asks a typed word (`unban`), trust and forget are a yes / no, untrust and the settings need nothing more (all of them stay refused while a remote session has control or a terminal)
+- Host window: grows to show the whole page (up to the screen, then the page scrolls), settings columns stacked when the window is too narrow (no horizontal scroll)
+
+### Fixed
+- A device that came back under a new id (a browser keeps one id per site address) left a second record; a ban now also bans the other records of the same machine and removes their trust
+- A protected file changed by the local user (a rebuild) banned the remote sessions with a terminal: only a session acting at that moment is blamed
+- Remote shells started without a locale lost the accents and symbols
 
 [v1.0.0]: https://github.com/TsukiNi22/external-desktop/releases/tag/v1.0.0
