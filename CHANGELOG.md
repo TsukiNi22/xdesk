@@ -51,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests: crypto, pairing code, device registry, protocol, frame encoder (motion then sharp), command line, sharing switch of the host, certificate chosen by name (SNI), terminal keys / mouse / canvas / QR code
 
 ### Changed
+- Automatic resolution (setting `autoResolution`, on by default; graphical and terminal panels): a viewer whose link cannot follow even at the lowest quality (a standing queue or stalls at the floor) gets the next lower resolution (1, 0.75, 0.56, 0.42, 0.32 of the asked one, at most one step per 1.5 s), raised again one step after 3 s of calm at full quality
 - Web client, Android app and Qt viewer: resolution asked to the host next to the quality (native, 2160p ... 144p, never above the screen of the host, the scale of the viewer down to 0.05) and the resolution of the frames received shown (ex: `720p`)
 - Android app: the connect screen starts on the last address tried (even a failed one, a bad link or a QR code), the 5 last addresses listed under it (tap = connect, long press = remove)
 - Android app: version `x.y.z.<commits>` (version code `x.y.z * 1000 + commits`), so a new apk of the same version is offered as an update by the host

@@ -75,6 +75,7 @@ class Stream: public QObject {
         QSize _size; // captured screen size
         QString _backend = ""; // name of the capture backend
         int _maxHeight = 0; // frames at most this tall, the width follows (0 = the screen size)
+        bool _autoResolution = true; // the flow control may lower the resolution of a client whose link cannot follow
 
         // ---------- Pre-Function -------- //
         void tick_(void);
@@ -92,6 +93,7 @@ class Stream: public QObject {
         void setQuality(const QString& session, const int quality, const double scale, const int fps);
         void refresh(const QString& session); // next frame complete
         void setPaused(const QString& session, const bool paused);
+        void setAutoResolution(const bool enabled); // setting autoResolution (every client)
 
         // ------------ Function ---------- //
         inline void setMaxHeight(const int height) {this->_maxHeight = std::max(0, height);}; // 0 = the screen size

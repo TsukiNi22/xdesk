@@ -1417,6 +1417,9 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     this->_setMinimized = new QCheckBox("Start in the tray");
     stream->addRow(make_label("Max FPS", "muted"), this->_setFps);
     stream->addRow(make_label("Resolution", "muted"), this->_setResolution);
+    this->_setAutoResolution = new QCheckBox("Automatic resolution (slow links)");
+    this->_setAutoResolution->setToolTip("A viewer whose link cannot follow even at the lowest quality gets a lower resolution, raised again once the link is calm");
+    stream->addRow("", this->_setAutoResolution);
     stream->addRow(make_label("Image quality", "muted"), this->_setQuality);
     stream->addRow(streamHint);
     stream->addRow(make_label("Language", "muted"), this->_setLanguage);
@@ -1517,6 +1520,7 @@ void xdesk::ui::gui::HostWindow::loadSettings_(void)
     this->_setFocusDelay->setValue(s.focusRequestDelay);
     this->_setShell->setText(s.shell);
     this->_setFps->setValue(s.fps);
+    this->_setAutoResolution->setChecked(s.autoResolution);
     this->_setResolution->setCurrentIndex(std::max(0, this->_setResolution->findData(s.maxHeight)));
     if (this->_setResolution->findData(s.maxHeight) < 0) {
         this->_setResolution->addItem(QString::number(s.maxHeight) + "p (config.json)", s.maxHeight);
@@ -1556,6 +1560,7 @@ void xdesk::ui::gui::HostWindow::saveSettings_(void)
     s.fps = this->_setFps->value();
     s.quality = this->_setQuality->currentData().toInt();
     s.maxHeight = this->_setResolution->currentData().toInt();
+    s.autoResolution = this->_setAutoResolution->isChecked();
     s.language = this->_setLanguage->currentText();
     s.startMinimized = this->_setMinimized->isChecked();
     try {

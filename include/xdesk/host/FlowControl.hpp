@@ -45,6 +45,9 @@ File Description:
     #define FLOW_QUALITY_FLOOR 25 // lowest jpeg quality chosen by the flow control
     #define FLOW_DOWN_EVERY 400 // ms between two steps down of the quality
     #define FLOW_UP_EVERY 1500 // ms between two steps up of the quality
+    #define FLOW_SCALE_STEPS 5 // steps of the automatic resolution: 1, 0.75, 0.56, 0.42, 0.32 of the asked one
+    #define FLOW_SCALE_DOWN_EVERY 1500 // ms of queue with the quality at its floor before the resolution goes one step down
+    #define FLOW_SCALE_UP_EVERY 3000 // ms without queue at full quality before it goes one step up again
 
 namespace xdesk::host { // namespace start
 //----------------------------------------------------------------//
@@ -82,6 +85,10 @@ class FlowControl {
         int _quality = 100; // ceiling of the jpeg quality
         int _asked = 100; // quality asked by the viewer (last one seen)
         std::int64_t _changed = 0; // ms of the last quality step
+        int _scaleStep = 0; // automatic resolution: 0 = the asked one, FLOW_SCALE_STEPS - 1 = the lowest
+        std::int64_t _scaleChanged = 0; // ms of the last resolution step
+        std::int64_t _calmSince = 0; // ms since no queue at full quality (0 = not calm)
+        bool _autoScale = true; // the resolution follows the link too (setting autoResolution)
 
     public:
         // ---------- Pre-Function -------- //
@@ -93,12 +100,15 @@ class FlowControl {
         _hot _nodiscard int quality(const int asked); // jpeg quality to use: the asked one, lowered while the path is congested
         _cold _nodiscard double bandwidth(void) const; // bytes per ms (0 = not measured yet)
         _cold _nodiscard double minRtt(void) const; // ms (0 = not measured yet)
+        _hot _nodiscard double scale(void) const; // factor of the asked resolution: lowered when the lowest quality is not enough
 
         // ------------ Function ---------- //
         /* getter */
         _cold _nodiscard inline int inFlight(void) const {return static_cast<int>(this->_flight.size());};
         _cold _nodiscard inline double queue(void) const {return this->_queue;};
         _cold _nodiscard inline int ceiling(void) const  {return this->_quality;};
+        /* setter */
+        _cold inline void setAutoScale(const bool enabled) {this->_autoScale = enabled; if (!enabled) this->_scaleStep = 0;};
 };
 
 } // namespace end

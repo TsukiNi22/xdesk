@@ -75,6 +75,21 @@ void xdesk::host::FlowControl::acked(const std::uint32_t id, const std::int64_t 
         if (now - sample.first <= FLOW_QUEUE_WINDOW) recent = std::min(recent, sample.second);
     this->_queue = std::max(0.0, recent - this->minRtt());
 
+    // Resolution: one step down when even the lowest quality keeps a queue, one step up after a long calm at full quality
+    if (this->_autoScale && this->_queue > FLOW_QUEUE_HIGH && this->_quality <= FLOW_QUALITY_FLOOR && this->_scaleStep < FLOW_SCALE_STEPS - 1 && now - this->_scaleChanged >= FLOW_SCALE_DOWN_EVERY) {
+        ++this->_scaleStep;
+        this->_scaleChanged = now;
+        this->_quality = std::min(100, FLOW_QUALITY_FLOOR + 20); // the smaller frames can take a better quality
+        this->_changed = now;
+    }
+    if (this->_queue >= FLOW_QUEUE_LOW || this->_quality < 100) this->_calmSince = 0; // not calm: the step up waits
+    else if (this->_calmSince == 0) this->_calmSince = now;
+    if (this->_scaleStep > 0 && this->_calmSince > 0 && now - this->_calmSince >= FLOW_SCALE_UP_EVERY && now - this->_scaleChanged >= FLOW_SCALE_UP_EVERY) {
+        --this->_scaleStep;
+        this->_scaleChanged = now;
+        this->_calmSince = 0; // the next step waits for a new calm at this size (a queue lowers the quality again first)
+    }
+
     // Quality: down while a queue grows, up again once it is gone
     if (this->_queue > FLOW_QUEUE_HIGH && now - this->_changed >= FLOW_DOWN_EVERY) {
         this->_quality = std::max(FLOW_QUALITY_FLOOR, std::min(this->_quality, this->_asked) - 10);
@@ -88,10 +103,18 @@ void xdesk::host::FlowControl::acked(const std::uint32_t id, const std::int64_t 
 void xdesk::host::FlowControl::expire(const std::int64_t now)
 {
     if (this->_flight.isEmpty() || now - this->_flight.first().at <= FLOW_ACK_TIMEOUT) return;
+    const bool floor = this->_quality <= FLOW_QUALITY_FLOOR;
+
     this->_flight.clear();
     this->_bytes = 0;
     this->_quality = std::max(FLOW_QUALITY_FLOOR, std::min(this->_quality, this->_asked) - 10); // a stall: lighter frames
     this->_changed = now;
+    this->_calmSince = 0;
+    // Stalls at the lowest quality (a link far too slow for these frames): smaller frames
+    if (this->_autoScale && floor && this->_scaleStep < FLOW_SCALE_STEPS - 1 && now - this->_scaleChanged >= FLOW_SCALE_DOWN_EVERY) {
+        ++this->_scaleStep;
+        this->_scaleChanged = now;
+    }
 }
 
 bool xdesk::host::FlowControl::canSend(const int fps) const
@@ -120,6 +143,13 @@ double xdesk::host::FlowControl::bandwidth(void) const
     for (const QPair<std::int64_t, double>& sample: this->_rates)
         best = std::max(best, sample.second);
     return best;
+}
+
+double xdesk::host::FlowControl::scale(void) const
+{
+    static const double STEPS[FLOW_SCALE_STEPS] = {1.0, 0.75, 0.5625, 0.421875, 0.31640625};
+
+    return STEPS[std::clamp(this->_scaleStep, 0, FLOW_SCALE_STEPS - 1)];
 }
 
 double xdesk::host::FlowControl::minRtt(void) const

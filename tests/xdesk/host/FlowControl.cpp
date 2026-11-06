@@ -124,3 +124,60 @@ TEST(FlowControl, LostAcksAreGivenUp)
     EXPECT_EQ(flow.inFlight(), 0);
     EXPECT_LT(flow.quality(70), 70); // a stall: lighter frames
 }
+
+/*
+ * Automatic resolution: frames of `size` bytes at quality 70 and full resolution (bytes follow the quality and the
+ * square of the scale), a link of `slow` bytes per ms for 20 s then `fast` for 40 s; returns <lowest scale, last scale>
+*/
+static std::pair<double, double> simulate_scale(const double slow, const double fast, const int size, const bool automatic)
+{
+    xdesk::host::FlowControl flow;
+    std::deque<std::pair<std::int64_t, std::uint32_t>> acks;
+    std::int64_t linkFree = 0;
+    std::int64_t lastFrame = -1000;
+    std::uint32_t id = 0;
+    double lowest = 1.0;
+
+    flow.setAutoScale(automatic);
+    for (std::int64_t now = 0; now < 60000; now += 4) {
+        const double bandwidth = now < 20000 ? slow : fast;
+        while (!acks.empty() && acks.front().first <= now) {
+            flow.acked(acks.front().second, now);
+            acks.pop_front();
+        }
+        flow.expire(now);
+        if (!flow.canSend(30) || now - lastFrame < 1000 / 30) continue;
+        const double scale = flow.scale();
+        const std::int64_t bytes = static_cast<std::int64_t>(size * flow.quality(70) / 70.0 * scale * scale);
+        const std::int64_t start = std::max(now, linkFree);
+        linkFree = start + static_cast<std::int64_t>(static_cast<double>(bytes) / bandwidth);
+        flow.sent(++id, bytes, now);
+        lastFrame = now - lastFrame < 2000 / 30 ? lastFrame + 1000 / 30 : now;
+        acks.emplace_back(linkFree + 2 * 20, id);
+        lowest = std::min(lowest, scale);
+    }
+    return {lowest, flow.scale()};
+}
+
+TEST(FlowControl, TooSlowLinkLowersTheResolutionThenRaisesIt)
+{
+    // 50 kB frames on 20 kB/s: even the lowest quality queues -> smaller frames; then 5 MB/s: back to the asked resolution
+    const std::pair<double, double> result = simulate_scale(20.0, 5000.0, 50000, true);
+
+    EXPECT_LT(result.first, 0.6);
+    EXPECT_DOUBLE_EQ(result.second, 1.0);
+}
+
+TEST(FlowControl, AutomaticResolutionCanBeTurnedOff)
+{
+    const std::pair<double, double> result = simulate_scale(20.0, 5000.0, 50000, false);
+
+    EXPECT_DOUBLE_EQ(result.first, 1.0);
+}
+
+TEST(FlowControl, FastLinkKeepsTheAskedResolution)
+{
+    const std::pair<double, double> result = simulate_scale(5000.0, 5000.0, 50000, true);
+
+    EXPECT_DOUBLE_EQ(result.first, 1.0);
+}

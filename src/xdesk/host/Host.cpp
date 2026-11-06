@@ -274,6 +274,7 @@ void xdesk::host::Host::startStream_(void)
         if (this->_sessions.contains(id)) this->_scales[id] = scale;
     });
     QMetaObject::invokeMethod(this->_stream, "setMaxHeight", Qt::QueuedConnection, Q_ARG(int, this->_config.settings().maxHeight));
+    QMetaObject::invokeMethod(this->_stream, "setAutoResolution", Qt::QueuedConnection, Q_ARG(bool, this->_config.settings().autoResolution));
     this->_streamThread.start();
 }
 
@@ -927,6 +928,8 @@ bool xdesk::host::Host::applySettings(const core::Settings& settings)
     if (old.codeLength != settings.codeLength || old.codeLifetime != settings.codeLifetime) this->_code.configure(settings.codeLength, settings.codeLifetime);
     if (this->_stream && old.maxHeight != settings.maxHeight)
         QMetaObject::invokeMethod(this->_stream, "setMaxHeight", Qt::QueuedConnection, Q_ARG(int, settings.maxHeight));
+    if (this->_stream && old.autoResolution != settings.autoResolution)
+        QMetaObject::invokeMethod(this->_stream, "setAutoResolution", Qt::QueuedConnection, Q_ARG(bool, settings.autoResolution));
     if (this->_sharing && (old.port != settings.port || old.bind != settings.bind)) {
         this->_server.stop();
         this->_server.listen(settings.bind, settings.port, this->tls_());

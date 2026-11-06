@@ -94,6 +94,7 @@ void xdesk::host::Stream::addClient(const QString& session, const int quality, c
     client.quality = quality;
     client.scale = scale;
     client.fps = fps;
+    client.flow.setAutoScale(this->_autoResolution);
     this->_clients.insert(session, client);
     if (this->_idle) this->_idle->stop();
     if (!this->_capture) QTimer::singleShot(OPEN_DELAY, this, &Stream::openIfWatched_); // a client opening on a terminal pauses at once: no capture for it
@@ -151,6 +152,13 @@ void xdesk::host::Stream::refresh(const QString& session)
     it->idle = 0;
 }
 
+void xdesk::host::Stream::setAutoResolution(const bool enabled)
+{
+    this->_autoResolution = enabled;
+    for (StreamClient& client: this->_clients)
+        client.flow.setAutoScale(enabled);
+}
+
 void xdesk::host::Stream::tick_(void)
 {
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -193,7 +201,7 @@ void xdesk::host::Stream::tick_(void)
     for (QHash<QString, StreamClient>::iterator it = this->_clients.begin(); it != this->_clients.end(); ++it) {
         StreamClient& client = it.value();
         const double cap = this->_maxHeight > 0 && frame.height() > this->_maxHeight ? static_cast<double>(this->_maxHeight) / frame.height() : 1.0;
-        const double effective = std::min(client.scale, cap);
+        const double effective = std::min(client.scale, cap) * client.flow.scale(); // automatic resolution: lowered while the link cannot follow
         const int key = static_cast<int>(std::lround(effective * 1000));
         QByteArray message;
 

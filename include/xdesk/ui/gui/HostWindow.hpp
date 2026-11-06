@@ -141,6 +141,7 @@ class HostWindow: public QMainWindow {
         QLineEdit* _setShell = nullptr;
         QSpinBox* _setFps = nullptr;
         QComboBox* _setResolution = nullptr; // max height presets (0 = native)
+        QCheckBox* _setAutoResolution = nullptr; // lower resolution while a link cannot follow
         QComboBox* _setQuality = nullptr; // jpeg quality presets
         QComboBox* _setLanguage = nullptr;
         QCheckBox* _setMinimized = nullptr;
