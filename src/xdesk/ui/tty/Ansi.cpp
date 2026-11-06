@@ -272,6 +272,7 @@ QString xdesk::ui::tty::key_name(const QByteArray& key)
         {"\x1b[5~", "pgup"}, {"\x1b[6~", "pgdn"}, {"\x1b[3~", "del"}, {"\x1b[2~", "ins"}, {"\x1b[Z", "shift+tab"},
         {"\x1bOP", "f1"}, {"\x1bOQ", "f2"}, {"\x1bOR", "f3"}, {"\x1bOS", "f4"}, {"\x1b[15~", "f5"}, {"\x1b[17~", "f6"},
         {"\x1b[18~", "f7"}, {"\x1b[19~", "f8"}, {"\x1b[20~", "f9"}, {"\x1b[21~", "f10"}, {"\x1b[23~", "f11"}, {"\x1b[24~", "f12"},
+        {"\x1b[I", "focus-in"}, {"\x1b[O", "focus-out"},
         {"\x1b[1;5A", "ctrl+up"}, {"\x1b[1;5B", "ctrl+down"}, {"\x1b[1;5C", "ctrl+right"}, {"\x1b[1;5D", "ctrl+left"},
         {"\r", "enter"}, {"\n", "enter"}, {"\t", "tab"}, {"\x1b", "esc"}, {"\x7f", "backspace"}, {"\x08", "backspace"}, {" ", "space"},
     };
@@ -614,6 +615,7 @@ void xdesk::ui::tty::Terminal::enterAlternate(void)
     this->_alternate = true;
     this->_shown.clear();
     this->write("\x1b[?1049h\x1b[?25l\x1b[?2004h\x1b[2J");
+    if (this->_caps.mouse) this->write("\x1b[?1004h"); // focus reports (ESC [ I / ESC [ O): the host pauses the remote input while the panel is used
 }
 
 void xdesk::ui::tty::Terminal::setMouse(const bool enabled, const bool motion)
@@ -644,7 +646,7 @@ void xdesk::ui::tty::Terminal::present(const Canvas& canvas, const QPoint& curso
 
 void xdesk::ui::tty::Terminal::restore(void)
 {
-    if (this->_alternate) this->write("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[?1l\x1b[0m\x1b[?25h\x1b[?1049l");
+    if (this->_alternate) this->write("\x1b[?1004l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?2004l\x1b[?1l\x1b[0m\x1b[?25h\x1b[?1049l");
     this->_alternate = false;
     if (!this->_raw) return;
     #ifdef _WIN32

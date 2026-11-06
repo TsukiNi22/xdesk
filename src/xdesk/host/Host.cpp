@@ -40,6 +40,7 @@ File Description:
 /* DEFINE */
 
 #define TAMPER_INPUT_WINDOW 5000 // ms: keyboard / mouse input this recent = a possible author of an unexplained file change
+#define FOCUS_REQUEST_DELAY 60000 // ms before a viewer gets its control back while the panel keeps the focus (time to refuse, unplug...)
 
 // Human readable input of the activity feed
 static QString mouse_button_name(const std::uint8_t button)
@@ -58,6 +59,8 @@ xdesk::host::Host::Host(core::Config& config, QObject* parent)
         emit this->stateChanged();
     });
     QObject::connect(&this->_guard, &security::IntegrityGuard::tamper, this, &Host::onTamper_);
+    this->_focusTimer.setSingleShot(true);
+    QObject::connect(&this->_focusTimer, &QTimer::timeout, this, &Host::grantFocus_);
     QObject::connect(&this->_exposure, &net::Exposure::changed, this, &Host::stateChanged);
     QObject::connect(&this->_exposure, &net::Exposure::certificateChanged, this, [this]() {
         const QString name = this->_exposure.certificateName();
@@ -507,6 +510,8 @@ void xdesk::host::Host::onControl_(Session* session, const QJsonObject& message)
         if (mode == "control" && !this->_injector && this->_screen.isValid() && !this->_captureBackend.isEmpty()) this->openInjector_();
         if (mode == "control") this->sendInputState_(session);
         this->updateMarker_();
+    } else if (type == "focus_request") {
+        this->requestFocus_(session);
     } else if (type == "pause") {
         if (this->_stream) QMetaObject::invokeMethod(this->_stream, "setPaused", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(bool, message.value("paused").toBool()));
     } else if (type == "refresh") {
@@ -533,7 +538,7 @@ void xdesk::host::Host::onInput_(Session* session, const QByteArray& message)
     const net::Binary type = static_cast<net::Binary>(static_cast<std::uint8_t>(message[0]));
     const double scale = this->_scales.value(session->id(), 1.0);
     net::ByteReader r(message);
-    const bool canControl = session->permissions().control && session->mode() == "control" && this->_injector && !this->_panelFocused;
+    const bool canControl = session->permissions().control && session->mode() == "control" && this->_injector && (!this->_panelFocused || this->_focusOverride == session->id());
 
     switch (type) {
         case net::Binary::FrameAck: {
@@ -711,6 +716,8 @@ void xdesk::host::Host::onClosed_(Session* session)
     this->_lanes.remove(id);
     this->_udpViewers.remove(id);
     this->_sessions.remove(id);
+    // Its request ends with it (never granted to nobody), the panel keeps the focus
+    if (this->_focusRequest == id || this->_focusOverride == id) this->endFocus_(session->name() + " left: the remote control stays paused while the panel has the focus");
     this->_scales.remove(id);
     this->_remember.remove(id);
     this->_pendingProof.remove(id);
@@ -935,10 +942,80 @@ void xdesk::host::Host::setPanelFocused(const bool focused)
 {
     if (focused == this->_panelFocused) return;
     this->_panelFocused = focused;
-    if (focused && this->_injector) this->_injector->releaseAll();
+    if (!focused) this->endFocus_(""); // every viewer controls again: nothing to ask
+    if (focused && this->_injector && this->_focusOverride.isEmpty()) this->_injector->releaseAll();
     for (Session* s: this->_sessions)
-        s->setControlPaused(focused);
+        s->setControlPaused(focused && s->id() != this->_focusOverride);
     this->sendInputState_(); // the viewers show why their clicks do nothing meanwhile
+}
+
+void xdesk::host::Host::localPanelInput(void)
+{
+    Session* asking = this->_sessions.value(this->_focusRequest.isEmpty() ? this->_focusOverride : this->_focusRequest);
+
+    if (this->_focusOverride.isEmpty() && this->_focusRequest.isEmpty()) return;
+    if (asking) asking->sendJson({{"t", "info"}, {"text", "Someone uses the xdesk panel on the computer: the control is paused again"}});
+    this->endFocus_("Someone uses the panel on this PC: the remote control is paused again");
+    if (this->_injector) this->_injector->releaseAll();
+    for (Session* s: this->_sessions)
+        s->setControlPaused(this->_panelFocused);
+    this->sendInputState_();
+}
+
+void xdesk::host::Host::refuseFocusRequest(void)
+{
+    Session* s = this->_sessions.value(this->_focusRequest);
+
+    if (this->_focusRequest.isEmpty()) return;
+    if (s) s->sendJson({{"t", "info"}, {"text", "The person at the computer refused: the control stays paused"}});
+    this->endFocus_("Request of the remote control refused locally");
+    this->sendInputState_();
+}
+
+void xdesk::host::Host::requestFocus_(Session* session)
+{
+    if (!this->_panelFocused || !session->permissions().control || session->mode() != "control" || this->_focusOverride == session->id()) {
+        this->sendInputState_(session);
+        return;
+    }
+    if (!this->_focusRequest.isEmpty()) {
+        if (this->_focusRequest != session->id()) session->sendJson({{"t", "info"}, {"text", "Another viewer already asked the control back"}});
+        this->sendInputState_(session);
+        return;
+    }
+    this->_focusRequest = session->id();
+    this->_focusDeadline = QDateTime::currentMSecsSinceEpoch() + FOCUS_REQUEST_DELAY;
+    this->_focusTimer.start(FOCUS_REQUEST_DELAY);
+    this->_log.warn("input", session->id(), session->name() + " asks the remote control back while the panel has the focus: given in " + QString::number(FOCUS_REQUEST_DELAY / 1000) + " s unless refused");
+    this->sendInputState_(session);
+    emit this->focusRequestChanged();
+}
+
+void xdesk::host::Host::grantFocus_(void)
+{
+    Session* s = this->_sessions.value(this->_focusRequest);
+
+    this->_focusRequest.clear();
+    this->_focusDeadline = 0;
+    // Still connected, still controlling and the panel still focused: given back
+    if (s && s->state() == State::Active && s->permissions().control && s->mode() == "control" && this->_panelFocused) {
+        this->_focusOverride = s->id();
+        s->setControlPaused(false);
+        this->_log.alert("input", s->id(), "Remote control given back to " + s->name() + ": the panel kept the focus " + QString::number(FOCUS_REQUEST_DELAY / 1000) + " s (a key / click in the panel pauses it again)");
+    }
+    this->sendInputState_();
+    emit this->focusRequestChanged();
+}
+
+void xdesk::host::Host::endFocus_(const QString& why)
+{
+    if (this->_focusRequest.isEmpty() && this->_focusOverride.isEmpty()) return;
+    if (!why.isEmpty()) this->_log.info("input", this->_focusRequest.isEmpty() ? this->_focusOverride : this->_focusRequest, why);
+    this->_focusTimer.stop();
+    this->_focusRequest.clear();
+    this->_focusOverride.clear();
+    this->_focusDeadline = 0;
+    emit this->focusRequestChanged();
 }
 
 QString xdesk::host::Host::transport(const QString& session) const
@@ -982,12 +1059,17 @@ void xdesk::host::Host::sendInputState_(Session* session) const
 {
     // No injector yet while the capture starts (it opens on the first frame): loading, not unavailable
     const bool loading = !this->_injector && this->_stream && this->_captureBackend.isEmpty();
-    const QString state = this->_injector ? (this->_panelFocused ? "paused" : "ready") : (loading ? "loading" : "none");
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
     QString error = this->_inputError;
 
-    if (state == "none" && error.isEmpty()) error = this->_captureBackend.startsWith("none") ? "screen capture unavailable: " + this->_captureBackend.mid(6).chopped(1) : QString("no input backend");
-    for (Session* s: this->_sessions)
-        if ((session == nullptr || s == session) && s->state() == State::Active) s->sendJson({{"t", "input"}, {"state", state}, {"error", state == "none" ? error : QString()}});
+    if (error.isEmpty()) error = this->_captureBackend.startsWith("none") ? "screen capture unavailable: " + this->_captureBackend.mid(6).chopped(1) : QString("no input backend");
+    for (Session* s: this->_sessions) {
+        if ((session != nullptr && s != session) || s->state() != State::Active) continue;
+        // Paused for everyone but the viewer whose request was granted; "wait" = ms left of its own request
+        const QString state = this->_injector ? (this->_panelFocused && this->_focusOverride != s->id() ? "paused" : "ready") : (loading ? "loading" : "none");
+        const qint64 wait = this->_focusRequest == s->id() ? std::max<qint64>(0, this->_focusDeadline - now) : 0;
+        s->sendJson({{"t", "input"}, {"state", state}, {"error", state == "none" ? error : QString()}, {"wait", wait}, {"asked", !this->_focusRequest.isEmpty() && this->_focusRequest != s->id()}});
+    }
 }
 
 void xdesk::host::Host::setTheme(const QString& theme)

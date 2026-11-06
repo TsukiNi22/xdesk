@@ -327,3 +327,5 @@ button { -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; 
 .screen-state.warn { border-color: var(--danger); }
 .screen-state.warn .dot { background: var(--danger); }
 .screen-state.ok .dot { background: var(--accent); }
+.screen-state .btn { pointer-events: auto; flex: none; min-height: 32px; padding: 4px 10px; font-size: 13px; }
+@media (max-width: 520px) { .screen-state { flex-wrap: wrap; } }

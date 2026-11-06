@@ -166,6 +166,8 @@ QToolTip { background: @surface; color: @text; border: 1px solid @border; paddin
 #code { font-family: "@mono"; font-size: 44px; font-weight: 700; letter-spacing: 8px; color: @accent; background: @surfaceAlt; border-left: 3px solid @accent; padding: 4px 14px; }
 #banner { background: @danger; border-radius: 3px; }
 #banner QLabel { color: white; font-weight: 600; }
+#focusBanner { background: @surface; border: 1px solid @warning; border-radius: 3px; }
+#focusBanner QLabel { font-weight: 600; }
 #badge { border-radius: 2px; padding: 1px 6px; background: @surfaceAlt; color: @muted; font-family: "@mono"; font-size: 11px; }
 #pill { font-family: "@mono"; font-size: 11px; font-weight: 700; letter-spacing: 1px; padding: 4px 10px; border-radius: 2px; }
 #pill[on="true"] { color: @success; background: @successSoft; border: 1px solid @success; }

@@ -191,6 +191,7 @@ xdesk::ui::tty::HostTui::HostTui(host::Host& host, QObject* parent)
     QObject::connect(&this->_term, &Terminal::resized, this, &HostTui::draw_);
     QObject::connect(&this->_redraw, &QTimer::timeout, this, &HostTui::draw_);
     QObject::connect(&host, &host::Host::stateChanged, this, &HostTui::draw_);
+    QObject::connect(&host, &host::Host::focusRequestChanged, this, &HostTui::draw_);
     QObject::connect(&host, &host::Host::sessionChanged, this, &HostTui::draw_);
     QObject::connect(&host, &host::Host::sessionRemoved, this, [this](const QString& id) {
         for (const QString& key: this->mirrorsOf_(id))
@@ -473,10 +474,23 @@ void xdesk::ui::tty::HostTui::move_(const int delta)
 
 void xdesk::ui::tty::HostTui::onInput_(const QByteArray& data)
 {
+    // Focus of the terminal of the panel: the remote input waits while it is used here (not for a panel used over ssh)
+    static const bool local = qEnvironmentVariableIsEmpty("SSH_CONNECTION") && qEnvironmentVariableIsEmpty("SSH_TTY");
+
     for (const QByteArray& key: split_keys(data)) {
         Mouse mouse;
-        if (parse_mouse(key, mouse)) this->onMouse_(mouse);
-        else this->onKey_(key_name(key), key);
+        const QString name = key_name(key);
+        if (name == "focus-in" || name == "focus-out") {
+            if (local) this->_host.setPanelFocused(name == "focus-in");
+            continue;
+        }
+        if (parse_mouse(key, mouse)) {
+            if (mouse.press) this->_host.localPanelInput(); // someone in front of the PC: a control given back by a request waits again
+            this->onMouse_(mouse);
+        } else {
+            this->_host.localPanelInput();
+            this->onKey_(name, key);
+        }
     }
     this->draw_();
 }
@@ -697,6 +711,15 @@ void xdesk::ui::tty::HostTui::draw_(void)
         this->_canvas.fill(QRect(0, 1, w, 1), st(QColor(Qt::white), QColor(150, 40, 40), true));
         this->_canvas.text(1, 1, "TAMPERING BLOCKED: " + this->_tamper + "   (x or click to dismiss)", st(QColor(Qt::white), QColor(150, 40, 40), true), w - 2);
         this->_hits.append(Hit{QRect(0, 1, w, 1), [this]() {this->_tamper.clear();}});
+    } else if (const host::Session* asking = this->_host.session(this->_host.focusRequest())) {
+        // A viewer paused by the focus of this panel asks its control back
+        const qint64 left = std::max<qint64>(0, this->_host.focusDeadline() - QDateTime::currentMSecsSinceEpoch());
+        this->_canvas.fill(QRect(0, 1, w, 1), st(DARK, WARN, true));
+        this->_canvas.text(1, 1, asking->name() + " asks its control back: given in " + QString::number((left + 999) / 1000) + " s   (a key or a click here refuses)", st(DARK, WARN, true), w - 2);
+        this->_hits.append(Hit{QRect(0, 1, w, 1), [this]() {this->_host.refuseFocusRequest();}});
+    } else if (const host::Session* given = this->_host.session(this->_host.focusOverride())) {
+        this->_canvas.fill(QRect(0, 1, w, 1), st(DARK, WARN, true));
+        this->_canvas.text(1, 1, given->name() + " controls this PC although the panel has the focus (request granted): a key here pauses it", st(DARK, WARN, true), w - 2);
     }
     const QRect area(0, 2, w, h - 4);
     switch (this->_page) {

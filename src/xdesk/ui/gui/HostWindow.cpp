@@ -318,6 +318,21 @@ xdesk::ui::gui::HostWindow::HostWindow(host::Host& host, QWidget* parent)
     this->_banner->hide();
     QObject::connect(bannerClose, &QPushButton::clicked, this->_banner, &QWidget::hide);
     mainLayout->addWidget(this->_banner);
+
+    // Request of a viewer whose control is paused by the focus of this panel
+    this->_focusBanner = new QWidget(main);
+    this->_focusBanner->setObjectName("focusBanner");
+    this->_focusBanner->setAttribute(Qt::WA_StyledBackground, true);
+    QHBoxLayout* focusLayout = new QHBoxLayout(this->_focusBanner);
+    focusLayout->setContentsMargins(14, 10, 10, 10);
+    this->_focusText = new QLabel(this->_focusBanner);
+    this->_focusText->setWordWrap(true);
+    QPushButton* focusRefuse = make_button("Refuse", "danger");
+    focusLayout->addWidget(this->_focusText, 1);
+    focusLayout->addWidget(focusRefuse);
+    this->_focusBanner->hide();
+    QObject::connect(focusRefuse, &QPushButton::clicked, this, [this]() {this->_host.refuseFocusRequest();});
+    mainLayout->addWidget(this->_focusBanner);
     this->_pages = new QStackedWidget(main);
     this->_pages->addWidget(this->buildOverview_());
     this->_pages->addWidget(this->buildSessions_());
@@ -348,6 +363,8 @@ xdesk::ui::gui::HostWindow::HostWindow(host::Host& host, QWidget* parent)
     QObject::connect(&this->_host, &host::Host::activity, this, &HostWindow::pushActivity_);
     QObject::connect(&this->_host, &host::Host::approvalRequested, this, &HostWindow::showApproval_);
     QObject::connect(&this->_host, &host::Host::tamperDetected, this, &HostWindow::showTamper_);
+    QObject::connect(&this->_host, &host::Host::focusRequestChanged, this, &HostWindow::refreshFocusRequest_);
+    qApp->installEventFilter(this); // the keys / clicks of the panel pause a control given back by a request
     QObject::connect(&this->_host, &host::Host::terminalOutput, this, [this](const QString& session, const std::uint8_t id, const QByteArray& data) {
         this->mirror_(session, id)->feed(data);
     });
@@ -366,6 +383,7 @@ xdesk::ui::gui::HostWindow::HostWindow(host::Host& host, QWidget* parent)
         this->addLog_(entry);
     QObject::connect(&this->_tick, &QTimer::timeout, this, [this]() {
         this->refreshOverview_();
+        this->refreshFocusRequest_();
         for (host::Session* s: this->_host.sessions())
             this->refreshSession_(s);
         this->refreshLock_();
@@ -390,7 +408,12 @@ void xdesk::ui::gui::HostWindow::showEvent(QShowEvent* event)
 
 bool xdesk::ui::gui::HostWindow::eventFilter(QObject* watched, QEvent* event)
 {
-    if (this->_settingsScroll && watched == this->_settingsScroll->viewport() && event->type() == QEvent::Resize) this->flowSettings_();
+    const QEvent::Type type = event->type();
+    const QWidget* widget = qobject_cast<QWidget*>(watched);
+
+    if (this->_settingsScroll && watched == this->_settingsScroll->viewport() && type == QEvent::Resize) this->flowSettings_();
+    // Someone in front of the PC uses the panel (the button Refuse included): the remote control waits again
+    if ((type == QEvent::KeyPress || type == QEvent::MouseButtonPress) && widget && widget->window() == this) this->_host.localPanelInput();
     return QMainWindow::eventFilter(watched, event);
 }
 
@@ -443,6 +466,22 @@ void xdesk::ui::gui::HostWindow::changeEvent(QEvent* event)
     // Remote input is paused while the local user works in the panel
     if (event->type() == QEvent::ActivationChange) this->_host.setPanelFocused(this->isActiveWindow());
     QMainWindow::changeEvent(event);
+}
+
+void xdesk::ui::gui::HostWindow::refreshFocusRequest_(void)
+{
+    const host::Session* asking = this->_host.session(this->_host.focusRequest());
+    const host::Session* given = this->_host.session(this->_host.focusOverride());
+    const qint64 left = std::max<qint64>(0, this->_host.focusDeadline() - QDateTime::currentMSecsSinceEpoch());
+
+    if (asking) {
+        this->_focusText->setText(asking->name() + " asks its remote control back (paused while this panel has the focus): given in " + QString::number((left + 999) / 1000) + " s unless you refuse or use the panel.");
+        this->_focusBanner->findChild<QPushButton*>()->show();
+    } else if (given) {
+        this->_focusText->setText(given->name() + " controls this PC although the panel has the focus (its request was granted). A key or a click in the panel pauses it again.");
+        this->_focusBanner->findChild<QPushButton*>()->hide();
+    }
+    this->_focusBanner->setVisible(asking || given);
 }
 
 void xdesk::ui::gui::HostWindow::retheme_(void)

@@ -63,6 +63,8 @@ class HostWindow: public QMainWindow {
         QStackedWidget* _pages = nullptr;
         QWidget* _banner = nullptr; // tamper alert
         QLabel* _bannerText = nullptr;
+        QWidget* _focusBanner = nullptr; // a viewer asks its control back while the panel has the focus
+        QLabel* _focusText = nullptr;
         QSystemTrayIcon* _tray = nullptr;
         QAction* _trayShare = nullptr; // start / stop sharing in the tray menu
         QPushButton* _share = nullptr; // start (green) / stop (red) sharing, the app keeps running
@@ -169,6 +171,7 @@ class HostWindow: public QMainWindow {
         void pushActivity_(const QString& session, const QString& line);
         void showApproval_(host::Session* session);
         void showTamper_(const QString& session, const QString& reason);
+        void refreshFocusRequest_(void); // banner of the request (countdown) or of the control given back
         void quit_(void);
         void fitPage_(void); // window grown to show the whole page (never past the screen: the page scrolls then)
         void flowSettings_(void); // settings columns side by side or stacked for the width
@@ -184,7 +187,7 @@ class HostWindow: public QMainWindow {
         void closeEvent(QCloseEvent* event) override;
         void changeEvent(QEvent* event) override;
         void showEvent(QShowEvent* event) override;
-        bool eventFilter(QObject* watched, QEvent* event) override; // settings viewport resized
+        bool eventFilter(QObject* watched, QEvent* event) override; // settings viewport resized, local key / click in the panel
 
     public:
         // ---------- Constructor --------- //

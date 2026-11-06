@@ -46,6 +46,7 @@
             bannedText: "Cet appareil a été banni par l'hôte. Seule une action locale sur l'ordinateur peut le débannir.",
             lostText: "La connexion a été perdue.", codeRequired: "Entrez le code affiché sur l'hôte.",
             screenLoading: "Chargement de l'écran...", controlLoading: "Contrôles en préparation...", controlReady: "Contrôles prêts",
+            focusAsk: "Demander le contrôle (accordé dans 1 min sauf refus)", focusWait: "Contrôle rendu dans {n} s, sauf refus sur l'ordinateur", focusOther: "Un autre appareil a déjà demandé le contrôle",
             controlNone: "Contrôle indisponible sur l'hôte", controlPaused: "Contrôle en pause : le panneau xdesk est utilisé sur l'ordinateur (il reprend quand il n'a plus le focus)", controlViewOnly: "Lecture seule : l'hôte n'a pas donné le contrôle",
             controlDenied: "L'hôte n'a pas donné le droit de contrôle.", terminalDenied: "L'hôte n'a pas donné le droit d'ouvrir un terminal.",
             proofMismatch: "L'hôte n'a pas prouvé qu'il connaît le secret de cet appareil : connexion fermée.",
@@ -67,6 +68,7 @@
         bannedText: "This device was banned by the host. Only a local action on the computer can unban it.",
         lostText: "The connection was lost.", codeRequired: "Enter the code shown on the host.",
         screenLoading: "Loading the screen...", controlLoading: "Getting the controls ready...", controlReady: "Controls ready",
+        focusAsk: "Ask the control back (given in 1 min unless refused)", focusWait: "Control back in {n} s unless refused on the computer", focusOther: "Another device already asked the control back",
         controlNone: "Remote control unavailable on the host", controlPaused: "Control paused: the xdesk panel is in use on the computer (back when it loses the focus)", controlViewOnly: "View only: the host did not give the control",
         controlDenied: "The host did not give the control right.", terminalDenied: "The host did not give the terminal right.",
         proofMismatch: "The host did not prove it knows the secret of this device: connection closed.",
@@ -957,13 +959,14 @@
 
     function onInputState(msg) {
         const before = state.input ? state.input.state : "";
-        state.input = {state: msg.state || "none", error: msg.error || ""};
+        state.input = {state: msg.state || "none", error: msg.error || "", until: msg.wait > 0 ? performance.now() + msg.wait : 0, asked: !!msg.asked};
         updateScreenState();
         if (state.input.state === "ready" && before !== "ready" && state.mode === "control") {
             const el = $("screenState");
             el.hidden = false;
             el.className = "screen-state ok";
             $("screenStateText").textContent = t("controlReady");
+            $("screenStateBtn").hidden = true;
             clearTimeout(readyTimer);
             readyTimer = setTimeout(updateScreenState, 1500);
         }
@@ -974,17 +977,28 @@
         const input = state.input || {state: "loading", error: ""};
         let kind = "";
         let text = "";
+        let ask = false;
 
         clearTimeout(readyTimer);
         if (state.status !== "active" || !state.perms.view) kind = "";
         else if (!state.frameW) {kind = "loading"; text = t("screenLoading");}
         else if (state.mode === "control" && input.state === "loading") {kind = "loading"; text = t("controlLoading");}
-        else if (state.mode === "control" && input.state === "paused") {kind = "warn"; text = t("controlPaused");}
+        else if (state.mode === "control" && input.state === "paused") {
+            // Paused by the focus of the host panel: the viewer may ask its control back (granted after 1 min unless refused)
+            const left = input.until ? Math.max(0, Math.ceil((input.until - performance.now()) / 1000)) : 0;
+            kind = "warn";
+            text = left ? t("focusWait").replace("{n}", left) : t("controlPaused") + (input.asked ? " · " + t("focusOther") : "");
+            ask = !left && !input.asked;
+            if (left) readyTimer = setTimeout(updateScreenState, 1000); // countdown
+        }
         else if (state.mode === "control" && input.state === "none") {kind = "warn"; text = t("controlNone") + (input.error ? ": " + input.error : "");}
         el.hidden = !kind;
         el.className = "screen-state " + kind;
         $("screenStateText").textContent = text;
+        $("screenStateBtn").hidden = !ask;
     }
+
+    $("screenStateBtn").addEventListener("click", () => sendJson({t: "focus_request"}));
 
     function setMode(mode, send) {
         if (mode === "control" && !state.perms.control) {

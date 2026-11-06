@@ -42,6 +42,7 @@ File Description:
     #include "Lanes.hpp"                                // xdesk::host::Lanes
     #include <QSslConfiguration>                        // QSslConfiguration
     #include <QStringList>                              // QStringList
+    #include <QTimer>                                   // QTimer
     #include <QJsonObject>                              // QJsonObject
     #include <QThread>                                  // QThread
     #include <QObject>                                  // QObject
@@ -102,6 +103,10 @@ class Host: public QObject {
         QSet<QString> _udpViewers; // web sessions that can take the udp video (android app)
         qint64 _lastMoveLog = 0; // throttle of the mouse moves in the activity feed
         bool _panelFocused = false; // the local panel has the focus: remote input paused
+        QString _focusRequest = ""; // session asking its control back while the panel keeps the focus ("" = none)
+        qint64 _focusDeadline = 0; // ms since epoch: the request is granted then unless refused / local input
+        QTimer _focusTimer; // single shot of the request
+        QString _focusOverride = ""; // session controlling although the panel has the focus (granted request, until a local input)
         bool _running = false; // identity, registry and guard loaded
         bool _sharing = false; // server, exposure and capture on
 
@@ -122,6 +127,9 @@ class Host: public QObject {
         void terminalInput_(Terminal& terminal, const QByteArray& data);
         void updateMarker_(void);
         void openInjector_(void); // input backend for the captured screen (logs once why it fails)
+        void requestFocus_(Session* session); // "focus_request" of a viewer: granted after FOCUS_REQUEST_DELAY
+        void grantFocus_(void); // the delay of the request is over
+        void endFocus_(const QString& why); // pending request and override dropped (logged with why, "" = silent)
         void sendInputState_(Session* session = nullptr) const; // {"t": "input", "state": ready|loading|paused|none, "error"} to one session (nullptr = every active one)
         void startStream_(void); // capture thread (a new stream for each sharing)
         void stopStream_(void);
@@ -155,6 +163,8 @@ class Host: public QObject {
 
         /* panel */
         void setPanelFocused(const bool focused); // remote input paused while the panel is used
+        void localPanelInput(void); // a key / click in the panel: the control given back by a request is paused again, a pending request dropped
+        void refuseFocusRequest(void); // the local user refuses the pending request
         void rotateCode(void);
         _cold _nodiscard QString transport(const QString& session) const; // path of the video of a session: "tcp", "tcp x3", "udp", "udp + parity"
 
@@ -172,6 +182,9 @@ class Host: public QObject {
         _cold _nodiscard inline const QString& inputError(void) const                {return this->_inputError;};
         _cold _nodiscard inline bool isRunning(void) const                           {return this->_running;};
         _cold _nodiscard inline bool isSharing(void) const                           {return this->_sharing;};
+        _cold _nodiscard inline const QString& focusRequest(void) const              {return this->_focusRequest;};
+        _cold _nodiscard inline qint64 focusDeadline(void) const                     {return this->_focusDeadline;};
+        _cold _nodiscard inline const QString& focusOverride(void) const             {return this->_focusOverride;};
 
         // ------------ Operator ---------- //
         Host& operator=(const Host& other) = delete;
@@ -195,6 +208,7 @@ class Host: public QObject {
         void terminalInput(const QString& session, const std::uint8_t id, const QByteArray& data);
         void tamperDetected(const QString& session, const QString& reason);
         void stateChanged(void); // code, endpoints, capture, devices, settings
+        void focusRequestChanged(void); // a viewer asks its control back / the request ended / was granted
 };
 
 } // namespace end
