@@ -152,6 +152,7 @@ set(SRC_SHARED
     ## Host (sub-part: host)
     src/xdesk/host/Session.cpp
     src/xdesk/host/Stream.cpp
+    src/xdesk/host/FlowControl.cpp
     src/xdesk/host/Host.cpp
 
     ## Client (sub-part: client)

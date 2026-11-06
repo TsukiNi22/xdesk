@@ -117,8 +117,7 @@ void xdesk::host::Stream::ack(const QString& session, const std::uint32_t id)
 {
     QHash<QString, StreamClient>::iterator it = this->_clients.find(session);
 
-    (void)id;
-    if (it != this->_clients.end() && it->inFlight > 0) it->inFlight--;
+    if (it != this->_clients.end()) it->flow.acked(id, QDateTime::currentMSecsSinceEpoch());
 }
 
 void xdesk::host::Stream::setQuality(const QString& session, const int quality, const double scale, const int fps)
@@ -139,7 +138,7 @@ void xdesk::host::Stream::setPaused(const QString& session, const bool paused)
 
     if (it == this->_clients.end()) return;
     it->paused = paused;
-    it->inFlight = 0; // the acks of the frames before the pause may never come
+    it->flow.reset(); // the acks of the frames before the pause may never come
     if (!paused) this->openIfWatched_(); // the first look at the screen starts the capture
 }
 
@@ -163,8 +162,8 @@ void xdesk::host::Stream::tick_(void)
 
     // Who can take a frame now (pacing + frames in flight)
     for (StreamClient& client: this->_clients) {
-        if (client.inFlight >= XDESK_FRAMES_IN_FLIGHT && now - client.lastFrame > 1500) client.inFlight = 0; // ack lost: resume
-        if (!client.paused && client.inFlight < XDESK_FRAMES_IN_FLIGHT && now - client.lastFrame >= 1000 / std::max(1, client.fps)) anyReady = true;
+        client.flow.expire(now); // acks lost: resume
+        if (!client.paused && client.flow.canSend(client.fps) && now - client.lastFrame >= 1000 / std::max(1, client.fps)) anyReady = true;
     }
     if (!anyReady) return;
     frame = this->_capture->grab();
@@ -188,7 +187,8 @@ void xdesk::host::Stream::tick_(void)
         const int key = static_cast<int>(std::lround(effective * 1000));
         QByteArray message;
 
-        if (client.paused || client.inFlight >= XDESK_FRAMES_IN_FLIGHT || now - client.lastFrame < 1000 / std::max(1, client.fps)) continue;
+        const qint64 interval = 1000 / std::max(1, client.fps);
+        if (client.paused || !client.flow.canSend(client.fps) || now - client.lastFrame < interval) continue;
 
         // Another size: a complete frame, and the host maps the input with the new scale
         if (std::abs(client.effective - effective) > 0.0005) {
@@ -200,11 +200,11 @@ void xdesk::host::Stream::tick_(void)
         if (client.idle == frame.cacheKey()) continue; // the same capture as the last empty encode: no scaling, no hashing
         if (!scaled.contains(key))
             scaled.insert(key, key >= 1000 ? frame : frame.scaled(std::max(1, static_cast<int>(frame.width() * effective)), std::max(1, static_cast<int>(frame.height() * effective)), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
-        client.lastFrame = now;
-        message = client.encoder.encode(scaled.value(key), client.quality);
+        client.lastFrame = now - client.lastFrame < interval * 2 ? client.lastFrame + interval : now; // on the slots of the rate (the 4 ms tick would make 30 fps 27)
+        message = client.encoder.encode(scaled.value(key), client.flow.quality(client.quality));
         client.idle = message.isEmpty() ? frame.cacheKey() : 0;
         if (message.isEmpty()) continue;
-        client.inFlight++;
+        client.flow.sent(client.encoder.lastId(), message.size(), now);
         emit this->frame(it.key(), message);
     }
 

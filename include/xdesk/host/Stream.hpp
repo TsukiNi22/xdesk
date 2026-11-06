@@ -28,6 +28,7 @@ File Description:
     #include <utils/utils.hpp>                      // _hot, _cold, _nodiscard
     #include "../platform/IScreenCapture.hpp"       // xdesk::platform::IScreenCapture
     #include "../platform/FrameEncoder.hpp"         // xdesk::platform::FrameEncoder
+    #include "FlowControl.hpp"                      // xdesk::host::FlowControl
     #include <QByteArray>                           // QByteArray
     #include <algorithm>                            // std::max
     #include <QObject>                              // QObject
@@ -45,7 +46,7 @@ namespace xdesk::host { // namespace start
 
 struct StreamClient {
     platform::FrameEncoder encoder; // what this client already has
-    int inFlight = 0; // frames sent without ack
+    FlowControl flow; // frames in flight and quality, from the bandwidth and the ping of this client
     int quality = 70; // jpeg quality
     double scale = 1.0; // frame scale asked by the client
     double effective = 0.0; // scale applied: the asked one, capped by the max height of the host (0 = not computed yet)

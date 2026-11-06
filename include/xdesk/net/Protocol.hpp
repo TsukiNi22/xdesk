@@ -43,7 +43,6 @@ File Description:
     #define XDESK_MAX_MESSAGE (32 * 1024 * 1024) // biggest websocket message accepted (a full 4K frame)
     #define XDESK_MAX_CONTROL (64 * 1024) // biggest json control message accepted
     #define XDESK_TILE_SIZE 64 // side of the tiles of the dirty rectangles encoder
-    #define XDESK_FRAMES_IN_FLIGHT 2 // frames sent without ack before the host waits (latency over throughput)
 
 namespace xdesk::net { // namespace start
 //----------------------------------------------------------------//
@@ -56,7 +55,7 @@ namespace xdesk::net { // namespace start
 */
 enum class Binary: std::uint8_t {
     Frame = 0x10, // S->C u32 id, u16 width, u16 height, u16 count, count * tile
-    FrameAck = 0x11, // C->S u32 id (the host sends the next frame only when acked)
+    FrameAck = 0x11, // C->S u32 id, sent on arrival (the acks size the frames in flight and measure the ping / bandwidth)
     Cursor = 0x12, // S->C i16 x, i16 y, u8 visible
     MouseMove = 0x20, // C->S u16 x, u16 y (absolute, pixels of the host screen)
     MouseButton = 0x21, // C->S u8 button (MouseButton), u8 down

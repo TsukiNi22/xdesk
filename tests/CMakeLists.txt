@@ -58,6 +58,7 @@ set(SRC
 
     ## Host (sub-part: host)
     xdesk/host/Host.cpp
+    xdesk/host/FlowControl.cpp
 
     ## Platform (sub-part: platform)
     xdesk/platform/FrameEncoder.cpp
