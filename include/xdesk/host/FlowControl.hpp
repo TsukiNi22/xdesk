@@ -95,9 +95,9 @@ class FlowControl {
 
         // ------------ Function ---------- //
         /* getter */
-        _cold _nodiscard inline int inFlight(void) const   {return static_cast<int>(this->_flight.size());};
-        _cold _nodiscard inline double queue(void) const   {return this->_queue;};
-        _cold _nodiscard inline int ceiling(void) const    {return this->_quality;};
+        _cold _nodiscard inline int inFlight(void) const {return static_cast<int>(this->_flight.size());};
+        _cold _nodiscard inline double queue(void) const {return this->_queue;};
+        _cold _nodiscard inline int ceiling(void) const  {return this->_quality;};
 };
 
 } // namespace end
