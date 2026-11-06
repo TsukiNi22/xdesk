@@ -80,7 +80,7 @@ struct Settings {
     QString shell = ""; // shell of the remote terminals (empty = $SHELL / cmd.exe)
 
     /* stream */
-    int fps = 30; // frames per second cap
+    int fps = 60; // frames per second cap
     int quality = 70; // jpeg quality (1 - 100)
     double scale = 1.0; // scale of the frames sent (0.25 - 1.0)
     int maxHeight = 0; // frames at most this tall, the width follows (0 = the screen size): 1080, 720, 480...

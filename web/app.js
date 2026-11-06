@@ -81,6 +81,15 @@
         return key;
     }
 
+    // Touch screens: no native tooltip (a long press shows it and it stays on screen after the finger left), only the label
+    const NO_HOVER = !!(window.matchMedia && window.matchMedia("(hover: none)").matches);
+
+    function setTip(el, text) {
+        el.setAttribute("aria-label", text);
+        if (NO_HOVER) el.removeAttribute("title");
+        else el.title = text;
+    }
+
     function applyLanguage() {
         document.documentElement.lang = lang;
         $("langBtn").textContent = lang.toUpperCase();
@@ -92,8 +101,9 @@
         for (const el of document.querySelectorAll("[data-i18n-title]")) {
             const tr = (I18N[lang] || {})[el.dataset.i18nTitle];
             if (!el.dataset.i18nTitleEn) el.dataset.i18nTitleEn = el.title;
-            el.title = tr !== undefined ? tr : el.dataset.i18nTitleEn;
+            setTip(el, tr !== undefined ? tr : el.dataset.i18nTitleEn);
         }
+        if (NO_HOVER) for (const el of document.querySelectorAll("[title]")) setTip(el, el.getAttribute("aria-label") || el.title);
         setStatus(state.status);
         if (typeof renderKeys === "function" && $("keysMain").childElementCount) renderKeys();
     }
@@ -273,8 +283,7 @@
         if (choice === "auto") delete document.documentElement.dataset.theme;
         else document.documentElement.dataset.theme = choice;
         document.documentElement.dataset.choice = choice;
-        $("themeBtn").title = THEME_LABEL[choice];
-        $("themeBtn").setAttribute("aria-label", THEME_LABEL[choice]);
+        setTip($("themeBtn"), THEME_LABEL[choice]);
     }
 
     $("themeBtn").addEventListener("click", () => {
@@ -1311,35 +1320,89 @@
     // On-screen keyboard: a hidden input opens the soft keyboard, its text is sent as Text messages
     $("kbdBtn").addEventListener("click", toggleKeyboard);
 
+    /* Soft keyboard: the input keeps what was typed and only the difference with what the host already got is sent
+     * (prediction, autocorrection, a suggestion tapped: the keyboard rewrites its word, the host gets the backspaces and
+     * the new letters, never the whole text again); the screen gets text / keys, a terminal its bytes
+    */
+    const KBD_KEEP = 200; // characters kept before the input is emptied (between two words)
+    let kbdSent = ""; // what the host has of the input text
+    let kbdComposing = false;
+
+    // Where the typed text goes: "screen", the active terminal, or nowhere
+    function kbdTarget() {
+        if (state.activeTab === "screen") return canControl() ? "screen" : null;
+        const tm = activeTerm();
+        return tm && !tm.exited ? tm : null;
+    }
+
+    function kbdReset() {
+        kbdInput.value = "";
+        kbdSent = "";
+    }
+
+    function kbdBackspaces(target, n) {
+        if (n <= 0) return;
+        if (target !== "screen") {sendTermBytes(target, "\x7f".repeat(n)); return;}
+        for (let i = 0; i < n; ++i) {sendKey("Backspace", true); sendKey("Backspace", false);}
+    }
+
+    function kbdText(target, text) {
+        if (!text) return;
+        if (target !== "screen") {sendTermBytes(target, termWithMods(text)); return;}
+        if (!typedWithMods(text)) {sendText(text); releaseOneShot();}
+    }
+
+    function kbdSync() {
+        const target = kbdTarget();
+        const value = kbdInput.value;
+        if (!target) {kbdSent = value; return;}
+        if (value === kbdSent) return;
+        const before = Array.from(kbdSent);
+        const now = Array.from(value);
+        let same = 0;
+        while (same < before.length && same < now.length && before[same] === now[same]) ++same;
+        kbdSent = value;
+        kbdBackspaces(target, before.length - same);
+        kbdText(target, now.slice(same).join(""));
+        if (!kbdComposing && now.length > KBD_KEEP && value.endsWith(" ")) kbdReset();
+    }
+
     kbdInput.addEventListener("beforeinput", (e) => {
-        if (!canControl()) return;
-        switch (e.inputType) {
-            case "insertText": case "insertReplacementText": case "insertCompositionText": break;
-            case "insertLineBreak": case "insertParagraph": e.preventDefault(); pressKey("Enter"); break;
-            case "deleteContentBackward": e.preventDefault(); pressKey("Backspace"); break;
-            case "deleteContentForward": e.preventDefault(); pressKey("Delete"); break;
-            default: break;
-        }
+        const target = kbdTarget();
+        if (!target) return;
+        // Nothing left in the input: the deletion is for the text typed before (the host side)
+        if ((e.inputType === "deleteContentBackward" || e.inputType === "deleteWordBackward") && !kbdInput.value) {e.preventDefault(); kbdBackspaces(target, 1);}
+        else if (e.inputType === "insertLineBreak" || e.inputType === "insertParagraph") {e.preventDefault(); pressKey("Enter"); kbdReset();}
     });
 
-    kbdInput.addEventListener("input", (e) => {
-        if (!canControl()) return;
-        if (e.isComposing) return;
-        if (kbdInput.value && !typedWithMods(kbdInput.value)) {sendText(kbdInput.value); releaseOneShot();}
-        kbdInput.value = "";
-    });
-
-    kbdInput.addEventListener("compositionend", () => {
-        if (kbdInput.value && !typedWithMods(kbdInput.value)) {sendText(kbdInput.value); releaseOneShot();}
-        kbdInput.value = "";
-    });
+    kbdInput.addEventListener("input", kbdSync); // composing too: every letter reaches the host at once
+    kbdInput.addEventListener("compositionstart", () => {kbdComposing = true;});
+    kbdInput.addEventListener("compositionend", () => {kbdComposing = false; kbdSync();});
+    kbdInput.addEventListener("focus", kbdReset);
+    kbdInput.addEventListener("blur", kbdReset);
 
     kbdInput.addEventListener("keydown", (e) => {
-        // Hardware keys pressed while the hidden input has the focus (Enter, arrows, Escape...)
-        const special = ["Enter", "Escape", "Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"];
-        if (!canControl() || !special.includes(e.key)) return;
+        const target = kbdTarget();
+        if (!target || e.isComposing || e.keyCode === 229) return; // soft keyboard: the input events carry it
+        // Hardware keys while the hidden input has the focus (a keyboard plugged in the phone)
+        const special = ["Enter", "Escape", "Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown", "Delete", "Insert"];
+        if (e.key === "Backspace" && !kbdInput.value) {e.preventDefault(); kbdBackspaces(target, 1); return;}
+        if ((e.ctrlKey || e.altKey || e.metaKey) && e.key.length === 1) {
+            e.preventDefault();
+            const saved = Object.assign({}, mods);
+            if (e.ctrlKey) mods.ctrl = 1;
+            if (e.altKey) mods.alt = 1;
+            if (e.metaKey) mods.meta = 1;
+            if (target === "screen") typedWithMods(e.key.toLowerCase()) || pressKey(e.code);
+            else sendTermBytes(target, termWithMods(e.key));
+            Object.assign(mods, saved);
+            renderMods();
+            return;
+        }
+        if (!special.includes(e.key)) return;
         e.preventDefault();
         pressKey(e.code || e.key);
+        kbdReset(); // the keyboard's word is no longer before the remote caret
     });
 
     // ---------------------------------------------------------------- //
@@ -1499,7 +1562,8 @@
         const tm = activeTerm();
         if (!tm) return;
         const area = tm.el.querySelector("textarea");
-        if (area && document.activeElement === area) area.blur();
+        if (document.activeElement === kbdInput || (area && document.activeElement === area)) document.activeElement.blur();
+        else if (touchMode) kbdInput.focus({preventScroll: true});
         else tm.term.focus();
     }
 
@@ -1550,7 +1614,7 @@
             if (b.dataset.act === "input") b.textContent = t(touchInput() === "trackpad" ? "trackpad" : "direct");
             if (b.dataset.act === "paste") b.textContent = t("paste");
             if (b.dataset.act === "fn") b.classList.toggle("on", !$("keysFn").hidden);
-            if (b.dataset.title) {b.title = t(b.dataset.title); b.setAttribute("aria-label", b.title);}
+            if (b.dataset.title) setTip(b, t(b.dataset.title));
         }
         renderMods();
     }
@@ -1705,6 +1769,10 @@
             }
         }
 
+        // Touch: the soft keyboard types through the hidden input (xterm's own one sends a whole word again when a suggestion is tapped)
+        el.addEventListener("pointerdown", (e) => {if (e.pointerType === "touch") markTouch();}, true);
+        if (term.textarea) term.textarea.addEventListener("focus", () => {if (touchMode) kbdInput.focus({preventScroll: true});});
+
         const tab = document.createElement("button");
         tab.type = "button";
         tab.className = "tab";
@@ -1792,7 +1860,7 @@
     applyLanguage();
     $("nameInput").value = load("name") || guessName();
     $("qualityInput").value = load("quality") || "70";
-    $("fpsSelect").value = load("fps") || "30";
+    $("fpsSelect").value = load("fps") || "60"; // the flow control lowers it by itself when the link cannot follow
     $("fitSelect").value = load("fit") || "fit";
     $("forgetBtn").hidden = !getDevice();
     const params = new URLSearchParams(location.search);
