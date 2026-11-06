@@ -27,6 +27,7 @@ File Description:
 #include "xdesk/core/Config.hpp"
 #include <QSslConfiguration>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QHostInfo>
 #include <QDateTime>
 #include <QSaveFile>
@@ -172,7 +173,7 @@ void xdesk::client::Client::sendHello_(void)
     this->_ws->sendText(QString::fromUtf8(QJsonDocument(QJsonObject{
         {"t", "hello"}, {"v", XDESK_PROTOCOL_VERSION}, {"kind", net::client_kind_name(this->_options.kind)},
         {"name", this->_options.name}, {"os", QSysInfo::prettyProductName()}, {"device", known.value("device").toString()},
-        {"nonce", QString::fromLatin1(this->_clientNonce.toBase64())},
+        {"nonce", QString::fromLatin1(this->_clientNonce.toBase64())}, {"enc", QJsonArray{"palette"}},
     }).toJson(QJsonDocument::Compact)));
 }
 
@@ -342,6 +343,32 @@ void xdesk::client::Client::decodeFrame_(const QByteArray& data, const bool udp)
         if (encoding == static_cast<std::uint8_t>(net::TileEncoding::Jpeg)) {
             jpegs.append({tile, r.bytes(static_cast<qsizetype>(r.u32()))});
             keep.append(newer(tile));
+        } else if (encoding == static_cast<std::uint8_t>(net::TileEncoding::Palette)) {
+            // Lossless palette tile: colors, then one index per pixel (zlib)
+            const int colors = r.u8();
+            QRgb palette[256] = {};
+            for (int c = 0; c < colors; ++c) {
+                const int red = r.u8();
+                const int green = r.u8();
+                const int blue = r.u8();
+                palette[c] = qRgb(red, green, blue);
+            }
+            const QByteArray packed = r.bytes(static_cast<qsizetype>(r.u32()));
+            const qsizetype pixels = static_cast<qsizetype>(tile.width()) * tile.height();
+            QByteArray sized(4, Qt::Uninitialized);
+            sized[0] = static_cast<char>((pixels >> 24) & 0xFF);
+            sized[1] = static_cast<char>((pixels >> 16) & 0xFF);
+            sized[2] = static_cast<char>((pixels >> 8) & 0xFF);
+            sized[3] = static_cast<char>(pixels & 0xFF);
+            const QByteArray indices = qUncompress(sized + packed);
+            if (indices.size() != pixels || !r.ok()) break; // a broken tile: the frame stops here
+            for (const QRect& area: newer(tile))
+                for (int y = area.top(); y <= area.bottom(); ++y) {
+                    QRgb* line = reinterpret_cast<QRgb*>(this->_canvas.scanLine(y));
+                    const uchar* source = reinterpret_cast<const uchar*>(indices.constData()) + static_cast<qsizetype>(y - tile.top()) * tile.width() + (area.left() - tile.left());
+                    for (int x = 0; x < area.width(); ++x)
+                        line[area.left() + x] = palette[source[x]];
+                }
         } else if (encoding == static_cast<std::uint8_t>(net::TileEncoding::Solid)) {
             const int red = r.u8();
             const int green = r.u8();

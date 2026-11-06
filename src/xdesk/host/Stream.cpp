@@ -31,6 +31,8 @@ File Description:
 /* DEFINE */
 
 #define OPEN_DELAY 400 // ms waited after a new client before the capture starts (its pause message comes first)
+#define AUTO_MIN_HEIGHT 720.0 // the automatic resolution never goes under this height (the text stays readable), unless the viewer asked less
+#define PALETTE_RTT 20.0 // ms of ping from which a viewer is far (its link, not the cpu, is the bottleneck): palette tiles
 
 xdesk::host::Stream::Stream(QObject* parent)
 : QObject(parent)
@@ -87,7 +89,7 @@ void xdesk::host::Stream::closeCapture_(void)
     emit this->closed();
 }
 
-void xdesk::host::Stream::addClient(const QString& session, const int quality, const double scale, const int fps)
+void xdesk::host::Stream::addClient(const QString& session, const int quality, const double scale, const int fps, const bool palette)
 {
     StreamClient client;
 
@@ -95,6 +97,7 @@ void xdesk::host::Stream::addClient(const QString& session, const int quality, c
     client.scale = scale;
     client.fps = fps;
     client.flow.setAutoScale(this->_autoResolution);
+    client.palette = palette;
     this->_clients.insert(session, client);
     if (this->_idle) this->_idle->stop();
     if (!this->_capture) QTimer::singleShot(OPEN_DELAY, this, &Stream::openIfWatched_); // a client opening on a terminal pauses at once: no capture for it
@@ -201,7 +204,9 @@ void xdesk::host::Stream::tick_(void)
     for (QHash<QString, StreamClient>::iterator it = this->_clients.begin(); it != this->_clients.end(); ++it) {
         StreamClient& client = it.value();
         const double cap = this->_maxHeight > 0 && frame.height() > this->_maxHeight ? static_cast<double>(this->_maxHeight) / frame.height() : 1.0;
-        const double effective = std::min(client.scale, cap) * client.flow.scale(); // automatic resolution: lowered while the link cannot follow
+        const double asked = std::min(client.scale, cap);
+        const double floor = std::min(1.0, AUTO_MIN_HEIGHT / std::max(1.0, frame.height() * asked)); // the automatic resolution keeps the text readable
+        const double effective = asked * std::max(client.flow.scale(), floor); // automatic resolution: lowered while the link cannot follow
         const int key = static_cast<int>(std::lround(effective * 1000));
         QByteArray message;
 
@@ -219,6 +224,8 @@ void xdesk::host::Stream::tick_(void)
         if (!scaled.contains(key))
             scaled.insert(key, key >= 1000 ? frame : frame.scaled(std::max(1, static_cast<int>(frame.width() * effective)), std::max(1, static_cast<int>(frame.height() * effective)), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
         client.lastFrame = now - client.lastFrame < interval * 2 ? client.lastFrame + interval : now; // on the slots of the rate (the 4 ms tick would make 30 fps 27)
+        // Lossless palette tiles (text, ui): half the bytes for twice the cpu, so only while the link is the bottleneck
+        client.encoder.setPalette(client.palette && (client.flow.minRtt() > PALETTE_RTT || client.flow.queue() >= FLOW_QUEUE_LOW || client.flow.ceiling() < 100));
         message = client.encoder.encode(scaled.value(key), client.flow.quality(client.quality));
         client.idle = message.isEmpty() ? frame.cacheKey() : 0;
         if (message.isEmpty()) continue;

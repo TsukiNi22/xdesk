@@ -51,6 +51,7 @@ class FrameEncoder {
         int _width = 0; // frame size of the hashes
         int _height = 0;
         std::uint32_t _id = 0; // frame id
+        bool _palette = false; // the client decodes the palette tiles (lossless text / ui)
 
     public:
         // ---------- Pre-Function -------- //
@@ -62,6 +63,8 @@ class FrameEncoder {
         // ------------ Function ---------- //
         /* getter */
         _cold _nodiscard inline std::uint32_t lastId(void) const {return this->_id;};
+        /* setter */
+        _cold inline void setPalette(const bool enabled) {this->_palette = enabled;};
 
         // ---------- Constructor --------- //
         FrameEncoder() = default;

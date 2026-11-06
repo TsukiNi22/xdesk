@@ -31,6 +31,7 @@ File Description:
     #include <QElapsedTimer>            // QElapsedTimer
     #include <QHostAddress>             // QHostAddress
     #include <QJsonObject>              // QJsonObject
+    #include <QStringList>              // QStringList
     #include <QByteArray>               // QByteArray
     #include <QObject>                  // QObject
     #include <QString>                  // QString
@@ -81,6 +82,7 @@ class Session: public QObject {
         net::ClientKind _kind = net::ClientKind::Web;
         QString _name = "[None]"; // device name sent by the client
         QString _os = "[None]";
+        QStringList _encodings; // tile encodings the client decodes besides jpeg / solid (hello "enc": "palette"...)
         QString _userAgent = "";
         QString _address; // peer ip
         QString _deviceId = ""; // registry id once authenticated
@@ -129,6 +131,7 @@ class Session: public QObject {
         _cold _nodiscard inline net::ClientKind kind(void) const           {return this->_kind;};
         _cold _nodiscard inline const QString& name(void) const            {return this->_name;};
         _cold _nodiscard inline const QString& os(void) const              {return this->_os;};
+        _cold _nodiscard inline const QStringList& encodings(void) const   {return this->_encodings;};
         _cold _nodiscard inline const QString& address(void) const         {return this->_address;};
         _cold _nodiscard inline QHostAddress peer(void) const              {return this->_ws ? this->_ws->peerAddress() : QHostAddress();}; // address of the socket itself (loopback for the tunnels)
         _cold _nodiscard inline const QString& deviceId(void) const        {return this->_deviceId;};

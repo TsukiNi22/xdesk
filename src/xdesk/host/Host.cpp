@@ -145,11 +145,10 @@ void xdesk::host::Host::start(const bool share)
             this->_refused.insert(ip);
             return false;
         }
-        // Banned address: dropped before TLS too, logged once so the panel says why the viewer gets a reset
-        if (this->_registry.addressBan(ip).has_value()) {
-            if (!this->_refused.contains(ip)) this->_log.warn("server", "", "Connection from " + ip + " refused: the address is banned (Devices > banned addresses)");
+        // Banned address: let in, its hello is answered "banned" with the reason (the viewer shows it instead of an empty response)
+        if (this->_registry.addressBan(ip).has_value() && !this->_refused.contains(ip)) {
+            this->_log.warn("server", "", "Connection from " + ip + ": the address is banned, the viewer is told so (Devices > banned addresses)");
             this->_refused.insert(ip);
-            return false;
         }
         return true;
     });
@@ -346,12 +345,23 @@ void xdesk::host::Host::onHello_(Session* session, const QJsonObject& message)
     const std::optional<security::Device> known = this->_registry.find(device);
     const bool web = session->kind() == net::ClientKind::Web || session->kind() == net::ClientKind::Apk;
 
-    if (web && !this->_config.settings().allowWeb) {session->deny("Web clients are disabled on this host"); return;}
-    if (known.has_value() && known->banned) {
-        this->_log.warn("auth", session->id(), "Banned device tried to connect: " + known->name, {{"device", device}});
-        session->deny("This device is banned from this host");
+    QString ip = session->address();
+    if (ip.startsWith("::ffff:")) ip = ip.mid(7);
+    const std::optional<security::AddressBan> addressBan = this->_registry.addressBan(ip);
+
+    if (addressBan.has_value()) {
+        // Told why (and until when), then closed: nothing of the session is processed
+        const QString until = addressBan->until > 0 ? " until " + QDateTime::fromMSecsSinceEpoch(addressBan->until).toString("HH:mm") : QString(" until a local unban on the computer");
+        this->_log.warn("auth", session->id(), "Banned address tried to connect: " + ip, {{"device", device}});
+        session->kick("This address is banned from this host" + until + (addressBan->reason.isEmpty() ? QString() : " (" + addressBan->reason + ")"), true);
         return;
     }
+    if (known.has_value() && known->banned) {
+        this->_log.warn("auth", session->id(), "Banned device tried to connect: " + known->name, {{"device", device}});
+        session->kick("This device is banned from this host" + (known->banReason.isEmpty() ? QString() : " (" + known->banReason + ")"), true);
+        return;
+    }
+    if (web && !this->_config.settings().allowWeb) {session->deny("Web clients are disabled on this host"); return;}
     if (known.has_value()) session->setDeviceId(device);
     if (session->kind() == net::ClientKind::Apk && message.value("udp").toBool()) this->_udpViewers.insert(session->id()); // the app has its own udp socket
     session->sendChallenge(QHostInfo::localHostName(), this->_code.salt(), known.has_value() && known->trusted && !known->secret.isEmpty());
@@ -419,7 +429,7 @@ void xdesk::host::Host::onAuth_(Session* session, const QJsonObject& message)
         QTimer::singleShot(60000, session, [this, session]() {
             if (session->state() == State::Pending) {
                 this->_log.info("auth", session->id(), "Approval timeout: refused");
-                session->deny("The host did not answer");
+                session->deny("Nobody accepted the connection on the computer within 60 s (try again when someone is in front of it)");
             }
         });
         return;
@@ -434,7 +444,7 @@ void xdesk::host::Host::approve(const QString& id, const bool accepted, const bo
     if (!session || session->state() != State::Pending) return;
     if (!accepted) {
         this->_log.info("auth", id, "Refused by the local user");
-        session->deny("Refused by the host");
+        session->deny("The person at the computer refused this connection (you may try again: a new code is needed)");
         return;
     }
     this->_log.info("auth", id, trust ? "Accepted and trusted by the local user" : "Accepted by the local user");
@@ -483,7 +493,7 @@ void xdesk::host::Host::admit_(Session* session, const bool remember)
     this->sendInputState_(session);
     this->_scales[session->id()] = s.scale;
     if (this->_stream)
-        QMetaObject::invokeMethod(this->_stream, "addClient", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(int, s.quality), Q_ARG(double, s.scale), Q_ARG(int, s.fps));
+        QMetaObject::invokeMethod(this->_stream, "addClient", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(int, s.quality), Q_ARG(double, s.scale), Q_ARG(int, s.fps), Q_ARG(bool, session->encodings().contains("palette")));
     this->_log.info("session", session->id(), "Session started: " + session->name() + " (" + net::client_kind_name(session->kind()) + ", " + session->address() + ")", session->describe());
     this->updateMarker_();
     emit this->sessionChanged(session);

@@ -43,6 +43,8 @@ File Description:
 #define MOTION_SHARE 4 // more than 1 / 4 of the tiles changed = motion (scroll, video, drag): sent lighter
 #define STILL_SHARE 32 // less than 1 / 32 changed = still: the light tiles of the motion are sent again sharp
 #define MAX_WORKERS 8 // encoding threads (rows of tiles in parallel)
+#define PALETTE_MAX 64 // colors of a palette tile at most (text, ui; a photo or a gradient has more: jpeg)
+#define PALETTE_SHARE 3 // a palette tile is kept when its bytes are under 1 / 3 of its pixels (else jpeg is lighter)
 
 //----------------------------------------------------------------//
 /* STRUCT */
@@ -192,6 +194,52 @@ _hot static bool solid_tile(const unsigned char* bits, const int stride, const i
     return true;
 }
 
+// Lossless tile of a few colors: palette + one index per pixel (zlib), false = too many colors or not lighter
+_hot static bool palette_tile(const unsigned char* bits, const int stride, const int x, const int y, const int w, const int h, QByteArray* out)
+{
+    std::uint32_t colors[PALETTE_MAX];
+    std::uint32_t table[256]; // open addressing: color + 1 (0 = empty) -> its index in tableIndex
+    std::uint8_t tableIndex[256];
+    QByteArray indices(static_cast<qsizetype>(w) * h, Qt::Uninitialized);
+    char* index = indices.data();
+    std::uint32_t last = 0xFFFFFFFFu;
+    char lastIndex = 0;
+    int count = 0;
+
+    std::memset(table, 0, sizeof(table));
+    for (int row = 0; row < h; ++row) {
+        const std::uint32_t* line = reinterpret_cast<const std::uint32_t*>(bits + static_cast<std::size_t>(y + row) * static_cast<std::size_t>(stride)) + x;
+        for (int col = 0; col < w; ++col) {
+            const std::uint32_t color = line[col] & 0x00FFFFFFu;
+            if (color != last) {
+                unsigned cell = (color * 0x9E3779B1u) >> 24;
+                while (table[cell] != 0 && table[cell] != color + 1)
+                    cell = (cell + 1) & 255u;
+                if (table[cell] == 0) {
+                    if (count == PALETTE_MAX) return false; // a photo, a gradient: jpeg
+                    table[cell] = color + 1;
+                    tableIndex[cell] = static_cast<std::uint8_t>(count);
+                    colors[count++] = color;
+                }
+                last = color;
+                lastIndex = static_cast<char>(tableIndex[cell]);
+            }
+            *index++ = lastIndex;
+        }
+    }
+    const QByteArray packed = qCompress(indices, 1).mid(4); // fastest zlib level (the indices are very repetitive anyway), stream only
+    if ((packed.size() + count * 3) * PALETTE_SHARE > static_cast<qsizetype>(w) * h) return false;
+    xdesk::net::ByteWriter tile(xdesk::net::Binary::Frame, static_cast<std::size_t>(packed.size()) + count * 3 + 20);
+    tile.u16(static_cast<std::uint16_t>(x)).u16(static_cast<std::uint16_t>(y)).u16(static_cast<std::uint16_t>(w)).u16(static_cast<std::uint16_t>(h));
+    tile.u8(static_cast<std::uint8_t>(xdesk::net::TileEncoding::Palette)).u8(static_cast<std::uint8_t>(count));
+    for (int i = 0; i < count; ++i)
+        tile.u8(static_cast<std::uint8_t>(colors[i] >> 16)).u8(static_cast<std::uint8_t>(colors[i] >> 8)).u8(static_cast<std::uint8_t>(colors[i]));
+    tile.u32(static_cast<std::uint32_t>(packed.size()));
+    tile.bytes(packed);
+    *out = tile.data().mid(1);
+    return true;
+}
+
 void xdesk::platform::parallel_for(const int count, const std::function<void(const int)>& fn)
 {
     static QThreadPool pool; // own pool: never waits behind the tasks of the global one
@@ -291,8 +339,17 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
             const int y = ty * XDESK_TILE_SIZE;
             std::uint32_t color = 0;
 
+            QByteArray palette;
+
             if (want[index] == 0 || hashes[index] == this->_hashes[index]) continue; // nothing / a sharper copy of an unchanged tile
-            if (!solid_tile(bits, stride, x, y, std::min(XDESK_TILE_SIZE, this->_width - x), std::min(XDESK_TILE_SIZE, this->_height - y), &color)) continue;
+            if (!solid_tile(bits, stride, x, y, std::min(XDESK_TILE_SIZE, this->_width - x), std::min(XDESK_TILE_SIZE, this->_height - y), &color)) {
+                // Text / ui: exact and lighter than a jpeg
+                if (!this->_palette || !palette_tile(bits, stride, x, y, std::min(XDESK_TILE_SIZE, this->_width - x), std::min(XDESK_TILE_SIZE, this->_height - y), &palette)) continue;
+                out.append(palette);
+                want[index] = 0;
+                this->_quality[index] = 0; // exact
+                continue;
+            }
             net::ByteWriter tile(net::Binary::Frame, 16);
             tile.u16(static_cast<std::uint16_t>(x)).u16(static_cast<std::uint16_t>(y));
             tile.u16(static_cast<std::uint16_t>(std::min(XDESK_TILE_SIZE, this->_width - x))).u16(static_cast<std::uint16_t>(std::min(XDESK_TILE_SIZE, this->_height - y)));

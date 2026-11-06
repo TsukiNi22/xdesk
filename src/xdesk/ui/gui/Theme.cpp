@@ -262,6 +262,8 @@ QHeaderView::section { background: @surfaceHead; color: @muted; border: none; bo
 QTableCornerButton::section { background: @surface; border: none; }
 
 QTabWidget::pane { border: 1px solid @border; top: -1px; background: @surface; }
+QTabBar { qproperty-drawBase: 0; } /* the base line of Qt is cut by the selected tab: the pane draws the line */
+QTabBar:focus { outline: none; }
 QTabBar::tab { background: transparent; color: @muted; padding: 7px 16px; border: none; border-bottom: 2px solid transparent; font-weight: 600; }
 QTabBar::tab:selected { color: @text; border-bottom: 2px solid @accent; }
 QTabBar::tab:hover { color: @text; }

@@ -24,6 +24,7 @@ File Description:
 #include "xdesk/host/Session.hpp"
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QDateTime>
 #include <QString>
 
@@ -80,6 +81,8 @@ void xdesk::host::Session::onText_(const QString& text)
                 this->_kind = net::client_kind_from(message.value("kind").toString());
                 this->_name = message.value("name").toString("[None]").left(80);
                 this->_os = message.value("os").toString("[None]").left(80);
+                for (const QJsonValue& encoding: message.value("enc").toArray())
+                    if (this->_encodings.size() < 8) this->_encodings.append(encoding.toString().left(16));
                 this->_clientNonce = QByteArray::fromBase64(message.value("nonce").toString().toLatin1());
                 if (this->_clientNonce.size() != 32) {this->deny("Invalid nonce"); return;}
                 this->_serverNonce = security::random_bytes(32);

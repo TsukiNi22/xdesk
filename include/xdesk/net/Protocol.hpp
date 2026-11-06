@@ -68,6 +68,7 @@ enum class Binary: std::uint8_t {
 enum class TileEncoding: std::uint8_t {
     Jpeg = 1, // u32 length, jpeg data
     Solid = 2, // u8 r, u8 g, u8 b (whole tile of one color)
+    Palette = 3, // u8 n (1..64), n x (u8 r, u8 g, u8 b), u32 length, zlib stream of w x h u8 indices (lossless: text, ui); only to the clients whose hello lists "palette" in "enc"
 };
 
 enum class MouseButton: std::uint8_t {

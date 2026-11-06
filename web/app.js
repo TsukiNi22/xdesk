@@ -11,7 +11,8 @@
 
     const PROTOCOL = 1;
     const BIN = {Frame: 0x10, FrameAck: 0x11, Cursor: 0x12, MouseMove: 0x20, MouseButton: 0x21, MouseWheel: 0x22, Key: 0x23, Text: 0x24, TermData: 0x31};
-    const TILE = {Jpeg: 1, Solid: 2};
+    const TILE = {Jpeg: 1, Solid: 2, Palette: 3};
+    const PALETTE = typeof DecompressionStream === "function"; // lossless palette tiles (text / ui) need the zlib inflater of the browser
     const STORAGE = "xdesk";
     const UA = navigator.userAgent;
     const IN_APP = /xdesk-app\//.test(UA);
@@ -464,7 +465,8 @@
         state.ws = ws;
         ws.onopen = () => {
             const device = getDevice();
-            sendJson({t: "hello", v: PROTOCOL, kind: KIND, name: name, os: guessOs(), device: device ? device.id : "", nonce: b64encode(state.clientNonce), udp: !!bridge.port});
+            // The udp of the app (udp = 1 in the storage) only on demand: each of its frames crosses the ui thread of android as base64 text
+            sendJson({t: "hello", v: PROTOCOL, kind: KIND, name: name, os: guessOs(), device: device ? device.id : "", nonce: b64encode(state.clientNonce), udp: !!bridge.port && load("udp") === "1", enc: PALETTE ? ["palette"] : []});
         };
         ws.onmessage = (e) => {
             if (typeof e.data === "string") onText(e.data);
@@ -802,6 +804,20 @@
                 if (pos + len > data.length) return;
                 tile.blob = new Blob([data.subarray(pos, pos + len)], {type: "image/jpeg"});
                 pos += len;
+            } else if (tile.enc === TILE.Palette) {
+                // Colors (as RGBA words of an ImageData), then the zlib stream of one index per pixel
+                if (pos + 1 > data.length) return;
+                const n = data[pos];
+                pos += 1;
+                if (pos + n * 3 + 4 > data.length) return;
+                tile.pal = new Uint32Array(256);
+                for (let c = 0; c < n; ++c, pos += 3)
+                    tile.pal[c] = 0xFF000000 | (data[pos + 2] << 16) | (data[pos + 1] << 8) | data[pos]; // little endian: r g b a in memory
+                const len = view.getUint32(pos);
+                pos += 4;
+                if (pos + len > data.length) return;
+                tile.z = data.slice(pos, pos + len);
+                pos += len;
             } else if (tile.enc === TILE.Solid) {
                 if (pos + 3 > data.length) return;
                 tile.color = "rgb(" + data[pos] + "," + data[pos + 1] + "," + data[pos + 2] + ")";
@@ -822,7 +838,7 @@
         state.drawing += 1;
 
         // Decode in parallel, draw in order of arrival; a tile already drawn by a newer frame is kept
-        const decoded = Promise.all(tiles.map((tl) => tl.blob ? createImageBitmap(tl.blob).catch(() => null) : null));
+        const decoded = Promise.all(tiles.map((tl) => tl.blob ? createImageBitmap(tl.blob).catch(() => null) : (tl.z ? decodePalette(tl).catch(() => null) : null)));
         state.drawQueue = state.drawQueue.then(() => decoded).then((bitmaps) => {
             if (w !== state.frameW || h !== state.frameH) {
                 if (state.frameW && ((id - state.sizeId) | 0) < 0) bitmaps = []; // a late frame of the old size
@@ -859,6 +875,18 @@
             state.frames += 1;
             placeCursor();
         }).catch(() => {state.drawing = Math.max(0, state.drawing - 1); if (!early) sendAck();});
+    }
+
+    // Palette tile -> bitmap: inflate the indices, look the colors up
+    async function decodePalette(tl) {
+        const stream = new Blob([tl.z]).stream().pipeThrough(new DecompressionStream("deflate"));
+        const indices = new Uint8Array(await new Response(stream).arrayBuffer());
+        const image = new ImageData(tl.w, tl.h);
+        const pixels = new Uint32Array(image.data.buffer);
+        const n = Math.min(indices.length, pixels.length);
+        for (let i = 0; i < n; ++i)
+            pixels[i] = tl.pal[indices[i]];
+        return createImageBitmap(image);
     }
 
     // Tiles of a frame not drawn yet by a newer one (any order of arrival), marked as drawn by this frame

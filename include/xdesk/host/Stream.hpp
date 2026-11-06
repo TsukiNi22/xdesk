@@ -49,6 +49,7 @@ struct StreamClient {
     FlowControl flow; // frames in flight and quality, from the bandwidth and the ping of this client
     int quality = 70; // jpeg quality
     double scale = 1.0; // frame scale asked by the client
+    bool palette = false; // the client decodes the palette tiles (used while its link is the bottleneck)
     double effective = 0.0; // scale applied: the asked one, capped by the max height of the host (0 = not computed yet)
     int fps = 30; // cap
     bool paused = false; // the client does not look at the screen (terminal tab, hidden page): no frame
@@ -87,7 +88,7 @@ class Stream: public QObject {
         // ---------- Pre-Function -------- //
         void start(void); // prepare the timers (the capture waits for the first viewer)
         void stop(void);
-        void addClient(const QString& session, const int quality, const double scale, const int fps);
+        void addClient(const QString& session, const int quality, const double scale, const int fps, const bool palette = false); // palette: the client decodes the lossless palette tiles
         void removeClient(const QString& session);
         void ack(const QString& session, const std::uint32_t id);
         void setQuality(const QString& session, const int quality, const double scale, const int fps);
