@@ -330,7 +330,7 @@ void xdesk::ui::tty::HostTui::showText_(const QString& title, const QStringList&
 void xdesk::ui::tty::HostTui::showQr_(void)
 {
     const QList<net::Endpoint> endpoints = this->_host.exposure().endpoints();
-    const net::Endpoint e = endpoints.value(std::clamp(this->_endpoint, 0, static_cast<int>(endpoints.size()) - 1));
+    const net::Endpoint e = endpoints.value(std::clamp(this->_endpoint, 0, std::max(0, static_cast<int>(endpoints.size()) - 1)));
     const QUrl url(e.url);
     const QString code = security::normalize_code(this->_host.code().display());
     QString host;
@@ -338,7 +338,8 @@ void xdesk::ui::tty::HostTui::showQr_(void)
     QString text;
     QStringList lines;
 
-    if (!this->_host.isSharing() || endpoints.isEmpty()) {this->flash_("Start sharing first (s): the QR code holds an address and the code", true); return;}
+    if (!this->_host.isSharing()) {this->flash_("Start sharing first (s): the QR code holds an address and the code", true); return;}
+    if (endpoints.isEmpty()) {this->flash_("No address to share yet (no network for the chosen exposure)", true); return;}
     // The app always gets the numeric address (pinned certificate), the browser the name (trusted certificate)
     host = this->_qrApp && !e.ip.isEmpty() ? e.ip : url.host();
     hostPort = (host.contains(':') ? "[" + host + "]" : host) + ":" + QString::number(url.port(e.port));
@@ -589,7 +590,7 @@ void xdesk::ui::tty::HostTui::pageKey_(const QString& key)
             else if (key == "enter") this->showQr_();
             else if (key == "c") {
                 const QList<net::Endpoint> endpoints = this->_host.exposure().endpoints();
-                if (!endpoints.isEmpty()) this->copy_(endpoints.value(std::clamp(this->_endpoint, 0, static_cast<int>(endpoints.size()) - 1)).url, "Link");
+                if (!endpoints.isEmpty()) this->copy_(endpoints.value(std::clamp(this->_endpoint, 0, std::max(0, static_cast<int>(endpoints.size()) - 1))).url, "Link");
             } else if (key == "e" || key == "right") this->setExposure_(1);
             else if (key == "E" || key == "left") this->setExposure_(-1);
             break;
@@ -775,7 +776,7 @@ void xdesk::ui::tty::HostTui::drawOverview_(const QRect& area)
     if (!this->_host.isSharing() || endpoints.isEmpty()) this->_canvas.text(4, y++, "none while sharing is off", st(MUTED));
     for (int i = 0; i < endpoints.size() && y < area.bottom() - 5; ++i, ++y) {
         const net::Endpoint& e = endpoints[i];
-        const bool current = i == std::clamp(this->_endpoint, 0, static_cast<int>(endpoints.size()) - 1);
+        const bool current = i == std::clamp(this->_endpoint, 0, std::max(0, static_cast<int>(endpoints.size()) - 1));
         const Style base = current ? st(QColor(), SELECTED) : st();
         this->_canvas.fill(QRect(1, y, w - 2, 1), base);
         this->_canvas.text(2, y, current ? "▸" : " ", st(ACCENT, base.bg, true));
