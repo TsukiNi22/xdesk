@@ -19,6 +19,8 @@
     const LONG_PRESS = 550; // ms before a still finger becomes a right click
     const TAP_SLOP = 10; // px a tap may move
     const TAP_TIME = 450; // ms a tap may last
+    const DOUBLE_TAP = 350; // ms between two taps of a double tap (trackpad: tap then slide = drag)
+    const DOUBLE_SLOP = 32; // px between two taps of a double tap (direct: the second one clicks on the first point)
     const MAX_ZOOM = 6; // pinch zoom of the screen
     const TILE_SIZE = 64; // XDESK_TILE_SIZE: frames may complete out of order, each tile keeps the id of the frame that drew it
     const LANE_MAX = 4; // sockets of the video at most (the main one included)
@@ -50,8 +52,8 @@
             scanClose: "Annuler", scanNoCamera: "Caméra indisponible : autorisez-la, ou entrez le code à la main.",
             scanNotXdesk: "Ce QR code n'est pas un lien xdesk.", scanOther: "Ce QR code mène à un autre ordinateur : ",
             keysTitle: "Touches spéciales", menu: "Menu", keyboard: "Clavier", paste: "Coller", trackpad: "Pavé", direct: "Direct",
-            helpTrackpad: "Pavé tactile : glissez pour bouger le pointeur, touchez pour cliquer, deux doigts = clic droit, glisser à deux doigts = défiler, pincer = zoomer, maintenir puis glisser = déplacer, trois doigts = clavier",
-            helpDirect: "Toucher direct : touchez là où cliquer, glisser = déplacer, maintenir = clic droit, glisser à deux doigts = défiler, pincer = zoomer, trois doigts = clavier",
+            helpTrackpad: "Pavé tactile : glissez pour bouger le pointeur, touchez pour cliquer, touchez deux fois = double clic, touchez puis glissez ou maintenez puis glissez = déplacer, deux doigts = clic droit, glisser à deux doigts = défiler, pincer = zoomer, trois doigts = clavier",
+            helpDirect: "Toucher direct : touchez là où cliquer, touchez deux fois = double clic, glisser = déplacer, maintenir puis lâcher = clic droit, glisser à deux doigts = défiler, pincer = zoomer, trois doigts = clavier",
             pastePrompt: "Texte à coller sur l'ordinateur distant",
             states: {idle: "hors ligne", connecting: "connexion", pending: "en attente", active: "connecté", closed: "fermé", banned: "banni"},
         },
@@ -68,8 +70,8 @@
         scanNoCamera: "Camera unavailable: allow it, or type the code.", scanNotXdesk: "This QR code is not an xdesk link.",
         scanOther: "This QR code leads to another computer: ",
         keyboard: "Keyboard", paste: "Paste", trackpad: "Trackpad", direct: "Direct",
-        helpTrackpad: "Trackpad: slide to move the pointer, tap to click, two fingers tap = right click, two fingers slide = scroll, pinch = zoom, hold then slide = drag, three fingers tap = keyboard",
-        helpDirect: "Direct touch: tap where to click, slide = drag, hold = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard",
+        helpTrackpad: "Trackpad: slide to move the pointer, tap to click, double tap = double click, tap then slide or hold then slide = drag, two fingers tap = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard",
+        helpDirect: "Direct touch: tap where to click, double tap = double click, slide = drag, hold then lift = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard",
         pastePrompt: "Text to paste on the remote computer",
     };
     let lang = load("lang") || ((navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en");
@@ -1070,13 +1072,14 @@
 
     // ---------------------------------------------------------------- //
     // Touch
-    //  trackpad (default): one finger slides the pointer, tap = click, hold then slide = drag
-    //  direct: the finger is the pointer, tap = click there, slide = drag, hold = right click
+    //  trackpad (default): one finger slides the pointer, tap = click, double tap = double click, tap then slide or hold then slide = drag
+    //  direct: the finger is the pointer, tap = click there, double tap = double click, slide = drag, hold then lift = right click, hold then slide = drag
     //  both: two fingers tap = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard
 
     const view = {zoom: 1, panX: 0, panY: 0}; // zoom of the screen (fit mode), css pixels
     const pad = {x: -1, y: -1}; // pointer moved by the trackpad (frame pixels)
     let gesture = null;
+    let lastTap = null; // {t, x, y, p}: end of the last one finger tap (double taps)
 
     function touchInput() {return load("touch") === "direct" ? "direct" : "trackpad";}
     function trackpad() {return touchMode && touchInput() === "trackpad";}
@@ -1142,11 +1145,19 @@
         const now = performance.now();
         touches.set(e.pointerId, {x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY});
         if (touches.size === 1) {
-            gesture = {t: now, last: now, fingers: 1, moved: false, long: false, dragging: false, timer: 0, kind: "", two: null, scrollX: 0, scrollY: 0};
+            const chained = lastTap && now - lastTap.t < DOUBLE_TAP && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < DOUBLE_SLOP * 3;
+            gesture = {t: now, last: now, fingers: 1, moved: false, long: false, dragging: false, timer: 0, kind: "", two: null, scrollX: 0, scrollY: 0, p: null, chained: chained};
             if (!canControl()) return;
             if (trackpad()) {
                 padStart();
                 placeCursor();
+                if (chained) {
+                    // Second tap: the button follows the finger (real double click, tap then slide = drag)
+                    gesture.dragging = true;
+                    sendMove(padPoint());
+                    sendButton(0, true);
+                    return;
+                }
                 gesture.timer = setTimeout(() => {
                     // Held still: the left button stays down, the finger drags
                     gesture.long = true;
@@ -1156,11 +1167,13 @@
                     if (navigator.vibrate) navigator.vibrate(15);
                 }, LONG_PRESS);
             } else {
-                const p = toFrame(e.clientX, e.clientY);
-                if (p) sendMove(p);
+                // Second tap close to the first one: the same point (a finger never lands twice on the same pixel of the host)
+                const near = chained && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < DOUBLE_SLOP;
+                gesture.p = near ? lastTap.p : toFrame(e.clientX, e.clientY);
+                if (gesture.p) sendMove(gesture.p);
                 gesture.timer = setTimeout(() => {
+                    // Held still: right click when lifted, drag when it slides
                     gesture.long = true;
-                    click(2, null);
                     if (navigator.vibrate) navigator.vibrate(15);
                 }, LONG_PRESS);
             }
@@ -1203,7 +1216,7 @@
         }
         if (trackpad()) {
             const box = drawnBox();
-            if (!box || (!gesture.moved && !gesture.dragging)) return;
+            if (!box || !gesture.moved) return; // the jitter of a tap / hold never moves the pointer (double clicks stay on one point)
             const accel = 1 + Math.min(2.5, Math.hypot(dx, dy) / dt * 0.9); // a fast slide goes further
             pad.x = Math.max(0, Math.min(state.frameW - 1, pad.x + dx / box.ratio * accel));
             pad.y = Math.max(0, Math.min(state.frameH - 1, pad.y + dy / box.ratio * accel));
@@ -1212,9 +1225,9 @@
             placeCursor();
             return;
         }
-        if (gesture.moved && !gesture.long && !gesture.dragging) {
+        if (gesture.moved && !gesture.dragging) {
             gesture.dragging = true;
-            const start = toFrame(tp.startX, tp.startY);
+            const start = gesture.p || toFrame(tp.startX, tp.startY);
             if (start) sendMove(start);
             sendButton(0, true);
         }
@@ -1270,15 +1283,20 @@
         clearTimeout(gesture.timer);
         if (touches.size > 0) return; // the gesture ends with its last finger
         const g = gesture;
-        const quick = performance.now() - g.t < TAP_TIME;
+        const now = performance.now();
+        const quick = now - g.t < TAP_TIME;
         gesture = null;
+        lastTap = null;
         if (g.dragging) {sendButton(0, false); return;}
-        if (g.kind || g.long) return;
+        if (g.kind) return;
         if (g.fingers >= 3) {if (quick) toggleKeyboard(); return;}
         if (!canControl()) return;
         if (g.fingers === 2) {if (quick) click(2, trackpad() ? padPoint() : toFrame(tp.startX, tp.startY)); return;}
-        if (g.moved || !quick) return;
-        click(0, trackpad() ? padPoint() : toFrame(tp.startX, tp.startY));
+        if (g.moved) return;
+        const p = trackpad() ? padPoint() : (g.p || toFrame(tp.startX, tp.startY));
+        if (g.long) {if (!trackpad()) click(2, p); return;} // direct: held still then lifted = right click
+        click(0, p);
+        if (!g.chained) lastTap = {t: now, x: tp.startX, y: tp.startY, p: p}; // a third tap starts again
     }
 
     // ---------------------------------------------------------------- //
