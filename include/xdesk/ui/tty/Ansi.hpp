@@ -43,7 +43,25 @@ File Description:
 
 namespace xdesk::ui::tty { // namespace start
 //----------------------------------------------------------------//
+/* ENUM */
+
+enum class ColorDepth {
+    None, // no color: the attributes only (bold, inverse...)
+    Basic, // 16 colors
+    Palette, // 256 colors
+    True, // 24-bit
+};
+
+//----------------------------------------------------------------//
 /* STRUCT */
+
+// What the terminal can show (TERM, COLORTERM, NO_COLOR, the locale; XDESK_TTY overrides them)
+struct Capabilities {
+    bool ansi = true; // cursor moves and the alternate screen (false: TERM=dumb, a console without VT)
+    ColorDepth colors = ColorDepth::True;
+    bool unicode = true; // box drawing, blocks and arrows (false: ascii look-alikes)
+    bool mouse = true; // xterm mouse reports (SGR 1006)
+};
 
 // Look of a cell (invalid color = the default one of the terminal)
 struct Style {
@@ -92,6 +110,12 @@ _hot _nodiscard QByteArray inverse(void);
 _hot _nodiscard QString fit(const QString& text, const int width); // cut with an ellipsis / pad with spaces
 _cold _nodiscard inline QByteArray osc52(const QString& text) {return "\x1b]52;c;" + text.toUtf8().toBase64() + "\x07";}; // copy to the clipboard of the terminal (works over ssh)
 
+/* capabilities */
+_cold _nodiscard Capabilities detect_capabilities(void); // of the terminal of this process
+_cold _nodiscard Capabilities parse_capabilities(const QString& term, const QString& colorterm, const QString& program, const QString& locale, const bool noColor, const QString& overrides); // TERM, COLORTERM, TERM_PROGRAM, locale, NO_COLOR set, XDESK_TTY ("ascii", "unicode", "mono", "16", "256", "truecolor", "no-mouse", "mouse", "ansi")
+_hot _nodiscard char ascii_of(const char32_t ch); // ascii look-alike of a character ('?' when none)
+_hot _nodiscard QByteArray sgr_color(const QColor& color, const ColorDepth depth, const bool background); // color sequence for this depth ("" for None)
+
 /* input */
 _hot _nodiscard QList<QByteArray> split_keys(const QByteArray& data); // one entry per key / mouse report / paste
 _hot _nodiscard QString key_name(const QByteArray& key); // "up", "enter", "ctrl+s", "shift+tab", "f1", "paste", "mouse", or the typed text
@@ -100,7 +124,7 @@ _hot _nodiscard QByteArray paste_text(const QByteArray& key); // content of a br
 
 /* drawing */
 _hot _nodiscard QColor vt_color(const std::int32_t color); // VtScreen color -> QColor (invalid = default)
-_cold _nodiscard QStringList qr_lines(const QString& text); // QR code in half blocks (dark on light), quiet zone included
+_cold _nodiscard QStringList qr_lines(const QString& text, const bool unicode = true); // QR code in half blocks (dark on light), quiet zone included (ascii: "##" per light module, one line per module)
 
 //----------------------------------------------------------------//
 /* CLASS */
@@ -120,7 +144,7 @@ class Canvas {
         void fill(const QRect& area, const Style& style, const char32_t ch = U' ');
         void box(const QRect& area, const QString& title, const Style& border, const Style& inside); // rounded frame
         void vtLine(const int x, const int y, const gui::Line& line, const int max); // a row of a VtScreen
-        _hot _nodiscard QByteArray row(const int y) const; // ANSI bytes of a row (starts and ends with a reset)
+        _hot _nodiscard QByteArray row(const int y, const Capabilities& caps = Capabilities()) const; // ANSI bytes of a row (starts and ends with a reset), colors / characters lowered to what the terminal shows
 
         // ------------ Function ---------- //
         /* getter */
@@ -135,6 +159,7 @@ class Terminal: public QObject {
 
     private:
         QSize _size; // cols x rows
+        Capabilities _caps;
         QTimer _poll; // size polling (no signal handler needed)
         bool _raw = false;
         bool _alternate = false;
@@ -154,6 +179,7 @@ class Terminal: public QObject {
 
         // ------------ Function ---------- //
         _cold inline void invalidate(void) {this->_shown.clear();}; // next present writes every row
+        _cold _nodiscard inline const Capabilities& caps(void) const {return this->_caps;};
 
         // ---------- Constructor --------- //
         explicit Terminal(QObject* parent = nullptr);

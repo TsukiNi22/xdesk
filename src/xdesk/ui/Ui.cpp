@@ -104,6 +104,7 @@ int xdesk::ui::run_host_tty(int& argc, char** argv, core::Config& config)
     int code = 0;
 
     if (!tty::Terminal::isTty()) {std::cerr << "xdesk: the terminal panel needs a terminal (use the graphical panel or run it in a terminal)" << std::endl; return 1;}
+    if (!tty::detect_capabilities().ansi) {std::cerr << "xdesk: this terminal cannot draw the panel (TERM=" << qgetenv("TERM").toStdString() << "): use the graphical panel, another terminal, or XDESK_TTY=ansi to force it" << std::endl; return 1;}
     try {
         host->start(false); // sharing off until s is pressed
     } catch (const std::exception& e) {
@@ -150,6 +151,7 @@ int xdesk::ui::run_viewer_tty(int& argc, char** argv, const client::Options& opt
     client::Options o = options;
 
     if (!tty::Terminal::isTty()) {std::cerr << "xdesk: the terminal client needs a terminal" << std::endl; return 1;}
+    if (!tty::detect_capabilities().ansi) {std::cerr << "xdesk: this terminal cannot draw the client (TERM=" << qgetenv("TERM").toStdString() << "): use the graphical viewer, another terminal, or XDESK_TTY=ansi to force it" << std::endl; return 1;}
     o.kind = net::ClientKind::Tty;
     QObject::connect(&client, &tty::ClientTui::quit, &app, &QCoreApplication::quit, Qt::QueuedConnection);
     client.start(o, screen);

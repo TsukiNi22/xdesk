@@ -26,7 +26,9 @@ File Description:
 #include <utils/utils.hpp>
 #include "xdesk/ui/tty/Ansi.hpp"
 #include <qrcodegen/qrcodegen.hpp>
+#include <QRegularExpression>
 #include <QSocketNotifier>
+#include <functional>
 #include <algorithm>
 #include <QThread>
 #include <cstdio>
@@ -36,6 +38,19 @@ File Description:
     #include <termios.h>
     #include <unistd.h>
 #endif
+
+//----------------------------------------------------------------//
+/* DEFINE */
+
+#define SHOWN_BACKGROUND 45 // lightness from which a background is shown in inverse video without colors (selection, buttons)
+#define DARK_BACKGROUND 25 // lightness under which a background is the one of the terminal with 16 colors
+#define GRAY_BACKGROUND 60 // lightness under which a grayish background is the bright black with 16 colors
+
+// 16 colors of the terminals (the xterm look)
+static const QRgb BASE[16] = {
+    0x000000, 0xcd3131, 0x0dbc79, 0xe5e510, 0x2472c8, 0xbc3fbc, 0x11a8cd, 0xe5e5e5,
+    0x666666, 0xf14c4c, 0x23d18b, 0xf5f543, 0x3b8eea, 0xd670d6, 0x29b8db, 0xffffff,
+};
 
 #ifndef _WIN32
     static struct termios g_saved; // terminal state before the raw mode
@@ -63,6 +78,140 @@ QByteArray xdesk::ui::tty::reset(void)   {return "\x1b[0m";}
 QByteArray xdesk::ui::tty::bold(void)    {return "\x1b[1m";}
 QByteArray xdesk::ui::tty::dim(void)     {return "\x1b[2m";}
 QByteArray xdesk::ui::tty::inverse(void) {return "\x1b[7m";}
+
+//----------------------------------------------------------------//
+// Capabilities
+
+xdesk::ui::tty::Capabilities xdesk::ui::tty::parse_capabilities(const QString& term, const QString& colorterm, const QString& program, const QString& locale, const bool noColor, const QString& overrides)
+{
+    static const QStringList TRUECOLOR_TERMS = {"xterm-kitty", "alacritty", "foot", "wezterm", "xterm-ghostty", "contour", "iterm2"};
+    static const QStringList TRUECOLOR_PROGRAMS = {"iTerm.app", "WezTerm", "vscode", "ghostty", "Hyper"};
+    static const QStringList BASIC_TERMS = {"xterm", "screen", "tmux", "rxvt", "linux", "ansi", "cygwin", "putty", "konsole", "gnome", "st", "eterm", "cons25"};
+    const QString t = term.toLower();
+    Capabilities caps;
+
+    // Cursor moves: every terminal but the dumb ones
+    caps.ansi = !t.isEmpty() && t != "dumb" && t != "unknown";
+    caps.mouse = caps.ansi && t != "linux" && !t.startsWith("vt") && t != "cons25"; // the linux console reports no xterm mouse
+
+    // Colors
+    if (colorterm.compare("truecolor", Qt::CaseInsensitive) == 0 || colorterm.compare("24bit", Qt::CaseInsensitive) == 0 || t.contains("direct") || TRUECOLOR_PROGRAMS.contains(program))
+        caps.colors = ColorDepth::True;
+    else if (std::any_of(TRUECOLOR_TERMS.begin(), TRUECOLOR_TERMS.end(), [&t](const QString& name) {return t.startsWith(name);}))
+        caps.colors = ColorDepth::True;
+    else if (t.contains("256")) caps.colors = ColorDepth::Palette;
+    else if (t.contains("color") || std::any_of(BASIC_TERMS.begin(), BASIC_TERMS.end(), [&t](const QString& name) {return t.startsWith(name);}))
+        caps.colors = ColorDepth::Basic;
+    else caps.colors = ColorDepth::None; // vt100, vt220...: monochrome
+    if (!caps.ansi || noColor) caps.colors = ColorDepth::None;
+
+    // Characters: a utf-8 locale (none set: utf-8 is the usual default, but not on the old vt)
+    caps.unicode = locale.isEmpty() ? !t.startsWith("vt") : (locale.contains("UTF-8", Qt::CaseInsensitive) || locale.contains("utf8", Qt::CaseInsensitive));
+
+    // Asked by hand
+    for (const QString& word: overrides.toLower().split(QRegularExpression("[,\\s]+"), Qt::SkipEmptyParts)) {
+        if (word == "ascii") caps.unicode = false;
+        else if (word == "unicode" || word == "utf8") caps.unicode = true;
+        else if (word == "mono" || word == "no-color" || word == "nocolor") caps.colors = ColorDepth::None;
+        else if (word == "16") caps.colors = ColorDepth::Basic;
+        else if (word == "256") caps.colors = ColorDepth::Palette;
+        else if (word == "truecolor" || word == "24bit") caps.colors = ColorDepth::True;
+        else if (word == "no-mouse" || word == "nomouse") caps.mouse = false;
+        else if (word == "mouse") caps.mouse = true;
+        else if (word == "ansi") caps.ansi = true;
+    }
+    return caps;
+}
+
+xdesk::ui::tty::Capabilities xdesk::ui::tty::detect_capabilities(void)
+{
+    const QString overrides = qEnvironmentVariable("XDESK_TTY");
+    const bool noColor = !qEnvironmentVariable("NO_COLOR").isEmpty();
+    QString locale = qEnvironmentVariable("LC_ALL");
+
+    #ifdef _WIN32
+        // A console without virtual terminal processing (before Windows 10) draws the sequences as text
+        HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+        DWORD mode = 0;
+        const bool vt = GetConsoleMode(out, &mode) && SetConsoleMode(out, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+        if (vt) SetConsoleMode(out, mode);
+        (void)locale;
+        return parse_capabilities(vt ? "xterm-direct" : "dumb", "", "", "UTF-8", noColor, overrides); // utf-8 output code page set with the raw mode
+    #else
+        if (locale.isEmpty()) locale = qEnvironmentVariable("LC_CTYPE");
+        if (locale.isEmpty()) locale = qEnvironmentVariable("LANG");
+        return parse_capabilities(qEnvironmentVariable("TERM"), qEnvironmentVariable("COLORTERM"), qEnvironmentVariable("TERM_PROGRAM"), locale, noColor, overrides);
+    #endif
+}
+
+char xdesk::ui::tty::ascii_of(const char32_t ch)
+{
+    static const QHash<char32_t, char> LOOK = {
+        {U'─', '-'}, {U'━', '-'}, {U'│', '|'}, {U'┃', '|'}, {U'╭', '+'}, {U'╮', '+'}, {U'╰', '+'}, {U'╯', '+'},
+        {U'┌', '+'}, {U'┐', '+'}, {U'└', '+'}, {U'┘', '+'}, {U'├', '+'}, {U'┤', '+'}, {U'┬', '+'}, {U'┴', '+'}, {U'┼', '+'},
+        {U'▸', '>'}, {U'▶', '>'}, {U'◂', '<'}, {U'◀', '<'}, {U'→', '>'}, {U'←', '<'}, {U'↑', '^'}, {U'↓', 'v'},
+        {U'●', '*'}, {U'○', 'o'}, {U'◤', '*'}, {U'█', '#'}, {U'▓', '#'}, {U'▒', ':'}, {U'░', '.'}, {U'▀', '"'}, {U'▄', '_'},
+        {U'…', '~'}, {U'·', '.'}, {U'×', 'x'}, {U'✓', 'v'}, {U'✕', 'x'}, {U'•', '*'}, {U'«', '<'}, {U'»', '>'},
+        {U'‘', '\''}, {U'’', '\''}, {U'“', '"'}, {U'”', '"'}, {U'–', '-'}, {U'—', '-'}, {U'\u00A0', ' '},
+    };
+    QString decomposed;
+
+    if (ch < 0x80) return static_cast<char>(ch);
+    if (LOOK.contains(ch)) return LOOK.value(ch);
+    // Accented letters: the letter alone
+    decomposed = QString::fromUcs4(&ch, 1).normalized(QString::NormalizationForm_D);
+    if (!decomposed.isEmpty() && decomposed[0].unicode() < 0x80) return static_cast<char>(decomposed[0].unicode());
+    return '?';
+}
+
+// Nearest of the 256 colors (6 x 6 x 6 cube or the grays)
+static int palette_index(const QColor& color)
+{
+    static const int LEVEL[6] = {0, 95, 135, 175, 215, 255};
+    const int r = color.red();
+    const int g = color.green();
+    const int b = color.blue();
+    const std::function<int(const int)> cube = [](const int v) {return v < 48 ? 0 : (v < 115 ? 1 : (v - 35) / 40);};
+    const int cr = cube(r);
+    const int cg = cube(g);
+    const int cb = cube(b);
+    const int average = (r + g + b) / 3;
+    const int gray = std::clamp((average - 3) / 10, 0, 23);
+    const int gv = 8 + gray * 10;
+    const int cubeDistance = (r - LEVEL[cr]) * (r - LEVEL[cr]) + (g - LEVEL[cg]) * (g - LEVEL[cg]) + (b - LEVEL[cb]) * (b - LEVEL[cb]);
+    const int grayDistance = (r - gv) * (r - gv) + (g - gv) * (g - gv) + (b - gv) * (b - gv);
+
+    return grayDistance < cubeDistance ? 232 + gray : 16 + 36 * cr + 6 * cg + cb;
+}
+
+// Nearest of the 16 colors
+static int basic_index(const QColor& color)
+{
+    int best = 0;
+    int distance = 0;
+
+    for (int i = 0; i < 16; ++i) {
+        const QColor c(BASE[i]);
+        const int d = (color.red() - c.red()) * (color.red() - c.red()) + (color.green() - c.green()) * (color.green() - c.green()) + (color.blue() - c.blue()) * (color.blue() - c.blue());
+        if (i == 0 || d < distance) {best = i; distance = d;}
+    }
+    return best;
+}
+
+QByteArray xdesk::ui::tty::sgr_color(const QColor& color, const ColorDepth depth, const bool background)
+{
+    if (!color.isValid() || depth == ColorDepth::None) return "";
+    switch (depth) {
+        case ColorDepth::True:    return background ? bg(color) : fg(color);
+        case ColorDepth::Palette: return (background ? "\x1b[48;5;" : "\x1b[38;5;") + QByteArray::number(palette_index(color)) + "m";
+        case ColorDepth::Basic: {
+            const int i = basic_index(color);
+            return "\x1b[" + QByteArray::number((i < 8 ? 30 : 82) + (background ? 10 : 0) + i) + "m";
+        }
+        case ColorDepth::None: break;
+    }
+    return "";
+}
 
 QString xdesk::ui::tty::fit(const QString& text, const int width)
 {
@@ -169,11 +318,6 @@ QByteArray xdesk::ui::tty::paste_text(const QByteArray& key)
 
 QColor xdesk::ui::tty::vt_color(const std::int32_t color)
 {
-    static const QRgb BASE[16] = {
-        0x000000, 0xcd3131, 0x0dbc79, 0xe5e510, 0x2472c8, 0xbc3fbc, 0x11a8cd, 0xe5e5e5,
-        0x666666, 0xf14c4c, 0x23d18b, 0xf5f543, 0x3b8eea, 0xd670d6, 0x29b8db, 0xffffff,
-    };
-
     if (color == VT_DEFAULT_COLOR || color < 0) return QColor();
     if (color >= VT_TRUECOLOR) return QColor(QRgb(color - VT_TRUECOLOR));
     if (color < 16) return QColor(BASE[color]);
@@ -186,12 +330,25 @@ QColor xdesk::ui::tty::vt_color(const std::int32_t color)
     return QColor(8 + (color - 232) * 10, 8 + (color - 232) * 10, 8 + (color - 232) * 10);
 }
 
-QStringList xdesk::ui::tty::qr_lines(const QString& text)
+QStringList xdesk::ui::tty::qr_lines(const QString& text, const bool unicode)
 {
     const qrcodegen::QrCode qr = qrcodegen::QrCode::encodeText(text.toUtf8().constData(), qrcodegen::QrCode::Ecc::LOW);
     const int quiet = 2;
     const int size = qr.getSize() + quiet * 2;
     QStringList lines;
+
+    // Ascii: two cells per module (square), one line per module
+    if (!unicode) {
+        for (int y = 0; y < size; ++y) {
+            QString line;
+            for (int x = 0; x < size; ++x) {
+                const bool dark = x >= quiet && x - quiet < qr.getSize() && y >= quiet && y - quiet < qr.getSize() && qr.getModule(x - quiet, y - quiet);
+                line += dark ? "  " : "##";
+            }
+            lines.append(line);
+        }
+        return lines;
+    }
 
     // Two modules per cell (upper / lower half), light = the block drawn: the scanners want dark on light
     for (int y = 0; y < size; y += 2) {
@@ -296,7 +453,25 @@ void xdesk::ui::tty::Canvas::vtLine(const int x, const int y, const gui::Line& l
     }
 }
 
-QByteArray xdesk::ui::tty::Canvas::row(const int y) const
+// Style lowered to what the terminal shows
+static xdesk::ui::tty::Style lowered(const xdesk::ui::tty::Style& style, const xdesk::ui::tty::ColorDepth depth)
+{
+    xdesk::ui::tty::Style s = style;
+
+    if (depth == xdesk::ui::tty::ColorDepth::None) {
+        // No color: a light background (selection, buttons, banners) becomes an inverse video
+        if (s.bg.isValid() && s.bg.lightness() >= SHOWN_BACKGROUND) s.inverse = !s.inverse;
+        s.fg = QColor();
+        s.bg = QColor();
+    } else if (depth == xdesk::ui::tty::ColorDepth::Basic && s.bg.isValid()) {
+        // 16 colors: the dark backgrounds are the one of the terminal, the gray ones its bright black
+        if (s.bg.lightness() < DARK_BACKGROUND) s.bg = QColor();
+        else if (s.bg.lightness() < GRAY_BACKGROUND && s.bg.hslSaturation() < 160) s.bg = QColor(BASE[8]);
+    }
+    return s;
+}
+
+QByteArray xdesk::ui::tty::Canvas::row(const int y, const Capabilities& caps) const
 {
     QByteArray out = "\x1b[0m";
     Style current;
@@ -306,8 +481,8 @@ QByteArray xdesk::ui::tty::Canvas::row(const int y) const
     for (int x = 0; x < this->_w; ++x) {
         const TextCell& cell = this->_cells[static_cast<qsizetype>(y) * this->_w + x];
         if (cell.ch == 0) continue;
-        if (first || !(cell.style == current)) {
-            const Style& s = cell.style;
+        const Style s = caps.colors == ColorDepth::True ? cell.style : lowered(cell.style, caps.colors);
+        if (first || !(s == current)) {
             // Attributes changed: full reset, else only the colors
             if (first || s.bold != current.bold || s.dim != current.dim || s.underline != current.underline || s.inverse != current.inverse) {
                 out += "\x1b[0";
@@ -316,16 +491,17 @@ QByteArray xdesk::ui::tty::Canvas::row(const int y) const
                 if (s.underline) out += ";4";
                 if (s.inverse) out += ";7";
                 out += "m";
-                if (s.fg.isValid()) out += fg(s.fg);
-                if (s.bg.isValid()) out += bg(s.bg);
+                out += sgr_color(s.fg, caps.colors, false);
+                out += sgr_color(s.bg, caps.colors, true);
             } else {
-                if (s.fg != current.fg) out += s.fg.isValid() ? fg(s.fg) : QByteArray("\x1b[39m");
-                if (s.bg != current.bg) out += s.bg.isValid() ? bg(s.bg) : QByteArray("\x1b[49m");
+                if (s.fg != current.fg) out += s.fg.isValid() ? sgr_color(s.fg, caps.colors, false) : QByteArray("\x1b[39m");
+                if (s.bg != current.bg) out += s.bg.isValid() ? sgr_color(s.bg, caps.colors, true) : QByteArray("\x1b[49m");
             }
             current = s;
             first = false;
         }
         if (cell.ch < 0x80) out += static_cast<char>(cell.ch);
+        else if (!caps.unicode) out += ascii_of(cell.ch);
         else out += QString::fromUcs4(&cell.ch, 1).toUtf8();
     }
     out += "\x1b[0m";
@@ -336,6 +512,7 @@ xdesk::ui::tty::Terminal::Terminal(QObject* parent)
 : QObject(parent)
 {
     this->_size = this->size();
+    this->_caps = detect_capabilities();
     QObject::connect(&this->_poll, &QTimer::timeout, this, [this]() {
         const QSize current = this->size();
         if (current == this->_size) return;
@@ -420,6 +597,7 @@ void xdesk::ui::tty::Terminal::enterAlternate(void)
 
 void xdesk::ui::tty::Terminal::setMouse(const bool enabled, const bool motion)
 {
+    if (!this->_caps.mouse) return;
     if (!enabled) this->write("\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l");
     else this->write(motion ? QByteArray("\x1b[?1000h\x1b[?1003h\x1b[?1006h") : QByteArray("\x1b[?1003l\x1b[?1000h\x1b[?1006h"));
 }
@@ -433,7 +611,7 @@ void xdesk::ui::tty::Terminal::present(const Canvas& canvas, const QPoint& curso
         out += "\x1b[0m\x1b[2J";
     }
     for (int y = 0; y < canvas.height(); ++y) {
-        QByteArray row = canvas.row(y);
+        QByteArray row = canvas.row(y, this->_caps);
         if (row == this->_shown[y]) continue;
         out += move(y + 1, 1) + row;
         this->_shown[y] = std::move(row);

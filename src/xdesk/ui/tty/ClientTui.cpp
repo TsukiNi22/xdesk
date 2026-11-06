@@ -48,6 +48,7 @@ static const QColor BAD(240, 110, 110);
 static const QColor BAR(26, 30, 36);
 static const QColor SELECTED(34, 66, 54);
 static const QColor DARK(12, 14, 16);
+static const QByteArray BRIGHTNESS(" .:-=+*#%@"); // remote screen without blocks or colors: one character per cell, darkest first
 
 static xdesk::ui::tty::Style st(const QColor& fg = QColor(), const QColor& bg = QColor(), const bool bold = false)
 {
@@ -406,7 +407,14 @@ void xdesk::ui::tty::ClientTui::connectKey_(const QString& key, const QByteArray
 
 void xdesk::ui::tty::ClientTui::statusKey_(const QString& key, const QByteArray& raw)
 {
-    (void)raw;
+    Mouse mouse;
+
+    if (parse_mouse(raw, mouse)) {
+        if (!mouse.press || mouse.motion || mouse.button != 0 || mouse.wheel != 0) return;
+        for (qsizetype i = this->_hits.size() - 1; i >= 0; --i)
+            if (this->_hits[i].area.contains(mouse.col, mouse.row)) {const std::function<void(void)> action = this->_hits[i].action; action(); return;}
+        return;
+    }
     if (!this->_fingerprint.isEmpty()) {
         // First connection: y / n; a changed identity: the word yes typed
         if (!this->_fingerprintChanged && (key == "y" || key == "enter")) {this->_fingerprint.clear(); this->_client.acceptFingerprint(true, true); return;}
@@ -611,11 +619,19 @@ void xdesk::ui::tty::ClientTui::drawConnect_(void)
 
     this->_canvas.fill(QRect(0, 0, w, 1), st(QColor(), BAR));
     this->_canvas.text(0, 0, " xdesk ", st(DARK, ACCENT, true));
-    this->_canvas.text(8, 0, "  connect to a PC  ·  tab / ↑ ↓ move  ·  enter connect  ·  esc quit", st(MUTED, BAR));
+    this->_canvas.text(8, 0, "  connect to a PC  ·  tab / ↑ ↓ / click move  ·  enter connect  ·  esc quit", st(MUTED, BAR));
+    if (w > 12) {
+        this->_canvas.text(w - 4, 0, " ✕ ", st(DARK, MUTED, true));
+        this->_hits.append(Hit{QRect(w - 4, 0, 3, 1), [this]() {this->finish_("Cancelled", 1);}});
+    }
     y = 2;
 
     // Known and found hosts
-    this->_canvas.text(left, y++, "HOSTS" + QString(this->_scanning ? "  (scanning the LAN...)" : "  (s: scan the LAN again)"), st(this->_focus == 0 ? ACCENT : MUTED, QColor(), true));
+    {
+        const int end = this->_canvas.text(left, y, "HOSTS" + QString(this->_scanning ? "  (scanning the LAN...)" : "  (s or click: scan the LAN again)"), st(this->_focus == 0 ? ACCENT : MUTED, QColor(), true));
+        if (!this->_scanning) this->_hits.append(Hit{QRect(left, y, end - left, 1), [this]() {this->scan_();}});
+        y++;
+    }
     if (this->_hosts.isEmpty()) this->_canvas.text(left + 2, y++, this->_scanning ? "looking for hosts announced on this network..." : "none known yet: type the address shown by the host", st(MUTED), width - 2);
     const int rows = std::max(1, h - 16);
     const int first = std::clamp(this->_hostRow - rows + 1, 0, std::max(0, static_cast<int>(this->_hosts.size()) - rows));
@@ -678,7 +694,8 @@ void xdesk::ui::tty::ClientTui::drawStatus_(void)
     if (this->_fingerprint.isEmpty()) {
         this->_canvas.box(box, "Connection", st(ACCENT, DARK), st(QColor(), DARK));
         this->_canvas.text(box.left() + 2, y, this->_status, st(QColor(), DARK, true), box.width() - 4);
-        this->_canvas.text(box.left() + 2, box.bottom(), " esc cancel ", st(MUTED, DARK));
+        const int end = this->_canvas.text(box.left() + 2, box.bottom(), " esc cancel ", st(DARK, MUTED, true));
+        this->_hits.append(Hit{QRect(box.left() + 2, box.bottom(), end - box.left() - 2, 1), [this]() {this->statusKey_("esc", "\x1b");}});
         return;
     }
     this->_canvas.box(box, this->_fingerprintChanged ? "IDENTITY CHANGED" : "First connection to this PC", st(this->_fingerprintChanged ? BAD : ACCENT, DARK, true), st(QColor(), DARK));
@@ -696,6 +713,8 @@ void xdesk::ui::tty::ClientTui::drawStatus_(void)
     if (this->_fingerprintChanged) {
         const int x = this->_canvas.text(box.left() + 2, y, "Type yes to connect anyway: ", st(QColor(), DARK, true));
         this->_canvas.text(this->_canvas.text(x, y, this->_typed, st(WARN, DARK, true)), y, "█", st(WARN, DARK));
+        const int no = this->_canvas.text(box.left() + 2, box.bottom(), " n  Cancel ", st(DARK, MUTED, true)); // connecting anyway stays typed
+        this->_hits.append(Hit{QRect(box.left() + 2, box.bottom(), no - box.left() - 2, 1), [this]() {this->statusKey_("esc", "\x1b");}});
     } else {
         const int yes = this->_canvas.text(box.left() + 2, y, " y  Connect ", st(DARK, ACCENT, true));
         const int no = this->_canvas.text(yes + 2, y, " n  Cancel ", st(DARK, MUTED, true));
@@ -724,6 +743,8 @@ void xdesk::ui::tty::ClientTui::drawSession_(void)
             this->_picture = QRect();
         } else {
             const QImage view = canvas.scaled(w, rows * 2, Qt::KeepAspectRatio, Qt::SmoothTransformation).convertToFormat(QImage::Format_RGB32);
+            const Capabilities& caps = this->_term.caps();
+            const bool blocks = caps.unicode && caps.colors != ColorDepth::None; // else characters by brightness
             const int cols = view.width();
             const int lines = (view.height() + 1) / 2;
             const int left = (w - cols) / 2;
@@ -734,9 +755,16 @@ void xdesk::ui::tty::ClientTui::drawSession_(void)
                 const QRgb* upper = reinterpret_cast<const QRgb*>(view.constScanLine(y * 2));
                 const QRgb* lower = y * 2 + 1 < view.height() ? reinterpret_cast<const QRgb*>(view.constScanLine(y * 2 + 1)) : upper;
                 for (int x = 0; x < cols; ++x) {
-                    style.fg = QColor(upper[x]);
-                    style.bg = QColor(lower[x]);
-                    this->_canvas.at(left + x, top + y) = TextCell{U'▀', style};
+                    if (blocks) {
+                        style.fg = QColor(upper[x]);
+                        style.bg = QColor(lower[x]);
+                        this->_canvas.at(left + x, top + y) = TextCell{U'▀', style};
+                        continue;
+                    }
+                    const QColor mean((qRed(upper[x]) + qRed(lower[x])) / 2, (qGreen(upper[x]) + qGreen(lower[x])) / 2, (qBlue(upper[x]) + qBlue(lower[x])) / 2);
+                    style.fg = caps.colors == ColorDepth::None ? QColor() : mean;
+                    style.bg = QColor();
+                    this->_canvas.at(left + x, top + y) = TextCell{static_cast<char32_t>(BRIGHTNESS[qGray(mean.rgb()) * (BRIGHTNESS.size() - 1) / 255]), style};
                 }
             }
             // Remote cursor

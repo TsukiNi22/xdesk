@@ -149,7 +149,7 @@ static QString field_value(const SettingField& field, const xdesk::core::Setting
 
     switch (field.kind) {
         case FieldKind::Toggle: return value.toBool() ? "[x] on" : "[ ] off";
-        case FieldKind::Number: return QString::number(value.toInt()) + field.suffix;
+        case FieldKind::Number: return "◂ " + QString::number(value.toInt()) + field.suffix + " ▸";
         case FieldKind::Text:   return value.toString();
         case FieldKind::Choice:
             for (const QPair<QString, QVariant>& choice: field.choices)
@@ -344,7 +344,7 @@ void xdesk::ui::tty::HostTui::showQr_(void)
     host = this->_qrApp && !e.ip.isEmpty() ? e.ip : url.host();
     hostPort = (host.contains(':') ? "[" + host + "]" : host) + ":" + QString::number(url.port(e.port));
     text = this->_qrApp ? "xdesk://" + hostPort + "?fp=" + QString::fromLatin1(this->_host.certificate().fingerprint().toHex()) + "&code=" + code : "https://" + hostPort + "/?code=" + code;
-    lines = qr_lines(text);
+    lines = qr_lines(text, this->_term.caps().unicode);
     lines.append("");
     lines.append(text.section('?', 0, 0) + "  ·  code " + this->_host.code().display());
     lines.append(this->_qrApp ? "xdesk app (Android): the camera opens the app, the identity is pinned" : "Browser: the web client opens with the code filled in");
@@ -684,7 +684,8 @@ void xdesk::ui::tty::HostTui::draw_(void)
     this->drawHeader_();
     if (!this->_tamper.isEmpty()) {
         this->_canvas.fill(QRect(0, 1, w, 1), st(QColor(Qt::white), QColor(150, 40, 40), true));
-        this->_canvas.text(1, 1, "TAMPERING BLOCKED: " + this->_tamper + "   (x to dismiss)", st(QColor(Qt::white), QColor(150, 40, 40), true), w - 2);
+        this->_canvas.text(1, 1, "TAMPERING BLOCKED: " + this->_tamper + "   (x or click to dismiss)", st(QColor(Qt::white), QColor(150, 40, 40), true), w - 2);
+        this->_hits.append(Hit{QRect(0, 1, w, 1), [this]() {this->_tamper.clear();}});
     }
     const QRect area(0, 2, w, h - 4);
     switch (this->_page) {
@@ -748,6 +749,7 @@ void xdesk::ui::tty::HostTui::drawOverview_(const QRect& area)
         const int left = code.secondsLeft();
         const int lifetime = std::max(1, settings.codeLifetime);
         int x = this->_canvas.text(14, y, code.display(), st(ACCENT, QColor(), true));
+        this->_hits.append(Hit{QRect(14, y, x - 14, 1), [this]() {this->onKey_("y", "y");}}); // a click copies it
         if (left >= 0) {
             const int filled = std::clamp(left * 20 / lifetime, 0, 20);
             x = this->_canvas.text(x + 3, y, QString(filled, QChar(0x2588)), st(left < 30 ? WARN : ACCENT));
@@ -783,7 +785,10 @@ void xdesk::ui::tty::HostTui::drawOverview_(const QRect& area)
         this->_canvas.text(4, y, e.label, st(MUTED, base.bg), 11);
         int x = this->_canvas.text(16, y, e.url, st(QColor(), base.bg, current), w - 18);
         this->_canvas.text(x + 2, y, e.reach + (e.ip.isEmpty() ? "" : "  ·  " + e.ip) + (e.endToEnd ? "" : "  ·  the relay sees the traffic"), st(MUTED, base.bg), w - x - 4);
-        this->_hits.append(Hit{QRect(1, y, w - 2, 1), [this, i]() {this->_endpoint = i;}});
+        this->_hits.append(Hit{QRect(1, y, w - 2, 1), [this, i, current]() {
+            this->_endpoint = i;
+            if (current) this->showQr_(); // second click: its QR code
+        }});
     }
     y++;
 
@@ -934,7 +939,10 @@ void xdesk::ui::tty::HostTui::drawLogs_(const QRect& area)
         this->_canvas.text(17, y, fit(level, 5), st(level == "alert" ? BAD : (level == "warn" ? WARN : MUTED), base.bg, level != "info"));
         this->_canvas.text(23, y, fit(e.value("cat").toString(), 9) + " " + fit(e.value("session").toString(), 8), st(MUTED, base.bg));
         this->_canvas.text(42, y, e.value("msg").toString(), st(QColor(), base.bg), w - 43);
-        this->_hits.append(Hit{QRect(1, y, w - 2, 1), [this, i]() {this->_logRow = i;}});
+        this->_hits.append(Hit{QRect(1, y, w - 2, 1), [this, i, current]() {
+            this->_logRow = i;
+            if (current) this->onKey_("enter", "\r"); // second click: the details
+        }});
     }
 }
 
@@ -976,11 +984,16 @@ void xdesk::ui::tty::HostTui::drawSettings_(const QRect& area)
         this->_canvas.fill(QRect(1, y, w - 2, 1), base);
         this->_canvas.text(1, y, changed ? "*" : " ", st(ACCENT, base.bg, true));
         this->_canvas.text(3, y, field.label, st(current ? QColor() : MUTED, base.bg), 34);
-        this->_canvas.text(38, y, value, field.kind == FieldKind::Text && field.get(this->_draft).toString().isEmpty() ? st(MUTED, base.bg) : st(field.kind == FieldKind::Toggle && field.get(this->_draft).toBool() ? ACCENT : QColor(), base.bg, current), w - 40);
+        const int end = this->_canvas.text(38, y, value, field.kind == FieldKind::Text && field.get(this->_draft).toString().isEmpty() ? st(MUTED, base.bg) : st(field.kind == FieldKind::Toggle && field.get(this->_draft).toBool() ? ACCENT : QColor(), base.bg, current), w - 40);
         this->_hits.append(Hit{QRect(1, y, w - 2, 1), [this, index]() {
             if (this->_field == index) this->changeField_(0, true); // second click: change it
             this->_field = index;
         }});
+        if (field.kind == FieldKind::Choice || field.kind == FieldKind::Number) {
+            // The arrows of a choice (the ends of a number) step it at once
+            this->_hits.append(Hit{QRect(38, y, 2, 1), [this, index]() {this->_field = index; this->changeField_(-1, false);}});
+            this->_hits.append(Hit{QRect(std::max(38, end - 2), y, 2, 1), [this, index]() {this->_field = index; this->changeField_(1, false);}});
+        }
     }
     y = area.bottom();
     if (this->_host.localActionsLocked()) this->_canvas.text(2, y, "Locked: a remote session controls this PC or has a terminal: settings cannot be saved now", st(WARN, QColor(), true), w - 4);
@@ -1057,6 +1070,7 @@ void xdesk::ui::tty::HostTui::drawModal_(void)
                 "Settings",
                 "  ← → change   space toggle   enter edit   ctrl+s / w save   r revert",
                 "",
+                "Mouse: tabs, buttons, rows (a second click opens / changes), ◂ ▸ of a value, ✕ closes",
                 "Copy: y / c use the terminal clipboard (OSC 52); shift + drag selects text too",
             };
             box = QRect((w - 86) / 2, std::max(1, (h - static_cast<int>(lines.size()) - 4) / 2), std::min(86, w - 2), std::min(h - 2, static_cast<int>(lines.size()) + 4));
@@ -1078,6 +1092,16 @@ void xdesk::ui::tty::HostTui::drawModal_(void)
                 const bool code = qr && i + this->_modalScroll < shown.size() - 4;
                 this->_canvas.text(box.left() + 2, box.top() + 2 + i, line, code ? st(QColor(Qt::white), QColor(Qt::black)) : inside, box.width() - 4);
             }
+            if (qr && box.height() - 4 >= shown.size()) {
+                // Clickable hints of the last line
+                const QString& hint = shown.last();
+                const int row = box.top() + 1 + static_cast<int>(shown.size());
+                for (const QPair<QString, QString>& part: QList<QPair<QString, QString>>{{"tab: app / browser link", "tab"}, {"c: copy the link", "c"}, {"esc: close", "esc"}}) {
+                    const int at = static_cast<int>(hint.indexOf(part.first));
+                    const QString key = part.second;
+                    if (at >= 0) this->_hits.append(Hit{QRect(box.left() + 2 + at, row, static_cast<int>(part.first.size()), 1), [this, key]() {this->onKey_(key, key == "c" ? QByteArray("c") : QByteArray());}});
+                }
+            }
             if (qr && box.height() - 4 < shown.size()) this->_canvas.text(box.left() + 2, box.bottom(), " terminal too small for the whole code: make it taller ", st(WARN, DARK, true), box.width() - 4);
             break;
         }
@@ -1093,7 +1117,10 @@ void xdesk::ui::tty::HostTui::drawModal_(void)
                 const int x = this->_canvas.text(box.left() + 2, box.top() + 3, prompt, st(MUTED, DARK));
                 const int end = this->_canvas.text(x, box.top() + 3, this->_input.right(box.width() - 6 - static_cast<int>(prompt.size())), st(ACCENT, DARK, true));
                 this->_canvas.text(end, box.top() + 3, "█", st(ACCENT, DARK));
-                this->_canvas.text(box.left() + 2, box.bottom(), " enter confirm · esc cancel ", st(MUTED, DARK));
+                const int ok = this->_canvas.text(box.left() + 2, box.bottom(), " enter confirm ", st(DARK, ACCENT, true));
+                const int cancel = this->_canvas.text(ok + 1, box.bottom(), " esc cancel ", st(DARK, MUTED, true));
+                this->_hits.append(Hit{QRect(box.left() + 2, box.bottom(), ok - box.left() - 2, 1), [this]() {this->onKey_("enter", "\r");}});
+                this->_hits.append(Hit{QRect(ok + 1, box.bottom(), cancel - ok - 1, 1), [this]() {this->onKey_("esc", "\x1b");}});
             } else {
                 const int yes = this->_canvas.text(box.left() + 2, box.top() + 3, " y  Yes ", st(DARK, ACCENT, true));
                 const int no = this->_canvas.text(yes + 2, box.top() + 3, " n  No ", st(DARK, MUTED, true));
@@ -1112,10 +1139,28 @@ void xdesk::ui::tty::HostTui::drawModal_(void)
             this->_mirrorScroll = std::clamp(this->_mirrorScroll, 0, vt->scrollbackSize());
             for (int row = 0; row < vt->rows() && row < box.height() - 2; ++row)
                 this->_canvas.vtLine(1, box.top() + 1 + row, vt->line(row, this->_mirrorScroll), box.width() - 2);
-            this->_canvas.text(2, box.bottom(), " esc close · ↑ ↓ pgup pgdn scroll" + (this->_mirrorScroll ? " · " + QString::number(this->_mirrorScroll) + " lines up (end: bottom)" : QString()) + " ", st(MUTED, DARK), box.width() - 4);
+            {
+                int x = this->_canvas.text(2, box.bottom(), " esc close ", st(DARK, MUTED, true));
+                this->_hits.append(Hit{QRect(2, box.bottom(), x - 2, 1), [this]() {this->onKey_("esc", "\x1b");}});
+                if (keys.size() > 1) {
+                    const int prev = x + 1;
+                    x = this->_canvas.text(prev, box.bottom(), " ◂ ", st(DARK, MUTED, true));
+                    this->_hits.append(Hit{QRect(prev, box.bottom(), x - prev, 1), [this]() {this->onKey_("left", QByteArray());}});
+                    const int next = x + 1;
+                    x = this->_canvas.text(next, box.bottom(), " ▸ ", st(DARK, MUTED, true));
+                    this->_hits.append(Hit{QRect(next, box.bottom(), x - next, 1), [this]() {this->onKey_("right", QByteArray());}});
+                }
+                this->_canvas.text(x + 1, box.bottom(), " wheel / ↑ ↓ pgup pgdn scroll" + (this->_mirrorScroll ? " · " + QString::number(this->_mirrorScroll) + " lines up (end: bottom)" : QString()) + " ", st(MUTED, DARK), box.width() - x - 3);
+            }
             break;
         }
         case Modal::None: break;
+    }
+    if (box.width() > 8 && this->_modal != Modal::None) {
+        // Close button in the corner of the frame
+        const int x = box.right() - 4;
+        this->_canvas.text(x, box.top(), " ✕ ", st(DARK, this->_modal == Modal::Mirror ? WARN : ACCENT, true));
+        this->_hits.append(Hit{QRect(x, box.top(), 3, 1), [this]() {this->onKey_("esc", "\x1b");}});
     }
 }
 
