@@ -84,6 +84,7 @@ void xdesk::client::Client::connectToHost(const Options& options)
     QSslConfiguration tls = QSslConfiguration::defaultConfiguration();
 
     this->disconnectFromHost();
+    this->_openTerminals.clear(); // a new session: terminal 1 first
     this->_options = options;
     if (this->_options.name.isEmpty()) this->_options.name = QHostInfo::localHostName() + " - " + QSysInfo::prettyProductName();
     security::configure_tls(tls, true); // native to native: post-quantum key exchange only
@@ -385,8 +386,11 @@ void xdesk::client::Client::setPaused(const bool paused)
 
 std::uint8_t xdesk::client::Client::openTerminal(const int cols, const int rows)
 {
-    const std::uint8_t id = this->_nextTerminal++;
+    std::uint8_t id = 1;
 
+    while (id < 255 && this->_openTerminals.contains(id))
+        ++id;
+    this->_openTerminals.insert(id);
     if (this->_ws && this->_state == State::Active)
         this->_ws->sendText(QString::fromUtf8(QJsonDocument(QJsonObject{{"t", "term_open"}, {"id", id}, {"cols", cols}, {"rows", rows}}).toJson(QJsonDocument::Compact)));
     return id;
@@ -407,6 +411,7 @@ void xdesk::client::Client::resizeTerminal(const std::uint8_t id, const int cols
 
 void xdesk::client::Client::closeTerminal(const std::uint8_t id)
 {
+    this->_openTerminals.remove(id);
     if (this->_ws && this->_state == State::Active)
         this->_ws->sendText(QString::fromUtf8(QJsonDocument(QJsonObject{{"t", "term_close"}, {"id", id}}).toJson(QJsonDocument::Compact)));
 }

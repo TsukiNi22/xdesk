@@ -212,7 +212,6 @@
         gotBye: false,
         terms: new Map(), // id -> {term, fit, el, tab, exited}
         activeTab: "screen",
-        nextTerm: 1,
         pressed: new Set(), // key codes down (released on blur)
         buttons: new Set(), // mouse buttons down
     };
@@ -1093,9 +1092,9 @@
     function openTerm() {
         if (!state.perms.terminal) {toast(t("terminalDenied")); return;}
         if (typeof Terminal === "undefined") return;
-        let id = state.nextTerm;
-        for (let i = 0; i < 255 && state.terms.has(id); ++i) id = id % 255 + 1;
-        state.nextTerm = id % 255 + 1;
+        // Smallest free id: 1 again once the terminals are closed or after a reconnection
+        let id = 1;
+        while (id < 255 && state.terms.has(id)) ++id;
 
         const el = document.createElement("div");
         el.className = "term";

@@ -309,7 +309,7 @@ void xdesk::ui::tty::ClientTui::closeTab_(void)
 
     if (index < 0 || index >= this->_terminals.size()) return;
     id = this->_terminals.takeAt(index);
-    if (!this->_exited.contains(id)) this->_client.closeTerminal(id);
+    this->_client.closeTerminal(id); // its id is free again (the host ignores the close of an ended one)
     this->_exited.remove(id);
     if (this->_vts.contains(id)) this->_vts.take(id)->deleteLater();
     this->selectTab_(std::min(this->_tab, static_cast<int>(this->_terminals.size())));

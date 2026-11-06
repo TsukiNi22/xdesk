@@ -34,6 +34,7 @@ File Description:
     #include <QString>                  // QString
     #include <cstdint>                  // std::uint8_t
     #include <QTimer>                   // QTimer
+    #include <QSet>                     // QSet
     #include <QImage>                   // QImage
     #include <QPoint>                   // QPoint
 
@@ -87,7 +88,7 @@ class Client: public QObject {
         QImage _canvas; // composed screen
         QTimer _ping; // latency every second
         int _latency = -1;
-        std::uint8_t _nextTerminal = 1;
+        QSet<std::uint8_t> _openTerminals; // ids in use: a new terminal takes the smallest free one (1 again after a close or a reconnection)
 
         // ---------- Pre-Function -------- //
         void onOpened_(void);
