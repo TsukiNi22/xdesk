@@ -48,7 +48,7 @@ void xdesk::Desktop::init(const int argc, const char* const argv[])
         "Remote desktop & terminal, secured end to end (TLS 1.3 + ML-KEM post-quantum key exchange, Argon2id codes).\n"
         "Commands:\n"
         "  xdesk [host]               share this PC (graphical panel, or terminal panel with --tty / without display)\n"
-        "  xdesk connect <address>    control a PC (graphical viewer, or terminal with --tty; --screen shows the screen in the terminal)\n"
+        "  xdesk connect [address]    control a PC (graphical viewer, or terminal with --tty: no address = its connect page; --screen starts on the screen)\n"
         "  xdesk viewer               graphical viewer with its connect page\n"
         "  xdesk scan                 list the hosts announced on the LAN\n"
         "  xdesk devices              list the known / trusted / banned devices\n"
@@ -108,7 +108,6 @@ void xdesk::Desktop::init(const int argc, const char* const argv[])
         else if (id == "version")    this->_command = "version";
     }
     if (this->_port == 0 || this->_port > 65535) throw utils::exception::ErrorException(utils::exception::ExternalCode::Usage, "Invalid port " + std::to_string(this->_port));
-    if (this->_command == "connect" && this->_target.empty()) throw utils::exception::ErrorException(utils::exception::ExternalCode::Usage, "xdesk connect <address> [--port N] [--code CODE]");
     if (this->_command == "unban" && this->_target.empty()) throw utils::exception::ErrorException(utils::exception::ExternalCode::Usage, "xdesk unban <device id | address>");
     this->_config.load();
     onBasicVerbose("xdesk " XDESK_VERSION " - command " + this->_command);

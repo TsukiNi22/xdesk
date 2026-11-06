@@ -61,6 +61,9 @@ set(SRC
 
     ## Platform (sub-part: platform)
     xdesk/platform/FrameEncoder.cpp
+
+    ## User interface (sub-part: ui)
+    xdesk/ui/tty/Ansi.cpp
 )
 add_executable(${TARGET} ${SRC} ${SRC_PROJECT})
 

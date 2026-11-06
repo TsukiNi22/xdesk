@@ -49,12 +49,12 @@ TEST(Desktop, InitRefusesAnInvalidVerboseLevel)
     EXPECT_THROW(core.init(3, argv), utils::exception::IException);
 }
 
-TEST(Desktop, ConnectNeedsAnAddress)
+TEST(Desktop, ConnectWithoutAddressOpensTheConnectPage)
 {
     xdesk::Desktop core;
     const char* const argv[] = {"xdesk", "connect", nullptr};
 
-    EXPECT_THROW(core.init(2, argv), utils::exception::IException);
+    EXPECT_NO_THROW(core.init(2, argv)); // the viewer / terminal client asks the address
 }
 
 TEST(Desktop, ConnectTakesItsAddressAndFlags)
