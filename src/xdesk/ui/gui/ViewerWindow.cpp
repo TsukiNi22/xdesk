@@ -33,6 +33,7 @@ File Description:
 #include <QFormLayout>
 #include <QWheelEvent>
 #include <QStatusBar>
+#include <algorithm>
 #include <QKeyEvent>
 #include <QPainter>
 #include <QPointer>
@@ -511,6 +512,15 @@ QWidget* xdesk::ui::gui::ViewerWindow::buildViewer_(void)
     this->_quality->setValue(70);
     this->_quality->setMaximumWidth(140);
     this->_toolbar->addWidget(this->_quality);
+    this->_resolution = new QComboBox();
+    this->_resolution->setToolTip("Resolution asked to the host (never above its own)");
+    this->_resolution->addItem("Native", 0);
+    for (const int height: {2160, 1440, 1080, 720, 480, 360, 240, 144})
+        this->_resolution->addItem(QString::number(height) + "p", height);
+    this->_toolbar->addWidget(this->_resolution);
+    this->_received = new QLabel(" - ");
+    this->_received->setToolTip("Resolution of the frames received");
+    this->_toolbar->addWidget(this->_received);
     QWidget* spacer = new QWidget();
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     this->_toolbar->addWidget(spacer);
@@ -542,7 +552,14 @@ QWidget* xdesk::ui::gui::ViewerWindow::buildViewer_(void)
         else this->showFullScreen();
         this->_screen->setFocus();
     });
-    QObject::connect(this->_quality, &QSlider::sliderReleased, this, [this]() {this->_client.setQuality(this->_quality->value(), 1.0, 60);});
+    QObject::connect(this->_quality, &QSlider::sliderReleased, this, &ViewerWindow::sendQuality_);
+    QObject::connect(this->_resolution, &QComboBox::currentIndexChanged, this, &ViewerWindow::sendQuality_);
+    QObject::connect(&this->_client, &client::Client::hostScreenChanged, this, &ViewerWindow::sendQuality_);
+    QObject::connect(&this->_client, &client::Client::frameUpdated, this, [this]() {
+        const QSize size = this->_client.canvas().size();
+        const QString text = " " + QString::number(size.width()) + "×" + QString::number(size.height()) + " (" + QString::number(size.height()) + "p) ";
+        if (this->_received->text() != text) this->_received->setText(text);
+    });
     QObject::connect(this->_tabs, &QTabWidget::currentChanged, this, [this](const int index) {this->_client.setPaused(this->_tabs->widget(index) != this->_screen);});
     QObject::connect(this->_tabs, &QTabWidget::tabCloseRequested, this, [this](const int index) {
         for (QHash<std::uint8_t, TerminalWidget*>::iterator it = this->_terminals.begin(); it != this->_terminals.end(); ++it) {
@@ -555,6 +572,15 @@ QWidget* xdesk::ui::gui::ViewerWindow::buildViewer_(void)
         }
     });
     return page;
+}
+
+void xdesk::ui::gui::ViewerWindow::sendQuality_(void)
+{
+    const int height = this->_resolution->currentData().toInt();
+    const int native = this->_client.hostScreen().height();
+
+    // Scale of the captured screen: the host never sends more than it has
+    this->_client.setQuality(this->_quality->value(), height > 0 && native > 0 ? std::min(1.0, static_cast<double>(height) / native) : 1.0, 60);
 }
 
 void xdesk::ui::gui::ViewerWindow::openTerminal_(void)

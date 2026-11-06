@@ -159,6 +159,8 @@ void xdesk::core::Config::load(void)
     s.allowWeb = o.value("allowWeb").toBool(s.allowWeb);
     s.viewOnlyDefault = o.value("viewOnlyDefault").toBool(s.viewOnlyDefault);
     s.banOnTamper = o.value("banOnTamper").toBool(s.banOnTamper);
+    s.focusRequest = o.value("focusRequest").toBool(s.focusRequest);
+    s.focusRequestDelay = std::clamp(o.value("focusRequestDelay").toInt(s.focusRequestDelay), 5, 3600);
     s.shell = o.value("shell").toString(s.shell);
 
     // Stream
@@ -197,6 +199,8 @@ void xdesk::core::Config::save(void) const
     o["allowWeb"] = s.allowWeb;
     o["viewOnlyDefault"] = s.viewOnlyDefault;
     o["banOnTamper"] = s.banOnTamper;
+    o["focusRequest"] = s.focusRequest;
+    o["focusRequestDelay"] = s.focusRequestDelay;
     o["shell"] = s.shell;
     o["fps"] = s.fps;
     o["quality"] = s.quality;

@@ -1445,6 +1445,12 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     this->_setAllowWeb = new QCheckBox("Allow browsers and the android app");
     this->_setViewOnly = new QCheckBox("New sessions start view only");
     this->_setBanOnTamper = new QCheckBox("Ban a session that touches xdesk");
+    this->_setFocusRequest = new QCheckBox("Viewers may ask the control back (panel focused)");
+    this->_setFocusRequest->setToolTip("The remote control pauses while this panel has the focus; a viewer may ask it back, granted after the delay unless refused here");
+    this->_setFocusDelay = new QSpinBox();
+    this->_setFocusDelay->setRange(5, 3600);
+    this->_setFocusDelay->setSingleStep(5);
+    this->_setFocusDelay->setSuffix(" s");
     this->_setShell = new QLineEdit();
     this->_setShell->setPlaceholderText("default shell");
     access->addRow(make_label("Code length", "muted"), this->_setCodeLength);
@@ -1458,6 +1464,8 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     access->addRow("", this->_setAllowWeb);
     access->addRow("", this->_setViewOnly);
     access->addRow("", this->_setBanOnTamper);
+    access->addRow("", this->_setFocusRequest);
+    access->addRow(make_label("Control given back after", "muted"), this->_setFocusDelay);
     access->addRow(make_label("Terminal shell", "muted"), this->_setShell);
     columns->setSpacing(16);
     columns->addLayout(left, 1);
@@ -1505,6 +1513,8 @@ void xdesk::ui::gui::HostWindow::loadSettings_(void)
     this->_setAllowWeb->setChecked(s.allowWeb);
     this->_setViewOnly->setChecked(s.viewOnlyDefault);
     this->_setBanOnTamper->setChecked(s.banOnTamper);
+    this->_setFocusRequest->setChecked(s.focusRequest);
+    this->_setFocusDelay->setValue(s.focusRequestDelay);
     this->_setShell->setText(s.shell);
     this->_setFps->setValue(s.fps);
     this->_setResolution->setCurrentIndex(std::max(0, this->_setResolution->findData(s.maxHeight)));
@@ -1540,6 +1550,8 @@ void xdesk::ui::gui::HostWindow::saveSettings_(void)
     s.allowWeb = this->_setAllowWeb->isChecked();
     s.viewOnlyDefault = this->_setViewOnly->isChecked();
     s.banOnTamper = this->_setBanOnTamper->isChecked();
+    s.focusRequest = this->_setFocusRequest->isChecked();
+    s.focusRequestDelay = this->_setFocusDelay->value();
     s.shell = this->_setShell->text().trimmed();
     s.fps = this->_setFps->value();
     s.quality = this->_setQuality->currentData().toInt();

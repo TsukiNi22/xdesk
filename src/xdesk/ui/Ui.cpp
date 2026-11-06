@@ -20,6 +20,10 @@ File Description:
 
 #ifdef _WIN32
     #include <windows.h>
+#else
+    #include <QSocketNotifier>
+    #include <unistd.h>
+    #include <csignal>
 #endif
 #define _Attribute
 #include <utils/utils.hpp>
@@ -41,6 +45,45 @@ File Description:
 #include <memory>
 #include <QTimer>
 #include <QFile>
+
+#ifndef _WIN32
+    static int g_stopPipe[2] = {-1, -1}; // signal handler -> event loop
+
+    static void on_stop_signal(const int sig)
+    {
+        const char c = static_cast<char>(sig);
+        (void)::write(g_stopPipe[1], &c, 1); // async-signal-safe: the rest runs in the event loop
+    }
+#endif
+
+/* SIGTERM / SIGINT / SIGHUP (logout, shutdown, systemctl stop, a kill of the local user): a clean stop, so the next start
+ * bans nobody; a remote session acting at that moment (keyboard / mouse in the last seconds, a command in its terminal)
+ * is blamed as for a protected file. SIGKILL / a crash stay unclean stops (sessions with control banned at the next start)
+*/
+static void handle_stop_signals(QCoreApplication* app, xdesk::host::Host* host)
+{
+    #ifndef _WIN32
+        struct sigaction action = {};
+        QSocketNotifier* notifier = nullptr;
+
+        if (::pipe(g_stopPipe) != 0) return;
+        action.sa_handler = on_stop_signal;
+        sigemptyset(&action.sa_mask);
+        for (const int sig: {SIGTERM, SIGINT, SIGHUP})
+            (void)sigaction(sig, &action, nullptr);
+        notifier = new QSocketNotifier(g_stopPipe[0], QSocketNotifier::Read, app);
+        QObject::connect(notifier, &QSocketNotifier::activated, app, [app, host, notifier]() {
+            char c = 0;
+            if (::read(g_stopPipe[0], &c, 1) != 1) return;
+            notifier->setEnabled(false);
+            host->stopSignal(static_cast<int>(c));
+            app->quit();
+        });
+    #else
+        (void)app;
+        (void)host;
+    #endif
+}
 
 // XDESK_SNAPSHOT=<file.png>: save the window after 2 s and quit (screenshots of the docs, ui checks)
 static void snapshot_if_asked(QWidget* window)
@@ -87,6 +130,7 @@ int xdesk::ui::run_host_gui(int& argc, char** argv, core::Config& config)
         return 1;
     }
     if (qEnvironmentVariableIntValue("XDESK_SNAPSHOT_SHARE") == 1) host->setSharing(true); // snapshots of the sharing state
+    handle_stop_signals(&app, host.get());
     window = std::make_unique<gui::HostWindow>(*host);
     if (!config.settings().startMinimized) window->show();
     snapshot_if_asked(window.get());
@@ -113,6 +157,7 @@ int xdesk::ui::run_host_tty(int& argc, char** argv, core::Config& config)
     }
     panel = std::make_unique<tty::HostTui>(*host);
     QObject::connect(panel.get(), &tty::HostTui::quit, app.get(), &QCoreApplication::quit);
+    handle_stop_signals(app.get(), host.get());
     code = app->exec();
     host->stop();
     panel.reset();

@@ -118,7 +118,18 @@
                         <option value="fit" data-i18n="fit">Fit</option>
                         <option value="1" data-i18n="actual">1:1</option>
                     </select>
-                    <label class="slider" title="Quality"><span data-i18n="quality">Quality</span> <input type="range" id="qualityInput" min="10" max="95" step="5" value="70"></label>
+                    <label class="slider" title="Quality"><span data-i18n="quality">Quality</span> <input type="range" id="qualityInput" min="10" max="95" step="5" value="70"> <span class="res-now" id="resNow" aria-live="off">-</span></label>
+                    <select id="resSelect" aria-label="Resolution">
+                        <option value="0" data-i18n="resNative">Native</option>
+                        <option value="2160">2160p</option>
+                        <option value="1440">1440p</option>
+                        <option value="1080">1080p</option>
+                        <option value="720">720p</option>
+                        <option value="480">480p</option>
+                        <option value="360">360p</option>
+                        <option value="240">240p</option>
+                        <option value="144">144p</option>
+                    </select>
                     <select id="fpsSelect" aria-label="FPS">
                         <option value="15">15 fps</option>
                         <option value="30">30 fps</option>
@@ -144,7 +155,7 @@
                         <div class="cursor" id="cursor" hidden></div>
                     </div>
                 </div>
-                <div class="screen-state" id="screenState" role="status" aria-live="polite" hidden><span class="dot" aria-hidden="true"></span><span id="screenStateText"></span><button class="btn" type="button" id="screenStateBtn" hidden data-i18n="focusAsk">Ask the control back</button></div>
+                <div class="screen-state" id="screenState" role="status" aria-live="polite" hidden><span class="dot" aria-hidden="true"></span><span id="screenStateText"></span><button class="btn" type="button" id="screenStateBtn" hidden>Ask the control back</button></div>
                 <div class="notice" id="noView" hidden data-i18n="noView">The host did not give the screen right to this session.</div>
             </div>
             <div class="pane terms" id="termPane" hidden></div>

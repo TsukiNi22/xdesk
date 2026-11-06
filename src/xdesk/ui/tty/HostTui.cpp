@@ -140,6 +140,8 @@ static const QList<SettingField>& settings_fields(void)
         {"Access & security", "Allow browsers and the android app", FieldKind::Toggle, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.allowWeb);}, [](S& s, const QVariant& v) {s.allowWeb = v.toBool();}},
         {"Access & security", "New sessions start view only", FieldKind::Toggle, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.viewOnlyDefault);}, [](S& s, const QVariant& v) {s.viewOnlyDefault = v.toBool();}},
         {"Access & security", "Ban a session that touches xdesk", FieldKind::Toggle, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.banOnTamper);}, [](S& s, const QVariant& v) {s.banOnTamper = v.toBool();}},
+        {"Access & security", "Viewers may ask the control back", FieldKind::Toggle, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.focusRequest);}, [](S& s, const QVariant& v) {s.focusRequest = v.toBool();}},
+        {"Access & security", "Control given back after", FieldKind::Number, 5, 3600, 5, " s", {}, [](const S& s) {return QVariant(s.focusRequestDelay);}, [](S& s, const QVariant& v) {s.focusRequestDelay = v.toInt();}},
         {"Access & security", "Terminal shell", FieldKind::Text, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.shell);}, [](S& s, const QVariant& v) {s.shell = v.toString().trimmed();}},
     };
 

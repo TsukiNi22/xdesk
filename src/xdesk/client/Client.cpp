@@ -240,6 +240,7 @@ void xdesk::client::Client::onText_(const QString& text)
         write_known_hosts(hosts);
         this->_sessionId = m.value("session").toString();
         this->_perms = m.value("perms").toObject();
+        this->_hostScreen = QSize(m.value("screen").toObject().value("w").toInt(), m.value("screen").toObject().value("h").toInt());
         this->setState_(State::Active);
         this->_ping.start(1000);
         if (m.contains("udp")) (void)this->_udp.start(this->_ws->peerAddress(), m.value("udp").toObject()); // tcp until the host answers there
@@ -263,6 +264,10 @@ void xdesk::client::Client::onText_(const QString& text)
     } else if (type == "term_exit") {
         emit this->terminalClosed(static_cast<std::uint8_t>(m.value("id").toInt()), m.value("code").toInt());
     } else if (type == "info") emit this->message(m.value("text").toString());
+    else if (type == "screen") {
+        this->_hostScreen = QSize(m.value("w").toInt(), m.value("h").toInt());
+        emit this->hostScreenChanged(this->_hostScreen);
+    }
 }
 
 void xdesk::client::Client::onBinary_(const QByteArray& data)

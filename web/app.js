@@ -40,13 +40,13 @@
             remember: "Se souvenir de cet appareil (de confiance après accord)", fpLabel: "Empreinte de l'hôte (à comparer avec l'écran de l'hôte)",
             connect: "Se connecter", forget: "Oublier cet appareil", reconnect: "Se reconnecter", back: "Retour", screen: "Écran",
             terminal: "Terminal", newTerminal: "Nouveau terminal", view: "Voir", control: "Contrôler", fit: "Ajuster", actual: "1:1",
-            quality: "Qualité", disconnect: "Déconnecter", noView: "L'hôte n'a pas donné le droit de voir l'écran à cette session.",
+            quality: "Qualité", resNative: "Natif", disconnect: "Déconnecter", noView: "L'hôte n'a pas donné le droit de voir l'écran à cette session.",
             waiting: "En attente", pendingTitle: "En attente de l'hôte", pendingText: "La personne devant l'ordinateur doit accepter la connexion.",
             connecting: "Connexion...", closedTitle: "Session terminée", bannedTitle: "Appareil banni", deniedTitle: "Connexion refusée",
             bannedText: "Cet appareil a été banni par l'hôte. Seule une action locale sur l'ordinateur peut le débannir.",
             lostText: "La connexion a été perdue.", codeRequired: "Entrez le code affiché sur l'hôte.",
             screenLoading: "Chargement de l'écran...", controlLoading: "Contrôles en préparation...", controlReady: "Contrôles prêts",
-            focusAsk: "Demander le contrôle (accordé dans 1 min sauf refus)", focusWait: "Contrôle rendu dans {n} s, sauf refus sur l'ordinateur", focusOther: "Un autre appareil a déjà demandé le contrôle",
+            focusAsk: "Demander le contrôle (accordé dans {d} s sauf refus)", focusWait: "Contrôle rendu dans {n} s, sauf refus sur l'ordinateur", focusOther: "Un autre appareil a déjà demandé le contrôle",
             controlNone: "Contrôle indisponible sur l'hôte", controlPaused: "Contrôle en pause : le panneau xdesk est utilisé sur l'ordinateur (il reprend quand il n'a plus le focus)", controlViewOnly: "Lecture seule : l'hôte n'a pas donné le contrôle",
             controlDenied: "L'hôte n'a pas donné le droit de contrôle.", terminalDenied: "L'hôte n'a pas donné le droit d'ouvrir un terminal.",
             proofMismatch: "L'hôte n'a pas prouvé qu'il connaît le secret de cet appareil : connexion fermée.",
@@ -68,7 +68,7 @@
         bannedText: "This device was banned by the host. Only a local action on the computer can unban it.",
         lostText: "The connection was lost.", codeRequired: "Enter the code shown on the host.",
         screenLoading: "Loading the screen...", controlLoading: "Getting the controls ready...", controlReady: "Controls ready",
-        focusAsk: "Ask the control back (given in 1 min unless refused)", focusWait: "Control back in {n} s unless refused on the computer", focusOther: "Another device already asked the control back",
+        focusAsk: "Ask the control back (given in {d} s unless refused)", focusWait: "Control back in {n} s unless refused on the computer", focusOther: "Another device already asked the control back",
         controlNone: "Remote control unavailable on the host", controlPaused: "Control paused: the xdesk panel is in use on the computer (back when it loses the focus)", controlViewOnly: "View only: the host did not give the control",
         controlDenied: "The host did not give the control right.", terminalDenied: "The host did not give the terminal right.",
         proofMismatch: "The host did not prove it knows the secret of this device: connection closed.",
@@ -424,6 +424,8 @@
         state.frameW = 0;
         state.frameH = 0;
         state.input = {state: "loading", error: ""}; // until the host says (its capture starts with the first viewer)
+        state.hostW = msg.screen && msg.screen.w || 0;
+        state.hostH = msg.screen && msg.screen.h || 0;
         if (msg.udp) bridgeSend({t: "start", offer: msg.udp});
         state.perms = Object.assign({view: false, control: false, terminal: false, clipboard: false}, msg.perms || {});
         setStatus("active");
@@ -594,7 +596,7 @@
             case "ping": sendJson({t: "pong", ts: msg.ts}); break;
             case "pong": state.latency = Math.max(0, Math.round(performance.now() - msg.ts)); break;
             case "perms": state.perms = Object.assign(state.perms, msg.perms || {}); applyPerms(); break;
-            case "screen": /* the next frame carries the new size */ break;
+            case "screen": state.hostW = msg.w || 0; state.hostH = msg.h || 0; sendQuality(); break; // the frames follow with the size asked
             case "info": toast(msg.text || ""); break;
             case "input": onInputState(msg); break;
             case "lanes": setLanes(msg.n); break;
@@ -829,6 +831,7 @@
                     state.frameH = h;
                     state.sizeId = id;
                     updateScreenState();
+                    showResolution();
                     state.tileCols = Math.ceil(w / TILE_SIZE);
                     state.tileIds = new Uint32Array(state.tileCols * Math.ceil(h / TILE_SIZE));
                     canvas.width = w;
@@ -959,7 +962,7 @@
 
     function onInputState(msg) {
         const before = state.input ? state.input.state : "";
-        state.input = {state: msg.state || "none", error: msg.error || "", until: msg.wait > 0 ? performance.now() + msg.wait : 0, asked: !!msg.asked};
+        state.input = {state: msg.state || "none", error: msg.error || "", until: msg.wait > 0 ? performance.now() + msg.wait : 0, asked: !!msg.asked, canAsk: msg.canAsk !== false, delay: msg.delay || 60};
         updateScreenState();
         if (state.input.state === "ready" && before !== "ready" && state.mode === "control") {
             const el = $("screenState");
@@ -988,7 +991,8 @@
             const left = input.until ? Math.max(0, Math.ceil((input.until - performance.now()) / 1000)) : 0;
             kind = "warn";
             text = left ? t("focusWait").replace("{n}", left) : t("controlPaused") + (input.asked ? " · " + t("focusOther") : "");
-            ask = !left && !input.asked;
+            ask = !left && !input.asked && input.canAsk;
+            $("screenStateBtn").textContent = t("focusAsk").replace("{d}", input.delay);
             if (left) readyTimer = setTimeout(updateScreenState, 1000); // countdown
         }
         else if (state.mode === "control" && input.state === "none") {kind = "warn"; text = t("controlNone") + (input.error ? ": " + input.error : "");}
@@ -1021,13 +1025,24 @@
     function sendQuality() {
         const quality = parseInt($("qualityInput").value, 10);
         const fps = parseInt($("fpsSelect").value, 10);
+        const height = parseInt($("resSelect").value, 10) || 0;
+        // Scale of the captured screen of the host (never above its own resolution)
+        const scale = height > 0 && state.hostH > 0 ? Math.min(1, height / state.hostH) : 1;
         save("quality", String(quality));
         save("fps", String(fps));
-        sendJson({t: "quality", quality: quality, scale: 1.0, fps: fps});
+        save("res", String(height));
+        sendJson({t: "quality", quality: quality, scale: scale, fps: fps});
     }
 
     $("qualityInput").addEventListener("change", sendQuality);
     $("fpsSelect").addEventListener("change", sendQuality);
+    $("resSelect").addEventListener("change", sendQuality);
+
+    // Resolution of the frames received, next to the quality
+    function showResolution() {
+        $("resNow").textContent = state.frameW ? state.frameH + "p" : "-";
+        $("resNow").title = state.frameW ? state.frameW + "×" + state.frameH : "";
+    }
 
     // Stats + ping every second
     setInterval(() => {
@@ -1985,6 +2000,8 @@
     applyLanguage();
     $("nameInput").value = load("name") || guessName();
     $("qualityInput").value = load("quality") || "70";
+    $("resSelect").value = load("res") || "0";
+    if ($("resSelect").selectedIndex < 0) $("resSelect").value = "0";
     $("fpsSelect").value = load("fps") || "60"; // the flow control lowers it by itself when the link cannot follow
     $("fitSelect").value = load("fit") || "fit";
     $("forgetBtn").hidden = !getDevice();

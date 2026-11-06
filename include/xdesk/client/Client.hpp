@@ -88,6 +88,7 @@ class Client: public QObject {
         QString _hostName = "";
         QString _sessionId = "";
         QImage _canvas; // composed screen
+        QSize _hostScreen; // captured size of the host (resolution presets of the viewer)
         QTimer _ping; // latency every second
         int _latency = -1;
         UdpLink _udp; // video over encrypted udp when the host offers it
@@ -137,6 +138,7 @@ class Client: public QObject {
         _cold _nodiscard inline const QString& hostName(void) const        {return this->_hostName;};
         _cold _nodiscard inline const QJsonObject& permissions(void) const {return this->_perms;};
         _cold _nodiscard inline const QImage& canvas(void) const           {return this->_canvas;};
+        _cold _nodiscard inline QSize hostScreen(void) const               {return this->_hostScreen;};
         _cold _nodiscard inline int latency(void) const                    {return this->_latency;};
         _cold _nodiscard inline const Options& options(void) const         {return this->_options;};
 
@@ -155,6 +157,7 @@ class Client: public QObject {
         void terminalOutput(const std::uint8_t id, const QByteArray& data);
         void terminalClosed(const std::uint8_t id, const int code);
         void latencyChanged(const int milliseconds);
+        void hostScreenChanged(const QSize& size); // captured size of the host (0 x 0 until its capture starts)
         void message(const QString& text); // info for the user
         void closed(const QString& reason, const bool banned);
 };

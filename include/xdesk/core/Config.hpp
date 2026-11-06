@@ -77,6 +77,8 @@ struct Settings {
     bool allowWeb = true; // browsers and the android app
     bool viewOnlyDefault = false; // new sessions start in view only mode
     bool banOnTamper = true; // ban a session caught touching xdesk
+    bool focusRequest = true; // a viewer paused by the focus of the host panel may ask its control back
+    int focusRequestDelay = 60; // seconds before that request is granted (time to refuse / unplug)
     QString shell = ""; // shell of the remote terminals (empty = $SHELL / cmd.exe)
 
     /* stream */

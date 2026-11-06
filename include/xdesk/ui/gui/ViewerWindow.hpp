@@ -34,6 +34,7 @@ File Description:
     #include <QPushButton>                  // QPushButton
     #include <QTabWidget>                   // QTabWidget
     #include <QLineEdit>                    // QLineEdit
+    #include <QComboBox>                    // QComboBox
     #include <QCheckBox>                    // QCheckBox
     #include <QSpinBox>                     // QSpinBox
     #include <QToolBar>                     // QToolBar
@@ -116,6 +117,8 @@ class ViewerWindow: public QMainWindow {
         QAction* _controlAction = nullptr;
         QLabel* _latency = nullptr;
         QSlider* _quality = nullptr;
+        QComboBox* _resolution = nullptr; // native, 1080p ... 144p (height asked to the host)
+        QLabel* _received = nullptr; // resolution of the frames received
         QHash<std::uint8_t, TerminalWidget*> _terminals;
 
         // ---------- Pre-Function -------- //
@@ -125,6 +128,7 @@ class ViewerWindow: public QMainWindow {
         void loadRecent_(void);
         void startConnection_(void);
         void openTerminal_(void);
+        void sendQuality_(void); // quality + scale of the asked resolution
         void onState_(const client::State state);
         Q_INVOKABLE void retheme_(void); // icons drawn again in the new colours (called by Theme::apply)
 

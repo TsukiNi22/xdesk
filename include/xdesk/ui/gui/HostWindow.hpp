@@ -136,6 +136,8 @@ class HostWindow: public QMainWindow {
         QCheckBox* _setAllowWeb = nullptr;
         QCheckBox* _setViewOnly = nullptr;
         QCheckBox* _setBanOnTamper = nullptr;
+        QCheckBox* _setFocusRequest = nullptr; // viewers paused by the focus of the panel may ask the control back
+        QSpinBox* _setFocusDelay = nullptr; // seconds before that request is granted
         QLineEdit* _setShell = nullptr;
         QSpinBox* _setFps = nullptr;
         QComboBox* _setResolution = nullptr; // max height presets (0 = native)

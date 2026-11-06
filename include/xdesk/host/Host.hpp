@@ -127,7 +127,7 @@ class Host: public QObject {
         void terminalInput_(Terminal& terminal, const QByteArray& data);
         void updateMarker_(void);
         void openInjector_(void); // input backend for the captured screen (logs once why it fails)
-        void requestFocus_(Session* session); // "focus_request" of a viewer: granted after FOCUS_REQUEST_DELAY
+        void requestFocus_(Session* session); // "focus_request" of a viewer: granted after the delay of the settings (focusRequestDelay)
         void grantFocus_(void); // the delay of the request is over
         void endFocus_(const QString& why); // pending request and override dropped (logged with why, "" = silent)
         void sendInputState_(Session* session = nullptr) const; // {"t": "input", "state": ready|loading|paused|none, "error"} to one session (nullptr = every active one)
@@ -141,6 +141,7 @@ class Host: public QObject {
         // ---------- Pre-Function -------- //
         void start(const bool share = true); // certificate, registry, guard, then the sharing when asked (throws Network / Certificate)
         void stop(void); // sharing off, clean marker
+        void stopSignal(const int sig); // stopped by a signal: the remote sessions acting right now are blamed, else a clean local stop
         void setSharing(const bool share); // server + exposure + capture on / off, the app keeps running (throws Network)
 
         /* sessions */

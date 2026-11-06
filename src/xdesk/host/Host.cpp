@@ -40,7 +40,6 @@ File Description:
 /* DEFINE */
 
 #define TAMPER_INPUT_WINDOW 5000 // ms: keyboard / mouse input this recent = a possible author of an unexplained file change
-#define FOCUS_REQUEST_DELAY 60000 // ms before a viewer gets its control back while the panel keeps the focus (time to refuse, unplug...)
 
 // Human readable input of the activity feed
 static QString mouse_button_name(const std::uint8_t button)
@@ -496,7 +495,7 @@ void xdesk::host::Host::onControl_(Session* session, const QJsonObject& message)
 
     if (type == "quality") {
         const int quality = std::clamp(message.value("quality").toInt(70), 1, 100);
-        const double scale = std::clamp(message.value("scale").toDouble(1.0), 0.25, 1.0);
+        const double scale = std::clamp(message.value("scale").toDouble(1.0), 0.05, 1.0); // resolution asked by the viewer (1080p of a 4k screen = 0.25, 144p of 1080p = 0.13)
         const int fps = std::clamp(message.value("fps").toInt(30), 1, 60);
         this->_scales[session->id()] = scale;
         if (this->_stream)
@@ -725,6 +724,18 @@ void xdesk::host::Host::onClosed_(Session* session)
     emit this->sessionRemoved(id);
     session->deleteLater();
     this->updateMarker_();
+}
+
+void xdesk::host::Host::stopSignal(const int sig)
+{
+    const QStringList busy = this->_guard.busyTerminals();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    bool acting = false;
+
+    for (Session* s: this->_sessions)
+        if (s->state() == State::Active && (busy.contains(s->id()) || (s->permissions().control && s->mode() == "control" && now - s->lastInput() < TAMPER_INPUT_WINDOW))) acting = true;
+    if (acting) this->onTamper_("", "xdesk stopped by the signal " + QString::number(sig) + " while a remote session was acting");
+    else this->_log.info("server", "", "Stopped by the signal " + QString::number(sig) + " (logout, shutdown, local stop): no remote session acting, nobody banned");
 }
 
 void xdesk::host::Host::onTamper_(const QString& session, const QString& reason)
@@ -974,7 +985,14 @@ void xdesk::host::Host::refuseFocusRequest(void)
 
 void xdesk::host::Host::requestFocus_(Session* session)
 {
+    const int delay = this->_config.settings().focusRequestDelay * 1000; // ms before the control is given back (setting)
+
     if (!this->_panelFocused || !session->permissions().control || session->mode() != "control" || this->_focusOverride == session->id()) {
+        this->sendInputState_(session);
+        return;
+    }
+    if (!this->_config.settings().focusRequest) {
+        session->sendJson({{"t", "info"}, {"text", "This host does not let the viewers ask the control back: someone has to leave the xdesk panel on the computer"}});
         this->sendInputState_(session);
         return;
     }
@@ -984,9 +1002,9 @@ void xdesk::host::Host::requestFocus_(Session* session)
         return;
     }
     this->_focusRequest = session->id();
-    this->_focusDeadline = QDateTime::currentMSecsSinceEpoch() + FOCUS_REQUEST_DELAY;
-    this->_focusTimer.start(FOCUS_REQUEST_DELAY);
-    this->_log.warn("input", session->id(), session->name() + " asks the remote control back while the panel has the focus: given in " + QString::number(FOCUS_REQUEST_DELAY / 1000) + " s unless refused");
+    this->_focusDeadline = QDateTime::currentMSecsSinceEpoch() + delay;
+    this->_focusTimer.start(delay);
+    this->_log.warn("input", session->id(), session->name() + " asks the remote control back while the panel has the focus: given in " + QString::number(delay / 1000) + " s unless refused");
     this->sendInputState_(session);
     emit this->focusRequestChanged();
 }
@@ -1001,7 +1019,7 @@ void xdesk::host::Host::grantFocus_(void)
     if (s && s->state() == State::Active && s->permissions().control && s->mode() == "control" && this->_panelFocused) {
         this->_focusOverride = s->id();
         s->setControlPaused(false);
-        this->_log.alert("input", s->id(), "Remote control given back to " + s->name() + ": the panel kept the focus " + QString::number(FOCUS_REQUEST_DELAY / 1000) + " s (a key / click in the panel pauses it again)");
+        this->_log.alert("input", s->id(), "Remote control given back to " + s->name() + ": the panel kept the focus " + QString::number(this->_config.settings().focusRequestDelay) + " s (a key / click in the panel pauses it again)");
     }
     this->sendInputState_();
     emit this->focusRequestChanged();
@@ -1068,7 +1086,7 @@ void xdesk::host::Host::sendInputState_(Session* session) const
         // Paused for everyone but the viewer whose request was granted; "wait" = ms left of its own request
         const QString state = this->_injector ? (this->_panelFocused && this->_focusOverride != s->id() ? "paused" : "ready") : (loading ? "loading" : "none");
         const qint64 wait = this->_focusRequest == s->id() ? std::max<qint64>(0, this->_focusDeadline - now) : 0;
-        s->sendJson({{"t", "input"}, {"state", state}, {"error", state == "none" ? error : QString()}, {"wait", wait}, {"asked", !this->_focusRequest.isEmpty() && this->_focusRequest != s->id()}});
+        s->sendJson({{"t", "input"}, {"state", state}, {"error", state == "none" ? error : QString()}, {"wait", wait}, {"asked", !this->_focusRequest.isEmpty() && this->_focusRequest != s->id()}, {"canAsk", this->_config.settings().focusRequest}, {"delay", this->_config.settings().focusRequestDelay}});
     }
 }
 
