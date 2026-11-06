@@ -25,8 +25,8 @@ File Description:
 #include "xdesk/net/Exposure.hpp"
 #include "xdesk/ui/gui/Theme.hpp"
 #include <QJsonDocument>
-#include <QJsonObject>
 #include <QApplication>
+#include <QJsonObject>
 #include <QMessageBox>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -543,6 +543,7 @@ QWidget* xdesk::ui::gui::ViewerWindow::buildViewer_(void)
         this->_screen->setFocus();
     });
     QObject::connect(this->_quality, &QSlider::sliderReleased, this, [this]() {this->_client.setQuality(this->_quality->value(), 1.0, 60);});
+    QObject::connect(this->_tabs, &QTabWidget::currentChanged, this, [this](const int index) {this->_client.setPaused(this->_tabs->widget(index) != this->_screen);});
     QObject::connect(this->_tabs, &QTabWidget::tabCloseRequested, this, [this](const int index) {
         for (QHash<std::uint8_t, TerminalWidget*>::iterator it = this->_terminals.begin(); it != this->_terminals.end(); ++it) {
             if (this->_tabs->widget(index) != it.value()) continue;

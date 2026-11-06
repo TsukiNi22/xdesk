@@ -22,11 +22,16 @@ File Description:
 #include <utils/utils.hpp>
 #include "xdesk/platform/FrameEncoder.hpp"
 #include "xdesk/net/Protocol.hpp"
+#include <QThreadPool>
+#include <QSemaphore>
+#include <functional>
 #include <algorithm>
 #include <jpeglib.h>
+#include <QThread>
 #include <csetjmp>
 #include <cstring>
 #include <cstdlib>
+#include <atomic>
 #include <cstdio>
 #include <QRect>
 #include <QList>
@@ -35,6 +40,9 @@ File Description:
 /* DEFINE */
 
 #define MAX_RUN_TILES 16 // dirty tiles of one row merged in one jpeg (less headers, better compression)
+#define MOTION_SHARE 4 // more than 1 / 4 of the tiles changed = motion (scroll, video, drag): sent lighter
+#define STILL_SHARE 32 // less than 1 / 32 changed = still: the light tiles of the motion are sent again sharp
+#define MAX_WORKERS 8 // encoding threads (rows of tiles in parallel)
 
 //----------------------------------------------------------------//
 /* STRUCT */
@@ -184,19 +192,48 @@ _hot static bool solid_tile(const unsigned char* bits, const int stride, const i
     return true;
 }
 
+void xdesk::platform::parallel_for(const int count, const std::function<void(const int)>& fn)
+{
+    static QThreadPool pool; // own pool: never waits behind the tasks of the global one
+    const int workers = std::min({count, MAX_WORKERS, std::max(1, QThread::idealThreadCount())});
+    std::atomic<int> next = 0;
+    QSemaphore done;
+    const std::function<void(void)> work = [&next, &done, &fn, count](void) {
+        for (int i = next++; i < count; i = next++)
+            fn(i);
+        done.release();
+    };
+
+    if (workers <= 1) {
+        for (int i = 0; i < count; ++i)
+            fn(i);
+        return;
+    }
+    pool.setMaxThreadCount(MAX_WORKERS);
+    for (int w = 1; w < workers; ++w)
+        pool.start(work);
+    work();
+    done.acquire(workers);
+}
+
 //----------------------------------------------------------------//
 /* CLASS */
 
 void xdesk::platform::FrameEncoder::reset(void)
 {
     std::fill(this->_hashes.begin(), this->_hashes.end(), 0);
+    std::fill(this->_quality.begin(), this->_quality.end(), 0);
 }
 
 QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int quality)
 {
     QImage image = frame;
     QList<QByteArray> tiles;
-    QVector<char> dirty;
+    QVector<std::uint64_t> hashes;
+    QVector<int> want; // jpeg quality to send each tile with (0 = nothing to send)
+    QVector<QList<QByteArray>> rows;
+    int changed = 0;
+    int moved = 0;
 
     if (image.isNull() || image.width() <= 0 || image.height() <= 0) return {};
     if (image.width() > 0xFFFF || image.height() > 0xFFFF) return {};
@@ -210,68 +247,96 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
         this->_cols = (this->_width + XDESK_TILE_SIZE - 1) / XDESK_TILE_SIZE;
         this->_rows = (this->_height + XDESK_TILE_SIZE - 1) / XDESK_TILE_SIZE;
         this->_hashes = QVector<std::uint64_t>(static_cast<qsizetype>(this->_cols) * this->_rows, 0);
+        this->_quality = QVector<std::uint8_t>(static_cast<qsizetype>(this->_cols) * this->_rows, 0);
     }
 
     const unsigned char* bits = image.constBits();
     const int stride = static_cast<int>(image.bytesPerLine());
-    dirty = QVector<char>(static_cast<qsizetype>(this->_cols) * this->_rows, 0);
+    const qsizetype count = static_cast<qsizetype>(this->_cols) * this->_rows;
+    const int quiet = std::clamp(quality, 1, 100);
+    hashes = QVector<std::uint64_t>(count, 0);
+    want = QVector<int>(count, 0);
+    rows = QVector<QList<QByteArray>>(this->_rows);
 
-    // Find the changed tiles (solid ones are written at once, the others merged by row below)
-    for (int ty = 0; ty < this->_rows; ++ty) {
+    // Hash every tile (rows in parallel)
+    parallel_for(this->_rows, [&](const int ty) {
         for (int tx = 0; tx < this->_cols; ++tx) {
             const int x = tx * XDESK_TILE_SIZE;
             const int y = ty * XDESK_TILE_SIZE;
-            const int w = std::min(XDESK_TILE_SIZE, this->_width - x);
-            const int h = std::min(XDESK_TILE_SIZE, this->_height - y);
-            const qsizetype index = static_cast<qsizetype>(ty) * this->_cols + tx;
-            const std::uint64_t hash = hash_tile(bits, stride, x, y, w, h);
-            std::uint32_t color = 0;
-
-            if (this->_hashes[index] == hash) continue;
-            this->_hashes[index] = hash;
-            if (solid_tile(bits, stride, x, y, w, h, &color)) {
-                net::ByteWriter tile(net::Binary::Frame, 16);
-                tile.u16(static_cast<std::uint16_t>(x)).u16(static_cast<std::uint16_t>(y)).u16(static_cast<std::uint16_t>(w)).u16(static_cast<std::uint16_t>(h));
-                tile.u8(static_cast<std::uint8_t>(net::TileEncoding::Solid));
-                tile.u8(static_cast<std::uint8_t>(color >> 16)).u8(static_cast<std::uint8_t>(color >> 8)).u8(static_cast<std::uint8_t>(color));
-                tiles.append(tile.data().mid(1));
-            } else {
-                dirty[index] = 1;
-            }
+            hashes[static_cast<qsizetype>(ty) * this->_cols + tx] = hash_tile(bits, stride, x, y, std::min(XDESK_TILE_SIZE, this->_width - x), std::min(XDESK_TILE_SIZE, this->_height - y));
         }
+    });
+
+    // Motion (many known tiles changed): lighter jpeg, still (almost nothing changed): the light tiles sent again sharp
+    for (qsizetype i = 0; i < count; ++i) {
+        if (hashes[i] == this->_hashes[i]) continue;
+        changed++;
+        if (this->_hashes[i] != 0) moved++;
+    }
+    const int motion = moved * MOTION_SHARE > count ? std::max(20, quiet * 3 / 5) : quiet;
+    const bool still = static_cast<qsizetype>(changed) * STILL_SHARE < count;
+    for (qsizetype i = 0; i < count; ++i) {
+        if (hashes[i] != this->_hashes[i]) want[i] = this->_hashes[i] != 0 ? motion : quiet; // a new tile (first frame, reset): sharp at once
+        else if (still && this->_quality[i] != 0 && this->_quality[i] < quiet) want[i] = quiet;
     }
 
-    // Runs of dirty tiles on one row: one jpeg each
-    for (int ty = 0; ty < this->_rows; ++ty) {
+    // Encode each row (in parallel): solid tiles at once, runs of tiles of the same quality in one jpeg
+    parallel_for(this->_rows, [&](const int ty) {
+        QList<QByteArray>& out = rows[ty];
         int tx = 0;
+
+        for (int i = 0; i < this->_cols; ++i) {
+            const qsizetype index = static_cast<qsizetype>(ty) * this->_cols + i;
+            const int x = i * XDESK_TILE_SIZE;
+            const int y = ty * XDESK_TILE_SIZE;
+            std::uint32_t color = 0;
+
+            if (want[index] == 0 || hashes[index] == this->_hashes[index]) continue; // nothing / a sharper copy of an unchanged tile
+            if (!solid_tile(bits, stride, x, y, std::min(XDESK_TILE_SIZE, this->_width - x), std::min(XDESK_TILE_SIZE, this->_height - y), &color)) continue;
+            net::ByteWriter tile(net::Binary::Frame, 16);
+            tile.u16(static_cast<std::uint16_t>(x)).u16(static_cast<std::uint16_t>(y));
+            tile.u16(static_cast<std::uint16_t>(std::min(XDESK_TILE_SIZE, this->_width - x))).u16(static_cast<std::uint16_t>(std::min(XDESK_TILE_SIZE, this->_height - y)));
+            tile.u8(static_cast<std::uint8_t>(net::TileEncoding::Solid));
+            tile.u8(static_cast<std::uint8_t>(color >> 16)).u8(static_cast<std::uint8_t>(color >> 8)).u8(static_cast<std::uint8_t>(color));
+            out.append(tile.data().mid(1));
+            want[index] = 0;
+            this->_quality[index] = 0; // exact
+        }
         while (tx < this->_cols) {
-            if (!dirty[static_cast<qsizetype>(ty) * this->_cols + tx]) {++tx; continue;}
+            const qsizetype first = static_cast<qsizetype>(ty) * this->_cols + tx;
+            const int q = want[first];
             int end = tx;
-            while (end < this->_cols && end - tx < MAX_RUN_TILES && dirty[static_cast<qsizetype>(ty) * this->_cols + end])
+            unsigned char* jpeg = nullptr;
+            unsigned long jpegSize = 0;
+
+            if (q == 0) {++tx; continue;}
+            while (end < this->_cols && end - tx < MAX_RUN_TILES && want[static_cast<qsizetype>(ty) * this->_cols + end] == q)
                 ++end;
             const int x = tx * XDESK_TILE_SIZE;
             const int y = ty * XDESK_TILE_SIZE;
             const int w = std::min(end * XDESK_TILE_SIZE, this->_width) - x;
             const int h = std::min(XDESK_TILE_SIZE, this->_height - y);
-            unsigned char* out = nullptr;
-            unsigned long outSize = 0;
-
-            if (jpeg_encode_rect(bits, stride, x, y, w, h, quality, &out, &outSize)) {
-                net::ByteWriter tile(net::Binary::Frame, outSize + 16);
+            const bool sent = jpeg_encode_rect(bits, stride, x, y, w, h, q, &jpeg, &jpegSize);
+            if (sent) {
+                net::ByteWriter tile(net::Binary::Frame, jpegSize + 16);
                 tile.u16(static_cast<std::uint16_t>(x)).u16(static_cast<std::uint16_t>(y)).u16(static_cast<std::uint16_t>(w)).u16(static_cast<std::uint16_t>(h));
                 tile.u8(static_cast<std::uint8_t>(net::TileEncoding::Jpeg));
-                tile.u32(static_cast<std::uint32_t>(outSize));
-                tile.bytes(QByteArray(reinterpret_cast<const char*>(out), static_cast<qsizetype>(outSize)));
-                tiles.append(tile.data().mid(1));
-            } else {
-                // Not sent: forget the hashes so that the next frame retries them
-                for (int i = tx; i < end; ++i)
-                    this->_hashes[static_cast<qsizetype>(ty) * this->_cols + i] = 0;
+                tile.u32(static_cast<std::uint32_t>(jpegSize));
+                tile.bytes(QByteArray(reinterpret_cast<const char*>(jpeg), static_cast<qsizetype>(jpegSize)));
+                out.append(tile.data().mid(1));
             }
-            if (out) std::free(out);
+            for (int i = tx; i < end; ++i) {
+                const qsizetype index = static_cast<qsizetype>(ty) * this->_cols + i;
+                if (sent) this->_quality[index] = static_cast<std::uint8_t>(q);
+                else hashes[index] = 0; // not sent: the next frame retries it
+            }
+            if (jpeg) std::free(jpeg);
             tx = end;
         }
-    }
+    });
+    this->_hashes = hashes;
+    for (const QList<QByteArray>& row: rows)
+        tiles.append(row);
     if (tiles.isEmpty()) return {};
 
     // Message: header + tiles (count fits: 4K = 60 x 34 tiles)

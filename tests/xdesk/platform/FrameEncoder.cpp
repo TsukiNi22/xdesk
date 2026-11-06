@@ -109,3 +109,31 @@ TEST(FrameEncoder, ResizeSendsACompleteFrame)
     const QImage smaller = test_frame().scaled(320, 180);
     EXPECT_EQ(std::get<3>(tiles_of(encoder.encode(smaller, 70))), 320L * 180L);
 }
+
+TEST(FrameEncoder, MotionIsLighterThenSentAgainSharp)
+{
+    xdesk::platform::FrameEncoder encoder;
+    QImage frame = test_frame();
+    QImage moved;
+    long sharp = 0;
+    long light = 0;
+
+    // First frame: sharp (nothing to send again)
+    for (int y = 0; y < 360; ++y)
+        for (int x = 0; x < 640; ++x)
+            frame.setPixel(x, y, qRgb((x * 7 + y) % 256, (x + y * 3) % 256, (x * y) % 256)); // noise: no solid tile
+    sharp = encoder.encode(frame, 90).size();
+    EXPECT_TRUE(encoder.encode(frame, 90).isEmpty());
+
+    // Everything moved (scrolled by 3 pixels): lighter than the sharp frame
+    moved = frame.copy(3, 0, 640, 360);
+    light = encoder.encode(moved, 90).size();
+    EXPECT_GT(light, 0);
+    EXPECT_LT(light, sharp);
+
+    // Still now: the same tiles sent again sharp, once
+    const QByteArray again = encoder.encode(moved, 90);
+    EXPECT_EQ(std::get<3>(tiles_of(again)), 640L * 360L);
+    EXPECT_GT(again.size(), light);
+    EXPECT_TRUE(encoder.encode(moved, 90).isEmpty());
+}

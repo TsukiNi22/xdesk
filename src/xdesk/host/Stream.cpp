@@ -27,6 +27,11 @@ File Description:
 #include <QHash>
 #include <cmath>
 
+//----------------------------------------------------------------//
+/* DEFINE */
+
+#define OPEN_DELAY 400 // ms waited after a new client before the capture starts (its pause message comes first)
+
 xdesk::host::Stream::Stream(QObject* parent)
 : QObject(parent)
 {
@@ -91,8 +96,15 @@ void xdesk::host::Stream::addClient(const QString& session, const int quality, c
     client.fps = fps;
     this->_clients.insert(session, client);
     if (this->_idle) this->_idle->stop();
-    if (!this->_capture) this->openCapture_();
+    if (!this->_capture) QTimer::singleShot(OPEN_DELAY, this, &Stream::openIfWatched_); // a client opening on a terminal pauses at once: no capture for it
     else if (this->_timer && !this->_timer->isActive()) this->_timer->start(4);
+}
+
+void xdesk::host::Stream::openIfWatched_(void)
+{
+    if (this->_capture) return;
+    for (const StreamClient& client: this->_clients)
+        if (!client.paused) {this->openCapture_(); return;}
 }
 
 void xdesk::host::Stream::removeClient(const QString& session)
@@ -117,14 +129,27 @@ void xdesk::host::Stream::setQuality(const QString& session, const int quality, 
     it->quality = quality;
     it->scale = scale;
     it->effective = 0.0; // recomputed (and announced) with the next frame
+    it->idle = 0; // a higher quality sends the still tiles again
     it->fps = fps;
+}
+
+void xdesk::host::Stream::setPaused(const QString& session, const bool paused)
+{
+    QHash<QString, StreamClient>::iterator it = this->_clients.find(session);
+
+    if (it == this->_clients.end()) return;
+    it->paused = paused;
+    it->inFlight = 0; // the acks of the frames before the pause may never come
+    if (!paused) this->openIfWatched_(); // the first look at the screen starts the capture
 }
 
 void xdesk::host::Stream::refresh(const QString& session)
 {
     QHash<QString, StreamClient>::iterator it = this->_clients.find(session);
 
-    if (it != this->_clients.end()) it->encoder.reset();
+    if (it == this->_clients.end()) return;
+    it->encoder.reset();
+    it->idle = 0;
 }
 
 void xdesk::host::Stream::tick_(void)
@@ -139,7 +164,7 @@ void xdesk::host::Stream::tick_(void)
     // Who can take a frame now (pacing + frames in flight)
     for (StreamClient& client: this->_clients) {
         if (client.inFlight >= XDESK_FRAMES_IN_FLIGHT && now - client.lastFrame > 1500) client.inFlight = 0; // ack lost: resume
-        if (client.inFlight < XDESK_FRAMES_IN_FLIGHT && now - client.lastFrame >= 1000 / std::max(1, client.fps)) anyReady = true;
+        if (!client.paused && client.inFlight < XDESK_FRAMES_IN_FLIGHT && now - client.lastFrame >= 1000 / std::max(1, client.fps)) anyReady = true;
     }
     if (!anyReady) return;
     frame = this->_capture->grab();
@@ -148,8 +173,10 @@ void xdesk::host::Stream::tick_(void)
     // Resolution changed: every client gets a complete frame
     if (frame.size() != this->_size) {
         this->_size = frame.size();
-        for (StreamClient& client: this->_clients)
+        for (StreamClient& client: this->_clients) {
             client.encoder.reset();
+            client.idle = 0;
+        }
         emit this->resized(this->_size);
     }
 
@@ -161,18 +188,21 @@ void xdesk::host::Stream::tick_(void)
         const int key = static_cast<int>(std::lround(effective * 1000));
         QByteArray message;
 
-        if (client.inFlight >= XDESK_FRAMES_IN_FLIGHT || now - client.lastFrame < 1000 / std::max(1, client.fps)) continue;
+        if (client.paused || client.inFlight >= XDESK_FRAMES_IN_FLIGHT || now - client.lastFrame < 1000 / std::max(1, client.fps)) continue;
 
         // Another size: a complete frame, and the host maps the input with the new scale
         if (std::abs(client.effective - effective) > 0.0005) {
             if (client.effective > 0.0) client.encoder.reset();
             client.effective = effective;
+            client.idle = 0;
             emit this->scaled(it.key(), effective);
         }
+        if (client.idle == frame.cacheKey()) continue; // the same capture as the last empty encode: no scaling, no hashing
         if (!scaled.contains(key))
             scaled.insert(key, key >= 1000 ? frame : frame.scaled(std::max(1, static_cast<int>(frame.width() * effective)), std::max(1, static_cast<int>(frame.height() * effective)), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
         client.lastFrame = now;
         message = client.encoder.encode(scaled.value(key), client.quality);
+        client.idle = message.isEmpty() ? frame.cacheKey() : 0;
         if (message.isEmpty()) continue;
         client.inFlight++;
         emit this->frame(it.key(), message);

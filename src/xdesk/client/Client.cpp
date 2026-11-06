@@ -30,8 +30,9 @@ File Description:
 #include <QHostInfo>
 #include <QDateTime>
 #include <QSaveFile>
+#include <algorithm>
 #include <QSysInfo>
-#include <QPainter>
+#include <cstring>
 #include <QFile>
 
 // known_hosts.json helpers
@@ -280,35 +281,46 @@ void xdesk::client::Client::decodeFrame_(const QByteArray& data)
     const int width = r.u16();
     const int height = r.u16();
     const int count = r.u16();
+    QList<QPair<QRect, QByteArray>> jpegs;
     QRect dirty;
 
     if (!r.ok() || width == 0 || height == 0) return;
+
+    // Ack at once: the host encodes the next frame while this one is decoded (latency over throughput)
+    net::ByteWriter ack(net::Binary::FrameAck, 5);
+    this->_ws->sendBinary(ack.u32(id).data());
     if (this->_canvas.size() != QSize(width, height)) {
         this->_canvas = QImage(width, height, QImage::Format_RGB32);
         this->_canvas.fill(Qt::black);
         dirty = this->_canvas.rect();
     }
-    {
-        QPainter painter(&this->_canvas);
-        for (int i = 0; i < count && r.ok(); ++i) {
-            const QRect tile(r.u16(), r.u16(), r.u16(), r.u16());
-            const std::uint8_t encoding = r.u8();
-            if (encoding == static_cast<std::uint8_t>(net::TileEncoding::Jpeg)) {
-                const QImage image = platform::FrameEncoder::decodeJpeg(r.bytes(static_cast<qsizetype>(r.u32())));
-                if (!image.isNull()) painter.drawImage(tile.topLeft(), image);
-            } else if (encoding == static_cast<std::uint8_t>(net::TileEncoding::Solid)) {
-                const int red = r.u8();
-                const int green = r.u8();
-                const int blue = r.u8();
-                painter.fillRect(tile, QColor(red, green, blue));
-            } else break;
-            dirty = dirty.united(tile);
-        }
-    }
 
-    // Ack at once: the host sends the next frame (latency over throughput)
-    net::ByteWriter ack(net::Binary::FrameAck, 5);
-    this->_ws->sendBinary(ack.u32(id).data());
+    // Solid tiles at once, the jpeg ones decoded in parallel (the tiles of a frame never overlap)
+    const QRect bounds = this->_canvas.rect();
+    for (int i = 0; i < count && r.ok(); ++i) {
+        const QRect tile(r.u16(), r.u16(), r.u16(), r.u16());
+        const std::uint8_t encoding = r.u8();
+        if (encoding == static_cast<std::uint8_t>(net::TileEncoding::Jpeg)) jpegs.append({tile, r.bytes(static_cast<qsizetype>(r.u32()))});
+        else if (encoding == static_cast<std::uint8_t>(net::TileEncoding::Solid)) {
+            const int red = r.u8();
+            const int green = r.u8();
+            const int blue = r.u8();
+            const QRect area = tile.intersected(bounds);
+            const QRgb color = qRgb(red, green, blue);
+            for (int y = area.top(); y <= area.bottom(); ++y)
+                std::fill_n(reinterpret_cast<QRgb*>(this->_canvas.scanLine(y)) + area.left(), area.width(), color);
+        } else break;
+        dirty = dirty.united(tile);
+    }
+    uchar* bits = this->_canvas.bits(); // detached here, before the threads write their own rectangles
+    const qsizetype stride = this->_canvas.bytesPerLine();
+    platform::parallel_for(static_cast<int>(jpegs.size()), [&jpegs, bits, stride, bounds](const int i) {
+        const QImage image = platform::FrameEncoder::decodeJpeg(jpegs[i].second);
+        const QRect area = QRect(jpegs[i].first.topLeft(), image.size()).intersected(bounds);
+        if (image.isNull() || area.isEmpty()) return;
+        for (int y = 0; y < area.height(); ++y)
+            std::memcpy(bits + (area.top() + y) * stride + area.left() * 4, image.constScanLine(y), static_cast<std::size_t>(area.width()) * 4);
+    });
     if (!dirty.isEmpty()) emit this->frameUpdated(dirty);
 }
 
@@ -363,6 +375,12 @@ void xdesk::client::Client::requestMode(const QString& mode)
 {
     if (this->_ws && this->_state == State::Active)
         this->_ws->sendText(QString::fromUtf8(QJsonDocument(QJsonObject{{"t", "mode"}, {"mode", mode}}).toJson(QJsonDocument::Compact)));
+}
+
+void xdesk::client::Client::setPaused(const bool paused)
+{
+    if (this->_ws && this->_state == State::Active)
+        this->_ws->sendText(QString::fromUtf8(QJsonDocument(QJsonObject{{"t", "pause"}, {"paused", paused}}).toJson(QJsonDocument::Compact)));
 }
 
 std::uint8_t xdesk::client::Client::openTerminal(const int cols, const int rows)

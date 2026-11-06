@@ -112,6 +112,7 @@ class Client: public QObject {
         _hot void text(const QString& text);
         void setQuality(const int quality, const double scale, const int fps);
         void requestMode(const QString& mode); // view | control
+        void setPaused(const bool paused); // no frame while the screen is not shown (terminal tab): the terminal bytes never wait behind frames
 
         /* terminal */
         _cold _nodiscard std::uint8_t openTerminal(const int cols, const int rows);

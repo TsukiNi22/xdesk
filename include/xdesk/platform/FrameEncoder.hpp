@@ -27,11 +27,17 @@ File Description:
     #define _Attribute
     #include <utils/utils.hpp>  // _hot, _cold, _nodiscard
     #include <QByteArray>       // QByteArray
+    #include <functional>       // std::function
     #include <QVector>          // QVector
     #include <cstdint>          // std::uint32_t, std::uint64_t
     #include <QImage>           // QImage
 
 namespace xdesk::platform { // namespace start
+//----------------------------------------------------------------//
+/* PROTOTYPE */
+
+_hot void parallel_for(const int count, const std::function<void(const int)>& fn); // fn(0) ... fn(count - 1) on the encoding threads and the caller, returns once all are done
+
 //----------------------------------------------------------------//
 /* CLASS */
 
@@ -39,6 +45,7 @@ namespace xdesk::platform { // namespace start
 class FrameEncoder {
     private:
         QVector<std::uint64_t> _hashes; // hash of every tile sent (row major)
+        QVector<std::uint8_t> _quality; // jpeg quality each tile was sent with (0 = solid / not sent)
         int _cols = 0; // tiles per row
         int _rows = 0; // tiles per column
         int _width = 0; // frame size of the hashes
@@ -47,7 +54,7 @@ class FrameEncoder {
 
     public:
         // ---------- Pre-Function -------- //
-        _hot _nodiscard QByteArray encode(const QImage& frame, const int quality); // Binary::Frame message, empty = nothing changed
+        _hot _nodiscard QByteArray encode(const QImage& frame, const int quality); // Binary::Frame message, empty = nothing changed (moving parts lighter, sent again sharp once still)
         _cold void reset(void); // next frame is complete (new client, resize, quality change)
         _hot _nodiscard static QByteArray encodeJpeg(const QImage& image, const int quality); // libjpeg-turbo
         _hot _nodiscard static QImage decodeJpeg(const QByteArray& data); // libjpeg-turbo, RGB32 (null on error)

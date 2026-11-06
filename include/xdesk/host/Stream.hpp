@@ -50,7 +50,9 @@ struct StreamClient {
     double scale = 1.0; // frame scale asked by the client
     double effective = 0.0; // scale applied: the asked one, capped by the max height of the host (0 = not computed yet)
     int fps = 30; // cap
+    bool paused = false; // the client does not look at the screen (terminal tab, hidden page): no frame
     qint64 lastFrame = 0; // ms of the last frame sent
+    qint64 idle = 0; // cacheKey of a captured frame that had nothing new for this client (skipped while the capture gives it again)
 };
 
 //----------------------------------------------------------------//
@@ -73,6 +75,7 @@ class Stream: public QObject {
         // ---------- Pre-Function -------- //
         void tick_(void);
         void openCapture_(void); // first viewer: the capture starts only now (the Wayland portal asks the user here)
+        void openIfWatched_(void); // the capture opened when a client looks at the screen (not paused)
         void closeCapture_(void); // no viewer anymore: the screen is released
 
     public slots:
@@ -84,6 +87,7 @@ class Stream: public QObject {
         void ack(const QString& session, const std::uint32_t id);
         void setQuality(const QString& session, const int quality, const double scale, const int fps);
         void refresh(const QString& session); // next frame complete
+        void setPaused(const QString& session, const bool paused);
 
         // ------------ Function ---------- //
         inline void setMaxHeight(const int height) {this->_maxHeight = std::max(0, height);}; // 0 = the screen size

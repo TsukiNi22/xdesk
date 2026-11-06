@@ -130,6 +130,7 @@ class PortalRequest: public QObject {
         std::mutex lock;
         std::condition_variable fresh;
         QImage latest;
+        QImage spare; // previous frame: written again when nobody holds it anymore (no 30 MB allocation per frame)
         bool hasFresh = false;
         bool failed = false;
         QString error = "";
@@ -300,14 +301,22 @@ _cold static QString token_path(void)
             const bool bgr = pw->format.format == SPA_VIDEO_FORMAT_BGRx || pw->format.format == SPA_VIDEO_FORMAT_BGRA;
             const int stride = plane.chunk->stride > 0 ? plane.chunk->stride : width * 4;
             const uint8_t* source = static_cast<const uint8_t*>(plane.data) + plane.chunk->offset;
-            QImage image(width, height, bgr ? QImage::Format_RGB32 : QImage::Format_RGBX8888);
+            const QImage::Format format = bgr ? QImage::Format_RGB32 : QImage::Format_RGBX8888;
             const std::size_t line = static_cast<std::size_t>(width) * 4;
+            QImage image;
 
             if (static_cast<std::size_t>(stride) * static_cast<std::size_t>(height - 1) + line <= plane.maxsize) {
+                {
+                    std::lock_guard lock(pw->lock);
+                    image = std::move(pw->spare); // nobody can take a new reference to it now
+                }
+                if (image.width() != width || image.height() != height || image.format() != format || !image.isDetached()) image = QImage(width, height, format);
                 for (int y = 0; y < height; ++y)
                     std::memcpy(image.scanLine(y), source + static_cast<std::size_t>(y) * static_cast<std::size_t>(stride), line);
+                if (!bgr) image.convertTo(QImage::Format_RGB32); // here, once: the capture thread gets the same image (and key) until the next frame
                 std::lock_guard lock(pw->lock);
-                pw->latest = image;
+                pw->spare = std::move(pw->latest);
+                pw->latest = std::move(image);
                 pw->hasFresh = true;
                 pw->fresh.notify_all();
             }
