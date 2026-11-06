@@ -106,6 +106,7 @@ class Session: public QObject {
         // ---------- Pre-Function -------- //
         _hot void sendJson(const QJsonObject& object);
         _hot void sendBinary(const QByteArray& data, const bool frame = false);
+        _hot void countFrame(const qint64 bytes); // a frame of this session sent on another path (lane): its stats
         void sendChallenge(const QString& hostName, const QByteArray& salt, const bool knownDevice);
         void accept(const Permissions& perms, const QJsonObject& extra); // welcome
         void deny(const QString& reason); // auth refused, closed

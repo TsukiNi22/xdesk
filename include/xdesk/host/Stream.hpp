@@ -54,6 +54,9 @@ struct StreamClient {
     bool paused = false; // the client does not look at the screen (terminal tab, hidden page): no frame
     qint64 lastFrame = 0; // ms of the last frame sent
     qint64 idle = 0; // cacheKey of a captured frame that had nothing new for this client (skipped while the capture gives it again)
+    qint64 lastTick = 0; // ms of the last tick that saw this client
+    qint64 blocked = 0; // ms of the current second a frame was due but the window was full
+    qint64 second = 0; // ms the current second of pressure started
 };
 
 //----------------------------------------------------------------//
@@ -108,6 +111,7 @@ class Stream: public QObject {
         void cursor(const QPoint& position); // Binary::Cursor for every session
         void resized(const QSize& size);
         void scaled(const QString& session, const double scale); // scale applied to the frames of this session (input / cursor mapping)
+        void pressure(const QString& session, const double pressure); // every second: 0 = the path keeps up, 1 = held back the whole time (full window, lowered quality)
 };
 
 } // namespace end

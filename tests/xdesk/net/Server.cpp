@@ -35,7 +35,7 @@ File Description:
 //----------------------------------------------------------------//
 /* DEFINE */
 
-#define TEST_PORT 47978
+#define TEST_PORT 47980 // not one of the host tests (parallel ctest processes)
 #define TEST_NAME "named.test"
 
 //----------------------------------------------------------------//

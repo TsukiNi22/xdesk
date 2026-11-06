@@ -5,6 +5,8 @@
  *    against the fp of the link), then every TLS error is accepted ONLY for that exact certificate
  *  - automatic updates: /app/version of the host compared with the installed version, /app/xdesk.apk installed with
  *    the PackageInstaller (user confirmation of the system)
+ *  - video over the encrypted udp of the native viewers (UdpVideo): the page gets a message port right after its load,
+ *    hands it the keys of its welcome, and gets the frames back from it (faster than its websocket on lossy links)
  *  - QR codes: a scanner page of the APK (assets/scan.html, served on a local https origin) reads the xdesk:// link shown
  *    by the host; the camera is only given to that page and to the pinned host (scanner of the web client)
 */
@@ -29,6 +31,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
+import android.util.Base64;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -39,6 +42,8 @@ import android.view.inputmethod.EditorInfo;
 import android.webkit.PermissionRequest;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
+import android.webkit.WebMessage;
+import android.webkit.WebMessagePort;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -65,6 +70,8 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import java.util.Locale;
+
+import org.json.JSONObject;
 
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.HttpsURLConnection;
@@ -103,6 +110,8 @@ public class MainActivity extends Activity {
     private boolean _scanning = false; // the scanner page is shown (back = setup)
     private Runnable _cameraGranted; // waiting for the answer of the camera permission
     private Runnable _cameraDenied;
+    private UdpVideo _udp; // video over udp of the current page
+    private WebMessagePort _udpPort; // its side of the channel with the page
 
     // ---------------------------------------------------------------- //
     // Life cycle
@@ -182,6 +191,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        this.closeUdp();
         if (this._web != null) this._web.destroy();
         super.onDestroy();
     }
@@ -388,6 +398,7 @@ public class MainActivity extends Activity {
 
     private void clearRoot() {
         this._scanning = false;
+        this.closeUdp();
         if (this._web != null) {
             this._root.removeView(this._web);
             this._web.destroy();
@@ -552,6 +563,13 @@ public class MainActivity extends Activity {
                 if (!request.isForMainFrame()) return;
                 MainActivity.this._ui.post(() -> MainActivity.this.showSetup(MainActivity.this.tr("Host unreachable: ", "Hôte injoignable : ") + error.getDescription(), origin));
             }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                Uri uri = Uri.parse(url);
+                String loaded = uri.getScheme() + "://" + uri.getHost() + ":" + (uri.getPort() > 0 ? uri.getPort() : 443);
+                if (view == MainActivity.this._web && (normalize(origin).equals(normalize(loaded)) || loaded.equals(origin))) MainActivity.this.offerUdp(view, origin);
+            }
         });
         web.setWebChromeClient(this.cameraClient(origin)); // scanner of the web client: camera for the pinned host only
         web.setDownloadListener((url, agent, disposition, mime, length) -> this.checkUpdate(true));
@@ -566,6 +584,65 @@ public class MainActivity extends Activity {
             this._updateChecked = true;
             this.checkUpdate(false);
         }
+    }
+
+    // ---------------------------------------------------------------- //
+    // Video over udp
+
+    private void closeUdp() {
+        if (this._udp != null) this._udp.stop();
+        if (this._udpPort != null) this._udpPort.close();
+        this._udp = null;
+        this._udpPort = null;
+    }
+
+    // A message port for the page of the pinned host only: it starts / stops the udp video with the keys of its welcome
+    private void offerUdp(WebView web, String origin) {
+        if (Build.VERSION.SDK_INT < 23) return;
+        this.closeUdp();
+        final WebMessagePort[] ports = web.createWebMessageChannel();
+        final WebMessagePort mine = ports[0];
+        final String host = Uri.parse(origin).getHost(); // never an address given by the page
+        final UdpVideo udp = new UdpVideo(new UdpVideo.Listener() {
+            @Override
+            public void frame(byte[] frame) {
+                final String text = "F" + Base64.encodeToString(frame, Base64.NO_WRAP);
+                MainActivity.this._ui.post(() -> {if (MainActivity.this._udpPort == mine) mine.postMessage(new WebMessage(text));});
+            }
+
+            @Override
+            public void active(boolean active) {
+                MainActivity.this._ui.post(() -> {if (MainActivity.this._udpPort == mine) mine.postMessage(new WebMessage("S{\"active\":" + active + "}"));});
+            }
+
+            @Override
+            public void gaveUp() {
+                MainActivity.this._ui.post(() -> {if (MainActivity.this._udpPort == mine) mine.postMessage(new WebMessage("S{\"gaveUp\":true}"));});
+            }
+        });
+        this._udp = udp;
+        this._udpPort = mine;
+        mine.setWebMessageCallback(new WebMessagePort.WebMessageCallback() {
+            @Override
+            public void onMessage(WebMessagePort port, WebMessage message) {
+                try {
+                    JSONObject m = new JSONObject(message.getData());
+                    switch (m.optString("t")) {
+                        case "start": {
+                            JSONObject offer = m.getJSONObject("offer");
+                            byte[] down = Base64.decode(offer.getString("down"), Base64.DEFAULT);
+                            byte[] up = Base64.decode(offer.getString("up"), Base64.DEFAULT);
+                            if (!udp.start(host, offer.getInt("port"), offer.getLong("connection"), down, up)) mine.postMessage(new WebMessage("S{\"active\":false}"));
+                            break;
+                        }
+                        case "stop": udp.stop(); break;
+                        case "rtt": udp.setRtt(m.optInt("ms", 50)); break;
+                        default: break;
+                    }
+                } catch (Exception e) { /* malformed: ignored */ }
+            }
+        });
+        web.postWebMessage(new WebMessage("xdesk-udp", new WebMessagePort[]{ports[1]}), Uri.parse(origin));
     }
 
     // ---------------------------------------------------------------- //

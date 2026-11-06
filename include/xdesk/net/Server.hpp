@@ -115,6 +115,7 @@ class Server: public QObject {
 
     signals:
         void newSocket(xdesk::net::WebSocket* socket, const QString& userAgent); // owned by the receiver
+        void newLane(xdesk::net::WebSocket* socket); // /lane: an extra socket of a session's video (owned by the receiver, not authenticated yet)
 };
 
 } // namespace end

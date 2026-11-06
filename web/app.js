@@ -20,6 +20,9 @@
     const TAP_SLOP = 10; // px a tap may move
     const TAP_TIME = 450; // ms a tap may last
     const MAX_ZOOM = 6; // pinch zoom of the screen
+    const TILE_SIZE = 64; // XDESK_TILE_SIZE: frames may complete out of order, each tile keeps the id of the frame that drew it
+    const LANE_MAX = 4; // sockets of the video at most (the main one included)
+    const LANE_RETIRE = 3000; // ms a socket no longer wanted keeps its frames in flight
 
     // ---------------------------------------------------------------- //
     // Translations
@@ -225,7 +228,18 @@
         activeTab: "screen",
         pressed: new Set(), // key codes down (released on blur)
         buttons: new Set(), // mouse buttons down
+        session: "", // id given in the welcome
+        lanes: [], // index -> extra websocket of the video (0 = the main one, never stored)
+        laneOffer: null, // {token, max} of the welcome
+        laneWanted: 1, // sockets the host asked for
+        laneRetries: 0,
+        tileIds: new Uint32Array(0), // frame id that drew each tile
+        tileCols: 0,
+        sizeId: 0, // frame that set the current size (an older one of another size is dropped)
     };
+
+    // Android app: its own udp socket (same encrypted protocol as the native viewers), frames handed over a message port
+    const bridge = {port: null, active: false, waited: false};
 
     function setStatus(status) {
         state.status = status;
@@ -360,6 +374,14 @@
             $("forgetBtn").hidden = false;
         }
         $("codeInput").value = "";
+        state.session = msg.session || "";
+        state.laneOffer = msg.lanes && msg.lanes.token ? msg.lanes : null;
+        state.laneWanted = 1;
+        state.laneRetries = 0;
+        state.tileIds = new Uint32Array(0);
+        state.frameW = 0;
+        state.frameH = 0;
+        if (msg.udp) bridgeSend({t: "start", offer: msg.udp});
         state.perms = Object.assign({view: false, control: false, terminal: false, clipboard: false}, msg.perms || {});
         setStatus("active");
         showView("sessionView");
@@ -376,6 +398,12 @@
     // Connection
 
     function connect() {
+        // The app hands its udp port right after the load: waited for once
+        if (IN_APP && !bridge.port && !bridge.waited) {
+            bridge.waited = true;
+            setTimeout(connect, 500);
+            return;
+        }
         closeSocket();
         state.closedByUs = false;
         state.gotBye = false;
@@ -390,7 +418,7 @@
         state.ws = ws;
         ws.onopen = () => {
             const device = getDevice();
-            sendJson({t: "hello", v: PROTOCOL, kind: KIND, name: name, os: guessOs(), device: device ? device.id : "", nonce: b64encode(state.clientNonce)});
+            sendJson({t: "hello", v: PROTOCOL, kind: KIND, name: name, os: guessOs(), device: device ? device.id : "", nonce: b64encode(state.clientNonce), udp: !!bridge.port});
         };
         ws.onmessage = (e) => {
             if (typeof e.data === "string") onText(e.data);
@@ -399,6 +427,8 @@
         ws.onclose = () => {
             if (state.ws !== ws) return;
             state.ws = null;
+            closeLanes();
+            bridgeSend({t: "stop"});
             releaseAll();
             if (state.closedByUs || state.gotBye) return;
             if (state.status === "active" || state.status === "pending" || state.status === "connecting") showClosed(t("closedTitle"), t("lostText"), false);
@@ -406,6 +436,8 @@
     }
 
     function closeSocket() {
+        closeLanes();
+        bridgeSend({t: "stop"});
         if (!state.ws) return;
         state.closedByUs = true;
         try {state.ws.close(1000);} catch (e) { /* already closed */ }
@@ -418,6 +450,92 @@
 
     function sendBin(bytes) {
         if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.send(bytes);
+    }
+
+    // ---------------------------------------------------------------- //
+    // Extra sockets of the video (asked by the host while one connection holds the frames back)
+
+    function setLanes(n) {
+        state.laneWanted = Math.max(1, Math.min(LANE_MAX, n | 0));
+        for (let i = 1; i < LANE_MAX; ++i) {
+            if (i < state.laneWanted) {
+                if (!state.lanes[i]) openLane(i);
+            } else if (state.lanes[i]) {
+                const ws = state.lanes[i];
+                state.lanes[i] = null;
+                setTimeout(() => {try {ws.close(1000);} catch (e) { /* closed */ }}, LANE_RETIRE); // its last frames arrive
+            }
+        }
+    }
+
+    function openLane(index) {
+        if (!state.laneOffer || state.status !== "active") return;
+        const ws = new WebSocket("wss://" + location.host + "/lane");
+        ws.binaryType = "arraybuffer";
+        state.lanes[index] = ws;
+        ws.onopen = () => ws.send(JSON.stringify({t: "lane", session: state.session, token: state.laneOffer.token, index: index}));
+        ws.onmessage = (e) => {
+            if (typeof e.data === "string") return;
+            const data = new Uint8Array(e.data);
+            state.bytes += data.length;
+            if (data.length > 0 && data[0] === BIN.Frame) onFrame(data, ws);
+        };
+        ws.onclose = () => {
+            if (state.lanes[index] !== ws) return;
+            state.lanes[index] = null;
+            // Still wanted: again a bit later (a few tries only)
+            if (index < state.laneWanted && state.status === "active" && state.laneRetries < 5) {
+                state.laneRetries += 1;
+                setTimeout(() => {if (!state.lanes[index] && index < state.laneWanted) openLane(index);}, 1000);
+            }
+        };
+    }
+
+    function closeLanes() {
+        const lanes = state.lanes;
+        state.lanes = [];
+        state.laneWanted = 1;
+        for (const ws of lanes)
+            if (ws) try {ws.close(1000);} catch (e) { /* closed */ }
+    }
+
+    function bridgeSend(obj) {
+        if (bridge.port) bridge.port.postMessage(JSON.stringify(obj));
+    }
+
+    function base64Bytes(text) {
+        if (Uint8Array.fromBase64) return Uint8Array.fromBase64(text);
+        const bin = atob(text);
+        const out = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; ++i)
+            out[i] = bin.charCodeAt(i);
+        return out;
+    }
+
+    // "F" + base64 frame (acked by the app over udp), "S" + json status
+    function onBridge(text) {
+        if (typeof text !== "string" || text.length < 2) return;
+        if (text[0] === "F") {
+            const data = base64Bytes(text.slice(1));
+            state.bytes += data.length;
+            if (state.status === "active" && data[0] === BIN.Frame) onFrame(data, null);
+            return;
+        }
+        let msg;
+        try {msg = JSON.parse(text.slice(1));} catch (e) {return;}
+        if (typeof msg.active === "boolean") {
+            bridge.active = msg.active;
+            if (!msg.active && state.status === "active") sendJson({t: "udp_off"}); // unreachable or silent: the video stays on tcp
+        }
+        if (msg.gaveUp && state.status === "active") sendJson({t: "refresh"}); // a frame lost for good
+    }
+
+    if (IN_APP) {
+        window.addEventListener("message", (e) => {
+            if (e.data !== "xdesk-udp" || !e.ports || !e.ports[0] || bridge.port) return;
+            bridge.port = e.ports[0];
+            bridge.port.onmessage = (m) => onBridge(m.data);
+        });
     }
 
     function onText(text) {
@@ -434,6 +552,7 @@
             case "perms": state.perms = Object.assign(state.perms, msg.perms || {}); applyPerms(); break;
             case "screen": /* the next frame carries the new size */ break;
             case "info": toast(msg.text || ""); break;
+            case "lanes": setLanes(msg.n); break;
             case "term_exit": onTermExit(msg.id, msg.code); break;
             case "clip": if (msg.text && navigator.clipboard && document.hasFocus()) navigator.clipboard.writeText(msg.text).catch(() => {}); break;
             default: break;
@@ -444,7 +563,7 @@
         state.bytes += data.length;
         if (data.length < 1) return;
         switch (data[0]) {
-            case BIN.Frame: onFrame(data); break;
+            case BIN.Frame: onFrame(data, state.ws); break;
             case BIN.Cursor: onCursor(data); break;
             case BIN.TermData: onTermData(data); break;
             default: break;
@@ -616,7 +735,7 @@
     const cursorEl = $("cursor");
     let cursorPos = {x: -1, y: -1, visible: false};
 
-    function onFrame(data) {
+    function onFrame(data, via) {
         const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
         if (data.length < 11) return;
         const id = view.getUint32(1);
@@ -645,39 +764,72 @@
             }
             tiles.push(tile);
         }
-        // Ack at once while the drawing keeps up (the host encodes the next frame meanwhile), else once drawn
+        // Ack at once while the drawing keeps up (the host encodes the next frame meanwhile), else once drawn; on the
+        // socket that brought it (the app acks its udp frames itself)
         const ack = new Uint8Array(5);
         ack[0] = BIN.FrameAck;
         new DataView(ack.buffer).setUint32(1, id);
+        const sendAck = () => {if (via && via.readyState === WebSocket.OPEN) via.send(ack);};
         const early = state.drawing < 1;
-        if (early) sendBin(ack);
+        if (early) sendAck();
         state.drawing += 1;
 
-        // Decode in parallel, draw in order (a frame never overtakes the previous one)
+        // Decode in parallel, draw in order of arrival; a tile already drawn by a newer frame is kept
         const decoded = Promise.all(tiles.map((tl) => tl.blob ? createImageBitmap(tl.blob).catch(() => null) : null));
         state.drawQueue = state.drawQueue.then(() => decoded).then((bitmaps) => {
             if (w !== state.frameW || h !== state.frameH) {
-                state.frameW = w;
-                state.frameH = h;
-                canvas.width = w;
-                canvas.height = h;
-                layoutCanvas();
-            }
-            for (let i = 0; i < tiles.length; ++i) {
-                const tl = tiles[i];
-                if (tl.color) {
-                    ctx.fillStyle = tl.color;
-                    ctx.fillRect(tl.x, tl.y, tl.w, tl.h);
-                } else if (bitmaps[i]) {
-                    ctx.drawImage(bitmaps[i], tl.x, tl.y, tl.w, tl.h);
-                    bitmaps[i].close();
+                if (state.frameW && ((id - state.sizeId) | 0) < 0) bitmaps = []; // a late frame of the old size
+                else {
+                    state.frameW = w;
+                    state.frameH = h;
+                    state.sizeId = id;
+                    state.tileCols = Math.ceil(w / TILE_SIZE);
+                    state.tileIds = new Uint32Array(state.tileCols * Math.ceil(h / TILE_SIZE));
+                    canvas.width = w;
+                    canvas.height = h;
+                    layoutCanvas();
                 }
             }
+            for (let i = 0; i < tiles.length && bitmaps.length; ++i) {
+                const tl = tiles[i];
+                const cells = newerCells(id, tl);
+                if (tl.color) {
+                    ctx.fillStyle = tl.color;
+                    for (const c of cells.kept)
+                        ctx.fillRect(c[0], c[1], c[2], c[3]);
+                } else if (bitmaps[i]) {
+                    if (cells.all) ctx.drawImage(bitmaps[i], tl.x, tl.y, tl.w, tl.h);
+                    else for (const c of cells.kept)
+                        ctx.drawImage(bitmaps[i], c[0] - tl.x, c[1] - tl.y, c[2], c[3], c[0], c[1], c[2], c[3]);
+                }
+            }
+            for (const b of bitmaps)
+                if (b) b.close();
             state.drawing -= 1;
-            if (!early) sendBin(ack);
+            if (!early) sendAck();
             state.frames += 1;
             placeCursor();
-        }).catch(() => {state.drawing = Math.max(0, state.drawing - 1); if (!early) sendBin(ack);});
+        }).catch(() => {state.drawing = Math.max(0, state.drawing - 1); if (!early) sendAck();});
+    }
+
+    // Tiles of a frame not drawn yet by a newer one (any order of arrival), marked as drawn by this frame
+    function newerCells(id, tl) {
+        const kept = [];
+        let all = true;
+        const right = Math.min(tl.x + tl.w, state.frameW);
+        const bottom = Math.min(tl.y + tl.h, state.frameH);
+        for (let y = Math.floor(tl.y / TILE_SIZE) * TILE_SIZE; y < bottom; y += TILE_SIZE) {
+            for (let x = Math.floor(tl.x / TILE_SIZE) * TILE_SIZE; x < right; x += TILE_SIZE) {
+                const k = (y / TILE_SIZE) * state.tileCols + x / TILE_SIZE;
+                const from = state.tileIds[k];
+                if (from !== 0 && ((id - from) | 0) < 0) {all = false; continue;}
+                state.tileIds[k] = id;
+                const cx = Math.max(x, tl.x);
+                const cy = Math.max(y, tl.y);
+                kept.push([cx, cy, Math.min(x + TILE_SIZE, right) - cx, Math.min(y + TILE_SIZE, bottom) - cy]);
+            }
+        }
+        return {all: all, kept: kept};
     }
 
     function onCursor(data) {
@@ -783,6 +935,7 @@
     // Stats + ping every second
     setInterval(() => {
         if (state.status === "active") sendJson({t: "ping", ts: performance.now()});
+        if (state.status === "active" && bridge.active && state.latency >= 0) bridgeSend({t: "rtt", ms: state.latency}); // pace of its nacks
         $("statLatency").textContent = (state.latency >= 0 ? state.latency : "--") + " ms";
         $("statFps").textContent = state.frames + " fps";
         $("statKbps").textContent = Math.round(state.bytes * 8 / 1000) + " kb/s";
@@ -1477,7 +1630,6 @@
         if ($("toolsMenu").classList.contains("open") && !e.target.closest("#toolsMenu, #menuBtn")) setMenu(false);
     });
     document.addEventListener("keydown", (e) => {if (e.key === "Escape" && $("toolsMenu").classList.contains("open")) setMenu(false);});
-
 
     // ---------------------------------------------------------------- //
     // Terminals (xterm.js)

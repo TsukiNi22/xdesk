@@ -36,9 +36,10 @@ File Description:
     #include "../net/Exposure.hpp"                      // xdesk::net::Exposure
     #include "../core/Config.hpp"                       // xdesk::core::Config
     #include "../net/Server.hpp"                        // xdesk::net::Server
-    #include "Session.hpp"                              // xdesk::host::Session, Permissions
     #include "UdpServer.hpp"                            // xdesk::host::UdpServer
+    #include "Session.hpp"                              // xdesk::host::Session, Permissions
     #include "Stream.hpp"                               // xdesk::host::Stream
+    #include "Lanes.hpp"                                // xdesk::host::Lanes
     #include <QSslConfiguration>                        // QSslConfiguration
     #include <QStringList>                              // QStringList
     #include <QJsonObject>                              // QJsonObject
@@ -83,6 +84,7 @@ class Host: public QObject {
         security::IntegrityGuard _guard;
         net::Server _server;
         UdpServer _udp; // video of the native viewers over encrypted udp (same port)
+        Lanes _lanes; // extra websockets of the video of the web viewers
         net::Exposure _exposure;
         Stream* _stream = nullptr; // lives in _streamThread
         QThread _streamThread;
@@ -97,6 +99,7 @@ class Host: public QObject {
         QHash<QString, double> _scales; // session id -> scale of its frames (input / cursor mapping)
         QHash<QString, QString> _pendingProof; // session id -> server proof (hex) sent in the welcome
         QHash<QString, bool> _remember; // session id -> the client asked to be remembered
+        QSet<QString> _udpViewers; // web sessions that can take the udp video (android app)
         qint64 _lastMoveLog = 0; // throttle of the mouse moves in the activity feed
         bool _panelFocused = false; // the local panel has the focus: remote input paused
         bool _running = false; // identity, registry and guard loaded
@@ -152,10 +155,10 @@ class Host: public QObject {
         /* panel */
         void setPanelFocused(const bool focused); // remote input paused while the panel is used
         void rotateCode(void);
+        _cold _nodiscard QString transport(const QString& session) const; // path of the video of a session: "tcp", "tcp x3", "udp", "udp + parity"
 
         // ------------ Function ---------- //
         /* getter */
-        _cold _nodiscard inline QString transport(const QString& session) const {return this->_udp.describe(session).isEmpty() ? QString("tcp") : this->_udp.describe(session);}; // path of the video of a session
         _cold _nodiscard inline core::Config& config(void)                           {return this->_config;};
         _cold _nodiscard inline core::AuditLog& log(void)                            {return this->_log;};
         _cold _nodiscard inline security::DeviceRegistry& registry(void)             {return this->_registry;};

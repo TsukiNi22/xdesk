@@ -122,6 +122,14 @@ void xdesk::host::Session::sendBinary(const QByteArray& data, const bool frame)
     this->_ws->sendBinary(data);
 }
 
+void xdesk::host::Session::countFrame(const qint64 bytes)
+{
+    this->_stats.bytesOut += bytes;
+    this->_secondBytes += bytes;
+    this->_stats.frames++;
+    this->_secondFrames++;
+}
+
 void xdesk::host::Session::sendChallenge(const QString& hostName, const QByteArray& salt, const bool knownDevice)
 {
     this->sendJson({

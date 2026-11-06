@@ -62,7 +62,8 @@ struct Settings {
     Exposure exposure = Exposure::Lan; // how the host is reachable
     QString publicHost = ""; // Manual: public address / domain shown to the clients
     bool discovery = true; // udp broadcast on the LAN (xdesk scan)
-    bool udp = true; // video of the native viewers over encrypted udp on the same port (tcp when it does not get through)
+    bool udp = true; // video of the native viewers (and the android app) over encrypted udp on the same port (tcp when it does not get through)
+    bool lanes = true; // web viewers: extra websockets for the video while one connection holds it back (lossy far paths)
 
     /* access */
     int codeLength = 9; // characters of the pairing code (Crockford base32, 5 bits each)

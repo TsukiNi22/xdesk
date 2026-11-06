@@ -154,7 +154,9 @@ set(SRC_SHARED
     src/xdesk/host/Session.cpp
     src/xdesk/host/Stream.cpp
     src/xdesk/host/FlowControl.cpp
+    src/xdesk/host/LanePolicy.cpp
     src/xdesk/host/UdpServer.cpp
+    src/xdesk/host/Lanes.cpp
     src/xdesk/host/Host.cpp
 
     ## Client (sub-part: client)
@@ -227,6 +229,7 @@ set(HDR_MOC
     ${CMAKE_SOURCE_DIR}/include/xdesk/host/Session.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/host/Stream.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/host/UdpServer.hpp
+    ${CMAKE_SOURCE_DIR}/include/xdesk/host/Lanes.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/net/Exposure.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/net/Server.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/net/WebSocket.hpp

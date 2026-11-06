@@ -145,6 +145,7 @@ void xdesk::core::Config::load(void)
     s.publicHost = o.value("publicHost").toString(s.publicHost);
     s.discovery = o.value("discovery").toBool(s.discovery);
     s.udp = o.value("udp").toBool(s.udp);
+    s.lanes = o.value("lanes").toBool(s.lanes);
 
     // Access
     s.codeLength = std::clamp(o.value("codeLength").toInt(s.codeLength), 6, 24);
@@ -184,6 +185,7 @@ void xdesk::core::Config::save(void) const
     o["publicHost"] = s.publicHost;
     o["discovery"] = s.discovery;
     o["udp"] = s.udp;
+    o["lanes"] = s.lanes;
     o["codeLength"] = s.codeLength;
     o["codeLifetime"] = s.codeLifetime;
     o["approval"] = approval_name(s.approval);

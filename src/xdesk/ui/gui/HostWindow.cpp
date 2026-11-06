@@ -1352,13 +1352,15 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     this->_setPublicHost = new QLineEdit();
     this->_setPublicHost->setPlaceholderText("my.domain.tld (manual exposure)");
     this->_setDiscovery = new QCheckBox("Announce on the LAN (xdesk scan)");
-    this->_setUdp = new QCheckBox("Video over encrypted UDP for the native viewers (faster on lossy links)");
+    this->_setUdp = new QCheckBox("Video over encrypted UDP for the native viewers and the Android app (faster on lossy links)");
+    this->_setLanes = new QCheckBox("Extra sockets for the web viewers when one connection holds the video back");
     network->addRow(make_label("Port", "muted"), this->_setPort);
     network->addRow(make_label("Listen on", "muted"), this->_setBind);
     network->addRow(make_label("Exposure", "muted"), this->_setExposure);
     network->addRow(make_label("Public address", "muted"), this->_setPublicHost);
     network->addRow("", this->_setDiscovery);
     network->addRow("", this->_setUdp);
+    network->addRow("", this->_setLanes);
 
     // Stream
     this->_setFps = new QSpinBox();
@@ -1452,6 +1454,7 @@ void xdesk::ui::gui::HostWindow::loadSettings_(void)
     this->_setPublicHost->setText(s.publicHost);
     this->_setDiscovery->setChecked(s.discovery);
     this->_setUdp->setChecked(s.udp);
+    this->_setLanes->setChecked(s.lanes);
     this->_setCodeLength->setValue(s.codeLength);
     this->_setCodeLifetime->setValue(s.codeLifetime);
     this->_setApproval->setCurrentText(core::approval_name(s.approval));
@@ -1486,6 +1489,7 @@ void xdesk::ui::gui::HostWindow::saveSettings_(void)
     s.publicHost = this->_setPublicHost->text().trimmed();
     s.discovery = this->_setDiscovery->isChecked();
     s.udp = this->_setUdp->isChecked();
+    s.lanes = this->_setLanes->isChecked();
     s.codeLength = this->_setCodeLength->value();
     s.codeLifetime = this->_setCodeLifetime->value();
     s.approval = core::approval_from(this->_setApproval->currentText());

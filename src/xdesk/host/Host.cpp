@@ -70,12 +70,28 @@ xdesk::host::Host::Host(core::Config& config, QObject* parent)
         if (!name.isEmpty()) this->_log.info("server", "", "Tailscale certificate for " + name + " (valid until " + this->_exposure.certificateChain().first().expiryDate().toString("yyyy-MM-dd") + "): the browsers can use the name");
     });
     QObject::connect(&this->_server, &net::Server::newSocket, this, &Host::onSocket_);
+    QObject::connect(&this->_server, &net::Server::newLane, &this->_lanes, &Lanes::join);
+    QObject::connect(&this->_lanes, &Lanes::wanted, this, [this](const QString& id, const int lanes) {
+        Session* s = this->_sessions.value(id);
+        if (s && s->state() == State::Active) s->sendJson({{"t", "lanes"}, {"n", lanes}});
+        if (s) this->_log.info("session", id, "Video on " + QString::number(lanes) + (lanes > 1 ? " sockets" : " socket"));
+    });
+    QObject::connect(&this->_lanes, &Lanes::frameAcked, this, [this](const QString& id, const std::uint32_t frame) {
+        if (this->_stream) QMetaObject::invokeMethod(this->_stream, "ack", Qt::QueuedConnection, Q_ARG(QString, id), Q_ARG(std::uint32_t, frame));
+    });
+    QObject::connect(&this->_lanes, &Lanes::lost, this, [this](const QString& id) {
+        if (this->_stream) QMetaObject::invokeMethod(this->_stream, "refresh", Qt::QueuedConnection, Q_ARG(QString, id)); // its tiles went with the socket
+    });
+    QObject::connect(&this->_lanes, &Lanes::changed, this, [this](const QString& id) {
+        if (Session* s = this->_sessions.value(id)) emit this->sessionChanged(s);
+    });
     QObject::connect(&this->_udp, &UdpServer::acked, this, [this](const QString& id, const std::uint32_t frame) {
         if (this->_stream) QMetaObject::invokeMethod(this->_stream, "ack", Qt::QueuedConnection, Q_ARG(QString, id), Q_ARG(std::uint32_t, frame));
     });
     QObject::connect(&this->_udp, &UdpServer::activeChanged, this, [this](const QString& id, const bool active) {
         Session* s = this->_sessions.value(id);
         if (!s) return;
+        this->_lanes.setMax(id, active ? 1 : LANE_MAX); // the udp path has no per connection window
         this->_log.info("session", id, active ? "Video over encrypted UDP" : "Video back on TCP (UDP silent or blocked)");
         emit this->activity(id, active ? "video over encrypted UDP" : "video back on TCP");
         if (!active && this->_stream) QMetaObject::invokeMethod(this->_stream, "refresh", Qt::QueuedConnection, Q_ARG(QString, id)); // the pieces lost with the udp path
@@ -220,7 +236,12 @@ void xdesk::host::Host::startStream_(void)
     QObject::connect(this->_stream, &Stream::frame, this, [this](const QString& id, const QByteArray& message) {
         Session* s = this->_sessions.value(id);
         if (!s || s->state() != State::Active) return;
-        if (!this->_udp.sendFrame(id, message)) s->sendBinary(message, true); // udp when the viewer reached it, else its websocket
+        if (this->_udp.sendFrame(id, message)) return; // udp when the viewer reached it
+        if (this->_lanes.sendFrame(id, message, s->pendingBytes())) s->countFrame(message.size()); // an extra socket less loaded than the main one
+        else s->sendBinary(message, true);
+    });
+    QObject::connect(this->_stream, &Stream::pressure, this, [this](const QString& id, const double pressure) {
+        if (this->_udp.describe(id).isEmpty()) this->_lanes.pressure(id, pressure);
     });
     QObject::connect(this->_stream, &Stream::cursor, this, [this](const QPoint& position) {
         for (Session* s: this->_sessions) {
@@ -320,6 +341,7 @@ void xdesk::host::Host::onHello_(Session* session, const QJsonObject& message)
         return;
     }
     if (known.has_value()) session->setDeviceId(device);
+    if (session->kind() == net::ClientKind::Apk && message.value("udp").toBool()) this->_udpViewers.insert(session->id()); // the app has its own udp socket
     session->sendChallenge(QHostInfo::localHostName(), this->_code.salt(), known.has_value() && known->trusted && !known->secret.isEmpty());
     emit this->sessionChanged(session);
 }
@@ -432,8 +454,10 @@ void xdesk::host::Host::admit_(Session* session, const bool remember)
     extra["screen"] = QJsonObject{{"w", std::max(0, this->_screen.width())}, {"h", std::max(0, this->_screen.height())}}; // 0 x 0 while the capture waits for its first viewer
     extra["capture"] = this->_captureBackend;
     if (this->_pendingProof.contains(session->id())) extra["proof"] = this->_pendingProof.take(session->id());
-    if (s.udp && this->_udp.isListening() && (session->kind() == net::ClientKind::Gui || session->kind() == net::ClientKind::Tty))
+    if (s.udp && this->_udp.isListening() && (session->kind() == net::ClientKind::Gui || session->kind() == net::ClientKind::Tty || this->_udpViewers.contains(session->id())))
         extra["udp"] = this->_udp.offer(session->id()); // keys inside the authenticated TLS session only
+    if (s.lanes && (session->kind() == net::ClientKind::Web || session->kind() == net::ClientKind::Apk))
+        extra["lanes"] = this->_lanes.offer(session->id()); // token of its extra sockets, same channel
     session->accept(this->defaultPermissions_(session), extra);
     this->_scales[session->id()] = s.scale;
     if (this->_stream)
@@ -493,6 +517,7 @@ void xdesk::host::Host::onInput_(Session* session, const QByteArray& message)
         case net::Binary::FrameAck: {
             const std::uint32_t id = r.u32();
             if (r.ok() && this->_stream) QMetaObject::invokeMethod(this->_stream, "ack", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(std::uint32_t, id));
+            if (r.ok()) this->_lanes.acked(session->id(), id);
             return;
         }
         case net::Binary::TermData: {
@@ -661,6 +686,8 @@ void xdesk::host::Host::onClosed_(Session* session)
     if (session->mode() == "control" && this->_injector) this->_injector->releaseAll();
     this->closeTerminals_(id);
     this->_udp.remove(id);
+    this->_lanes.remove(id);
+    this->_udpViewers.remove(id);
     this->_sessions.remove(id);
     this->_scales.remove(id);
     this->_remember.remove(id);
@@ -862,6 +889,15 @@ void xdesk::host::Host::setPanelFocused(const bool focused)
     if (focused && this->_injector) this->_injector->releaseAll();
     for (Session* s: this->_sessions)
         s->setControlPaused(focused);
+}
+
+QString xdesk::host::Host::transport(const QString& session) const
+{
+    const QString udp = this->_udp.describe(session);
+    const QString lanes = this->_lanes.describe(session);
+
+    if (!udp.isEmpty()) return udp;
+    return lanes.isEmpty() ? QString("tcp") : lanes;
 }
 
 void xdesk::host::Host::rotateCode(void)

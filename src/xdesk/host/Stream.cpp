@@ -160,10 +160,20 @@ void xdesk::host::Stream::tick_(void)
 
     if (!this->_capture || this->_clients.isEmpty()) return;
 
-    // Who can take a frame now (pacing + frames in flight)
-    for (StreamClient& client: this->_clients) {
+    // Who can take a frame now (pacing + frames in flight), and how much the path holds each one back
+    for (QHash<QString, StreamClient>::iterator it = this->_clients.begin(); it != this->_clients.end(); ++it) {
+        StreamClient& client = it.value();
+        const bool due = !client.paused && now - client.lastFrame >= 1000 / std::max(1, client.fps);
         client.flow.expire(now); // acks lost: resume
-        if (!client.paused && client.flow.canSend(client.fps) && now - client.lastFrame >= 1000 / std::max(1, client.fps)) anyReady = true;
+        if (due && client.flow.canSend(client.fps)) anyReady = true;
+        else if (due && client.lastTick > 0) client.blocked += std::min<qint64>(now - client.lastTick, 50);
+        client.lastTick = now;
+        if (client.second == 0) client.second = now;
+        if (now - client.second < 1000) continue;
+        const double lowered = client.paused ? 0.0 : std::max(0, client.quality - client.flow.ceiling()) / 100.0;
+        emit this->pressure(it.key(), std::min(1.0, static_cast<double>(client.blocked) / static_cast<double>(now - client.second) + lowered));
+        client.blocked = 0;
+        client.second = now;
     }
     if (!anyReady) return;
     frame = this->_capture->grab();
