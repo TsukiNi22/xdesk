@@ -938,6 +938,7 @@ void xdesk::host::Host::setPanelFocused(const bool focused)
     if (focused && this->_injector) this->_injector->releaseAll();
     for (Session* s: this->_sessions)
         s->setControlPaused(focused);
+    this->sendInputState_(); // the viewers show why their clicks do nothing meanwhile
 }
 
 QString xdesk::host::Host::transport(const QString& session) const
@@ -981,7 +982,7 @@ void xdesk::host::Host::sendInputState_(Session* session) const
 {
     // No injector yet while the capture starts (it opens on the first frame): loading, not unavailable
     const bool loading = !this->_injector && this->_stream && this->_captureBackend.isEmpty();
-    const QString state = this->_injector ? "ready" : (loading ? "loading" : "none");
+    const QString state = this->_injector ? (this->_panelFocused ? "paused" : "ready") : (loading ? "loading" : "none");
     QString error = this->_inputError;
 
     if (state == "none" && error.isEmpty()) error = this->_captureBackend.startsWith("none") ? "screen capture unavailable: " + this->_captureBackend.mid(6).chopped(1) : QString("no input backend");

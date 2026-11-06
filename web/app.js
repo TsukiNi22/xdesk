@@ -46,7 +46,7 @@
             bannedText: "Cet appareil a été banni par l'hôte. Seule une action locale sur l'ordinateur peut le débannir.",
             lostText: "La connexion a été perdue.", codeRequired: "Entrez le code affiché sur l'hôte.",
             screenLoading: "Chargement de l'écran...", controlLoading: "Contrôles en préparation...", controlReady: "Contrôles prêts",
-            controlNone: "Contrôle indisponible sur l'hôte", controlViewOnly: "Lecture seule : l'hôte n'a pas donné le contrôle",
+            controlNone: "Contrôle indisponible sur l'hôte", controlPaused: "Contrôle en pause : le panneau xdesk est utilisé sur l'ordinateur (il reprend quand il n'a plus le focus)", controlViewOnly: "Lecture seule : l'hôte n'a pas donné le contrôle",
             controlDenied: "L'hôte n'a pas donné le droit de contrôle.", terminalDenied: "L'hôte n'a pas donné le droit d'ouvrir un terminal.",
             proofMismatch: "L'hôte n'a pas prouvé qu'il connaît le secret de cet appareil : connexion fermée.",
             exited: "processus terminé", copied: "Copié", fullscreenFail: "Plein écran indisponible",
@@ -67,7 +67,7 @@
         bannedText: "This device was banned by the host. Only a local action on the computer can unban it.",
         lostText: "The connection was lost.", codeRequired: "Enter the code shown on the host.",
         screenLoading: "Loading the screen...", controlLoading: "Getting the controls ready...", controlReady: "Controls ready",
-        controlNone: "Remote control unavailable on the host", controlViewOnly: "View only: the host did not give the control",
+        controlNone: "Remote control unavailable on the host", controlPaused: "Control paused: the xdesk panel is in use on the computer (back when it loses the focus)", controlViewOnly: "View only: the host did not give the control",
         controlDenied: "The host did not give the control right.", terminalDenied: "The host did not give the terminal right.",
         proofMismatch: "The host did not prove it knows the secret of this device: connection closed.",
         exited: "process exited", copied: "Copied", fullscreenFail: "Fullscreen unavailable",
@@ -979,6 +979,7 @@
         if (state.status !== "active" || !state.perms.view) kind = "";
         else if (!state.frameW) {kind = "loading"; text = t("screenLoading");}
         else if (state.mode === "control" && input.state === "loading") {kind = "loading"; text = t("controlLoading");}
+        else if (state.mode === "control" && input.state === "paused") {kind = "warn"; text = t("controlPaused");}
         else if (state.mode === "control" && input.state === "none") {kind = "warn"; text = t("controlNone") + (input.error ? ": " + input.error : "");}
         el.hidden = !kind;
         el.className = "screen-state " + kind;

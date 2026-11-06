@@ -122,7 +122,7 @@ class Host: public QObject {
         void terminalInput_(Terminal& terminal, const QByteArray& data);
         void updateMarker_(void);
         void openInjector_(void); // input backend for the captured screen (logs once why it fails)
-        void sendInputState_(Session* session = nullptr) const; // {"t": "input", "state": ready|loading|none, "error"} to one session (nullptr = every active one)
+        void sendInputState_(Session* session = nullptr) const; // {"t": "input", "state": ready|loading|paused|none, "error"} to one session (nullptr = every active one)
         void startStream_(void); // capture thread (a new stream for each sharing)
         void stopStream_(void);
         void listenUdp_(void); // the udp port of the video (when the setting allows it)
