@@ -42,7 +42,8 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 | Input | Windows `SendInput` (scancodes + unicode), Linux `uinput` (Wayland and X11) or XTest, physical key codes (layout of the host) |
 | Terminals | Linux / macOS `forkpty`, Windows ConPTY; up to 4 per session, resizable, `xterm-256color` + truecolor, UTF-8 (`C.UTF-8` when started without a locale); web client: xterm.js with the WebGL renderer, Unicode 11 widths and Nerd / powerline fonts when installed |
 | Clients | Qt viewer (fit / 1:1 / full screen, terminals in tabs), terminal client (connect page with LAN scan and known hosts, terminals and the screen in truecolor half blocks in tabs, control, quality, mouse), web client, Android APK |
-| Video over UDP | Qt viewer and terminal client: frames over UDP on the port of the server, AES-256-GCM with per-session keys sent inside TLS, anti replay, xor parity while the path loses, nacks, frames completing in any order (+32 % fps, half the lag and the stalls at 3-8 % loss); back to TCP when UDP is blocked; browsers and the app stay on TCP |
+| Video over UDP | Qt viewer, terminal client and Android app: frames over UDP on the port of the server, AES-256-GCM with per-session keys sent inside TLS, anti replay, xor parity while the path loses, nacks, frames completing in any order (+32 % fps, half the lag and the stalls at 3-8 % loss); back to TCP when UDP is blocked |
+| Extra sockets | Web viewers (and the app without UDP): up to 4 websockets for the video while one connection holds it back on a lossy far path (x2 to x4 of throughput measured at 1-3 % loss), tried and kept only when they help, one socket on a LAN; `XDESK_LANES=1..4` forces the count |
 | Exposure | LAN (+ discovery), Tailscale, UPnP (TCP + UDP), `bore`, `cloudflared`, `ngrok` (TCP only: the video stays on TCP), manual port forward (forward UDP too for the native viewers) |
 
 ## Security
@@ -211,6 +212,7 @@ xdesk connect my-pc.ts.net --tty             # remote terminal in this terminal 
 xdesk connect bore.pub:41234 --tty --screen  # starts on the remote screen (ctrl+] c control)
 xdesk connect --tty                          # connect page: known hosts, LAN scan, address and code
 XDESK_TTY=ascii,16 xdesk host --tty          # force what the terminal shows (ascii, unicode, mono, 16, 256, truecolor, no-mouse)
+XDESK_LANES=3 xdesk host                     # web viewers: 3 sockets for the video whatever the path (default: decided live)
 xdesk connect 192.168.1.20 --view-only       # never send keyboard / mouse
 xdesk viewer                                 # Qt viewer with its connect page (LAN scan, known hosts)
 xdesk scan                                   # hosts announced on the LAN
