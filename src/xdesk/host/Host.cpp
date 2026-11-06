@@ -143,7 +143,13 @@ void xdesk::host::Host::start(const bool share)
             this->_refused.insert(ip);
             return false;
         }
-        return !this->_registry.addressBan(ip).has_value();
+        // Banned address: dropped before TLS too, logged once so the panel says why the viewer gets a reset
+        if (this->_registry.addressBan(ip).has_value()) {
+            if (!this->_refused.contains(ip)) this->_log.warn("server", "", "Connection from " + ip + " refused: the address is banned (Devices > banned addresses)");
+            this->_refused.insert(ip);
+            return false;
+        }
+        return true;
     });
     this->_server.setInfo([this]() {
         QFile version(":/android/version.txt");
@@ -821,9 +827,17 @@ bool xdesk::host::Host::localActionsLocked(void) const
 
 bool xdesk::host::Host::unban(const QString& deviceId)
 {
+    const std::optional<security::Device> device = this->_registry.find(deviceId);
+
     if (this->localActionsLocked()) return false;
     this->_registry.unban(deviceId);
     this->_log.info("device", "", "Device unbanned locally: " + deviceId);
+    // The ban of a device also banned its address: lifted with it, else the device stays refused before TLS
+    if (device.has_value() && !device->address.isEmpty() && this->_registry.addressBan(device->address).has_value()) {
+        this->_registry.unbanAddress(device->address);
+        this->_refused.remove(device->address);
+        this->_log.info("device", "", "Address unbanned locally: " + device->address + " (with its device)");
+    }
     return true;
 }
 
@@ -831,6 +845,7 @@ bool xdesk::host::Host::unbanAddress(const QString& address)
 {
     if (this->localActionsLocked()) return false;
     this->_registry.unbanAddress(address);
+    this->_refused.remove(address);
     this->_log.info("device", "", "Address unbanned locally: " + address);
     return true;
 }
