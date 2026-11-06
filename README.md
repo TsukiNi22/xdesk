@@ -42,7 +42,8 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 | Input | Windows `SendInput` (scancodes + unicode), Linux `uinput` (Wayland and X11) or XTest, physical key codes (layout of the host) |
 | Terminals | Linux / macOS `forkpty`, Windows ConPTY; up to 4 per session, resizable, `xterm-256color` + truecolor, UTF-8 (`C.UTF-8` when started without a locale); web client: xterm.js with the WebGL renderer, Unicode 11 widths and Nerd / powerline fonts when installed |
 | Clients | Qt viewer (fit / 1:1 / full screen, terminals in tabs), terminal client (connect page with LAN scan and known hosts, terminals and the screen in truecolor half blocks in tabs, control, quality, mouse), web client, Android APK |
-| Exposure | LAN (+ discovery), Tailscale, UPnP, `bore`, `cloudflared`, `ngrok`, manual port forward |
+| Video over UDP | Qt viewer and terminal client: frames over UDP on the port of the server, AES-256-GCM with per-session keys sent inside TLS, anti replay, xor parity while the path loses, nacks, frames completing in any order (+32 % fps, half the lag and the stalls at 3-8 % loss); back to TCP when UDP is blocked; browsers and the app stay on TCP |
+| Exposure | LAN (+ discovery), Tailscale, UPnP (TCP + UDP), `bore`, `cloudflared`, `ngrok` (TCP only: the video stays on TCP), manual port forward (forward UDP too for the native viewers) |
 
 ## Security
 
