@@ -394,6 +394,15 @@ void xdesk::host::Host::onAuth_(Session* session, const QJsonObject& message)
     } else {this->authFailed_(session, "Unknown authentication method"); return;}
     this->_authFailures.remove(session->address());
     this->_remember[session->id()] = message.value("remember").toBool(false);
+
+    // Trusted by the local user but without a key (erased by a ban): the code proves it once, its new key is given
+    if (method != "device" && !session->deviceId().isEmpty()) {
+        const std::optional<security::Device> d = this->_registry.find(session->deviceId());
+        if (d.has_value() && d->trusted && !d->banned && d->secret.isEmpty()) {
+            trustedDevice = true;
+            this->_remember[session->id()] = true;
+        }
+    }
     this->_log.info("auth", session->id(), "Authenticated (" + method + ") " + session->name() + " from " + session->address());
 
     // Local confirmation
@@ -828,12 +837,21 @@ bool xdesk::host::Host::localActionsLocked(void) const
 bool xdesk::host::Host::unban(const QString& deviceId)
 {
     const std::optional<security::Device> device = this->_registry.find(deviceId);
+    QStringList same;
 
     if (this->localActionsLocked()) return false;
     this->_registry.unban(deviceId);
     this->_log.info("device", "", "Device unbanned locally: " + deviceId);
-    // The ban of a device also banned its address: lifted with it, else the device stays refused before TLS
-    if (device.has_value() && !device->address.isEmpty() && this->_registry.addressBan(device->address).has_value()) {
+    if (!device.has_value() || device->address.isEmpty()) return true;
+
+    // The ban of a device also banned its address and the other records of the machine: lifted with it
+    for (const security::Device& d: this->_registry.devices())
+        if (d.banned && d.address == device->address && d.name == device->name) same.append(d.id);
+    for (const QString& id: same) {
+        this->_registry.unban(id);
+        this->_log.info("device", "", "Device unbanned locally: " + id + " (same machine)");
+    }
+    if (this->_registry.addressBan(device->address).has_value()) {
         this->_registry.unbanAddress(device->address);
         this->_refused.remove(device->address);
         this->_log.info("device", "", "Address unbanned locally: " + device->address + " (with its device)");
@@ -843,10 +861,19 @@ bool xdesk::host::Host::unban(const QString& deviceId)
 
 bool xdesk::host::Host::unbanAddress(const QString& address)
 {
+    QStringList banned;
+
     if (this->localActionsLocked()) return false;
     this->_registry.unbanAddress(address);
     this->_refused.remove(address);
     this->_log.info("device", "", "Address unbanned locally: " + address);
+    // The devices banned with this address: lifted with it, else they stay refused after the TLS
+    for (const security::Device& d: this->_registry.devices())
+        if (d.banned && d.address == address) banned.append(d.id);
+    for (const QString& id: banned) {
+        this->_registry.unban(id);
+        this->_log.info("device", "", "Device unbanned locally: " + id + " (with its address)");
+    }
     return true;
 }
 

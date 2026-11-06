@@ -1147,7 +1147,7 @@ QWidget* xdesk::ui::gui::HostWindow::buildDevices_(void)
     this->_localButtons = {trust, untrust, unban, forget, unbanAddress};
     QObject::connect(trust, &QPushButton::clicked, this, [this, selected]() {
         const QString id = selected(this->_devices);
-        if (!id.isEmpty() && this->confirmLocal_("Trust this device? It will connect without a code.", false)) (void)this->_host.setTrusted(id, true);
+        if (!id.isEmpty() && this->confirmLocal_("Trust this device? It will connect without a code (one code first when its key was erased by a ban: no approval asked).", false)) (void)this->_host.setTrusted(id, true);
     });
     QObject::connect(untrust, &QPushButton::clicked, this, [this, selected]() {
         const QString id = selected(this->_devices);
@@ -1177,7 +1177,7 @@ void xdesk::ui::gui::HostWindow::refreshDevices_(void)
     this->_devices->setRowCount(static_cast<int>(devices.size()));
     for (int i = 0; i < devices.size(); ++i) {
         const security::Device& d = devices[i];
-        const QStringList cells = {d.name, d.kind, d.os, d.address, d.banned ? "banned" : (d.trusted ? "trusted" : "known"), QString::number(d.sessions), QDateTime::fromMSecsSinceEpoch(d.seen).toString("yyyy-MM-dd HH:mm"), d.banReason};
+        const QStringList cells = {d.name, d.kind, d.os, d.address, d.banned ? "banned" : (d.trusted ? (d.secret.isEmpty() ? "trusted · code once" : "trusted") : "known"), QString::number(d.sessions), QDateTime::fromMSecsSinceEpoch(d.seen).toString("yyyy-MM-dd HH:mm"), d.banReason};
         for (int col = 0; col < cells.size(); ++col) {
             QTableWidgetItem* item = new QTableWidgetItem(cells[col]);
             item->setData(Qt::UserRole, d.id);

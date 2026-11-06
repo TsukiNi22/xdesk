@@ -67,7 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phone keyboards: a suggestion or an autocorrection typed the whole word (or the text before) again in the screen and the terminals; only the difference is sent now, every letter at once (no wait for the end of the word)
 - Phones: the tooltips of the buttons stayed on screen after a long press (no native tooltip on touch screens, no sticky hover)
 - Clicks and keys of a viewer did nothing without a word when the host had no input backend: the viewer is told why, and the backend is tried again when it asks for control (`/dev/uinput` rights given meanwhile); the uinput error shows its real reason
-- A device unbanned in the panel kept the ban of its address: its viewer got a bare connection reset; the ban of the address is lifted with its device now, and a banned address that connects is logged once
+- A device unbanned in the panel kept the ban of its address (its viewer got a bare connection reset), an address unbanned kept its devices banned: both buttons lift the device, the other records of the machine and the address together now, and a banned address that connects is logged once
+- A device trusted again after a ban still asked the code at each connection without saying why (the ban erases its key): its state shows `trusted · code once`, that one code needs no approval and gives it a new key
 - `scripts/install.sh --uinput`: the remote control works at once for the user at the screen (`uaccess`), no new login needed
 
 [v1.0.0]: https://github.com/TsukiNi22/external-desktop/releases/tag/v1.0.0

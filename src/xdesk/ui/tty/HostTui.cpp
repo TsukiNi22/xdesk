@@ -943,7 +943,7 @@ void xdesk::ui::tty::HostTui::drawDevices_(const QRect& area)
         const QColor color = d.banned ? BAD : (d.trusted ? GOOD : MUTED);
         if (current) this->select_(QRect(1, y, w - 2, 1));
         int x = this->_canvas.text(inside.left(), y, fit(d.name, 24) + " " + fit(d.kind, 6) + " " + fit(d.os, 10) + " " + fit(d.address, 16) + " ", st(QColor(), base.bg, current), inside.width());
-        x = this->_canvas.text(x, y, fit(d.banned ? "⊘ banned" : (d.trusted ? "✓ trusted" : "· known"), 10) + " ", st(color, base.bg, true));
+        x = this->_canvas.text(x, y, fit(d.banned ? "⊘ banned" : (d.trusted ? (d.secret.isEmpty() ? "✓ code once" : "✓ trusted") : "· known"), 10) + " ", st(color, base.bg, true));
         this->_canvas.text(x, y, fit(QString::number(d.sessions), 8) + " " + fit(d.seen > 0 ? QDateTime::fromMSecsSinceEpoch(d.seen).toString("MM-dd HH:mm") : "-", 12) + " " + d.banReason, st(MUTED, base.bg), inside.right() - x + 1);
         this->_hits.append(Hit{QRect(1, y, w - 2, 1), [this, i]() {this->_device = i;}});
     }
