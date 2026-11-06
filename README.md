@@ -119,7 +119,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
 | `scripts/install.sh` | `--deps` (dnf / apt / pacman / brew + libutils), `--apk`, `--uinput` (udev rule: the user at the screen at once, the group `xdesk` after a new login), `--autostart`, `--prefix DIR`, `--uninstall` |
 | `scripts/install.ps1` | `-Zip <file>`, `-Prefix`, `-Port`, `-Autostart`, `-NoFirewall`, `-Uninstall` (private repository: needs `gh auth login` to download the release) |
 | `scripts/bundle_windows.sh` | Fedora: cross compiles `xdesk.exe` and packs every dll (Qt, plugins, OpenSSL) in `dist/xdesk-windows-x64.zip` |
-| `scripts/build_apk.sh` | Builds `android/build/xdesk.apk` without Gradle (aapt2, javac, d8, apksigner); embedded in the binary at the next build |
+| `scripts/build_apk.sh` | Builds `android/build/xdesk.apk` without Gradle (aapt2, javac, d8, apksigner), version `x.y.z.<commits>`; embedded in the binary at the next build |
 
 ## Packages
 

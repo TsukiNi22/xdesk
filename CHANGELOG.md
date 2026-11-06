@@ -51,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests: crypto, pairing code, device registry, protocol, frame encoder (motion then sharp), command line, sharing switch of the host, certificate chosen by name (SNI), terminal keys / mouse / canvas / QR code
 
 ### Changed
+- Android app: the connect screen starts on the last address tried (even a failed one, a bad link or a QR code), the 5 last addresses listed under it (tap = connect, long press = remove)
+- Android app: version `x.y.z.<commits>` (version code `x.y.z * 1000 + commits`), so a new apk of the same version is offered as an update by the host
 - Web viewer and host: 60 fps by default (the flow control still lowers it when the link cannot follow)
 - Confirmations: only lifting a ban asks a typed word (`unban`), trust and forget are a yes / no, untrust and the settings need nothing more (all of them stay refused while a remote session has control or a terminal)
 - Host window: grows to show the whole page (up to the screen, then the page scrolls), settings columns stacked when the window is too narrow (no horizontal scroll)

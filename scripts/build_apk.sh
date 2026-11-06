@@ -28,11 +28,14 @@ ANDROID_JAR="$SDK/platforms/$PLATFORM/android.jar"
 [ -f "$ANDROID_JAR" ] || die "android.jar missing ($ANDROID_JAR)"
 for tool in javac keytool zip; do command -v "$tool" > /dev/null || die "$tool is required"; done
 
-# Version: project(... VERSION x.y.z) of the CMakeLists, code = x * 10000 + y * 100 + z
+# Version: project(... VERSION x.y.z) of the CMakeLists + the build number (commits): x.y.z.n, code = (x * 10000 + y * 100 + z) * 1000 + n
+# (the build number lets the phones see a new apk of the same version as an update)
 VERSION="$(sed -n 's/^project([^)]*VERSION \([0-9][0-9.]*\).*/\1/p' "$ROOT/CMakeLists.txt" | head -1)"
 [ -n "$VERSION" ] || die "version not found in CMakeLists.txt"
 IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
-CODE=$(( ${MAJOR:-0} * 10000 + ${MINOR:-0} * 100 + ${PATCH:-0} ))
+BUILD_NUMBER="$(git -C "$ROOT" rev-list --count HEAD 2> /dev/null || echo 0)"
+CODE=$(( (${MAJOR:-0} * 10000 + ${MINOR:-0} * 100 + ${PATCH:-0}) * 1000 + BUILD_NUMBER ))
+VERSION="$VERSION.$BUILD_NUMBER"
 TARGET_SDK="${PLATFORM#android-}"
 TARGET_SDK="${TARGET_SDK%%.*}"
 

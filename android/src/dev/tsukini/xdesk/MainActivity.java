@@ -68,7 +68,9 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 
 import org.json.JSONObject;
@@ -87,6 +89,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "xdesk";
     private static final int DEFAULT_PORT = 47800;
     private static final int TIMEOUT = 8000; // ms
+    private static final int RECENT_MAX = 5; // addresses kept on the connect screen
     private static final int CAMERA_REQUEST = 7;
     private static final String SCANNER = "https://appassets.androidplatform.net"; // local origin of the scanner page (served from the assets)
 
@@ -169,7 +172,7 @@ public class MainActivity extends Activity {
 
     private void onBack() {
         if (this._scanning) {
-            this.showSetup("", this.host());
+            this.showSetup("", this.lastHost());
             return;
         }
         if (this._web != null && this._web.canGoBack()) {
@@ -184,7 +187,7 @@ public class MainActivity extends Activity {
             .setTitle("xdesk")
             .setItems(new CharSequence[]{this.tr("Leave the application", "Quitter l'application"), this.tr("Change host", "Changer d'hôte"), this.tr("Stay", "Rester")}, (d, which) -> {
                 if (which == 0) this.finish();
-                else if (which == 1) this.showSetup("", this.host());
+                else if (which == 1) this.showSetup("", this.lastHost());
             })
             .show();
     }
@@ -203,8 +206,39 @@ public class MainActivity extends Activity {
 
     private String pin() {return this._prefs.getString("fp", "");}
 
+    // Last address tried (even a failed one), else the pinned host: the default of the connect screen
+    private String lastHost() {
+        String last = this._prefs.getString("last", "");
+        return last.isEmpty() ? this.host() : last;
+    }
+
+    // Addresses tried, the newest first (at most RECENT_MAX)
+    private List<String> recentHosts() {
+        List<String> out = new ArrayList<>();
+        for (String h: this._prefs.getString("recent", "").split("\n"))
+            if (!h.isEmpty() && !out.contains(h)) out.add(h);
+        if (!this.host().isEmpty() && !out.contains(this.host())) out.add(this.host());
+        return out;
+    }
+
+    private void rememberHost(String origin) {
+        List<String> recent = this.recentHosts();
+        recent.remove(origin);
+        recent.add(0, origin);
+        while (recent.size() > RECENT_MAX) recent.remove(recent.size() - 1);
+        this._prefs.edit().putString("last", origin).putString("recent", String.join("\n", recent)).apply();
+    }
+
+    private void forgetHost(String origin) {
+        List<String> recent = this.recentHosts();
+        recent.remove(origin);
+        SharedPreferences.Editor edit = this._prefs.edit().putString("recent", String.join("\n", recent));
+        if (origin.equals(this._prefs.getString("last", ""))) edit.remove("last");
+        edit.apply();
+    }
+
     private void startOrSetup() {
-        if (this.host().isEmpty() || this.pin().isEmpty()) this.showSetup("", this.host());
+        if (this.host().isEmpty() || this.pin().isEmpty()) this.showSetup("", this.lastHost());
         else this.openWeb();
     }
 
@@ -217,7 +251,7 @@ public class MainActivity extends Activity {
         String code = uri.getQueryParameter("code");
         this._pendingCode = code == null ? "" : code;
         if (origin == null) {
-            this.showSetup(this.tr("Invalid link", "Lien invalide"), "");
+            this.showSetup(this.tr("Invalid link", "Lien invalide"), this.lastHost());
             return true;
         }
         this.probe(origin, fp);
@@ -313,6 +347,7 @@ public class MainActivity extends Activity {
 
     // Read the certificate of the host, then pin it (link fingerprint, or confirmation of the user)
     private void probe(String origin, String linkFp) {
+        this.rememberHost(origin);
         this.showBusy(this.tr("Connecting to ", "Connexion à ") + origin);
         new Thread(() -> {
             String seen = "";
@@ -469,6 +504,30 @@ public class MainActivity extends Activity {
         err.setVisibility(error == null || error.isEmpty() ? View.GONE : View.VISIBLE);
         box.addView(err);
 
+        // Recent addresses: a tap connects, a long press removes it
+        for (String recent: this.recentHosts()) {
+            Button chip = new Button(this);
+            chip.setText(recent.replaceFirst("^https://", ""));
+            chip.setTextColor(recent.equals(current) ? ACCENT : TEXT);
+            chip.setBackgroundColor(SURFACE);
+            chip.setAllCaps(false);
+            chip.setTypeface(Typeface.MONOSPACE);
+            chip.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+            chip.setPadding(this.dp(14), 0, this.dp(14), 0);
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, this.dp(44));
+            cp.topMargin = this.dp(6);
+            box.addView(chip, cp);
+            chip.setOnClickListener(v -> {
+                input.setText(recent);
+                this.connectTo(recent);
+            });
+            chip.setOnLongClickListener(v -> {
+                this.forgetHost(recent);
+                box.removeView(chip);
+                return true;
+            });
+        }
+
         Button go = new Button(this);
         go.setText(this.tr("Connect", "Se connecter"));
         go.setTextColor(Color.parseColor("#07130d"));
@@ -498,21 +557,29 @@ public class MainActivity extends Activity {
                 err.setVisibility(View.VISIBLE);
                 return;
             }
-            String link = input.getText().toString().trim();
-            String fp = "";
-            if (link.startsWith("xdesk://")) fp = clean(Uri.parse(link).getQueryParameter("fp"));
-            else if (origin.equals(this.host())) fp = this.pin(); // same host: the pinned certificate must still match
-            if (!fp.isEmpty() && origin.equals(this.host()) && fp.equals(this.pin())) {
-                this.openWeb();
-                return;
-            }
-            this.probe(origin, fp);
+            this.connectTo(input.getText().toString().trim());
         };
         go.setOnClickListener(v -> submit.run());
         input.setOnEditorActionListener((v, action, ev) -> {submit.run(); return true;});
 
         scroll.addView(box);
         this._root.addView(scroll, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    // Typed address or xdesk:// link (already checked by normalize)
+    private void connectTo(String link) {
+        String origin = normalize(link);
+        String fp = "";
+
+        if (origin == null) return;
+        if (link.startsWith("xdesk://")) fp = clean(Uri.parse(link).getQueryParameter("fp"));
+        else if (origin.equals(this.host())) fp = this.pin(); // same host: the pinned certificate must still match
+        if (!fp.isEmpty() && origin.equals(this.host()) && fp.equals(this.pin())) {
+            this.rememberHost(origin);
+            this.openWeb();
+            return;
+        }
+        this.probe(origin, fp);
     }
 
     private void openWeb() {
@@ -721,7 +788,7 @@ public class MainActivity extends Activity {
                 String scheme = uri.getScheme() == null ? "" : uri.getScheme();
                 if (SCANNER.equals(scheme + "://" + uri.getHost())) return false;
                 if (scheme.equals("xdesk-cancel")) {
-                    MainActivity.this._ui.post(() -> MainActivity.this.showSetup("", MainActivity.this.host()));
+                    MainActivity.this._ui.post(() -> MainActivity.this.showSetup("", MainActivity.this.lastHost()));
                     return true;
                 }
                 if (scheme.equals("xdesk")) {
@@ -735,7 +802,7 @@ public class MainActivity extends Activity {
                     MainActivity.this._ui.post(() -> MainActivity.this.probe(origin, "")); // no fingerprint in a browser link: confirmed by the user
                     return true;
                 }
-                MainActivity.this._ui.post(() -> MainActivity.this.showSetup(MainActivity.this.tr("This QR code is not an xdesk link", "Ce QR code n'est pas un lien xdesk"), MainActivity.this.host()));
+                MainActivity.this._ui.post(() -> MainActivity.this.showSetup(MainActivity.this.tr("This QR code is not an xdesk link", "Ce QR code n'est pas un lien xdesk"), MainActivity.this.lastHost()));
                 return true;
             }
         });
