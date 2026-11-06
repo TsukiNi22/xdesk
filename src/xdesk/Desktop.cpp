@@ -143,7 +143,6 @@ void xdesk::Desktop::runUnban_(void)
     QLockFile lock(core::Config::dataDir() + "/host.lock");
     security::DeviceRegistry registry(core::Config::dataDir());
     const QString target = QString::fromStdString(this->_target);
-    const QString challenge = security::random_code(6).remove('-');
     std::string typed;
 
     // Physical presence: a local terminal, not a remote xdesk shell, the host stopped
@@ -152,9 +151,9 @@ void xdesk::Desktop::runUnban_(void)
     lock.setStaleLockTime(0);
     if (!lock.tryLock(100))
         throw utils::exception::ErrorException(utils::exception::ExternalCode::Usage, "The host is running: unban from its panel (Devices)");
-    std::cout << "To unban " << target.toStdString() << ", type " << challenge.toStdString() << ": " << std::flush;
+    std::cout << "To unban " << target.toStdString() << ", type " << XDESK_UNBAN_WORD << ": " << std::flush;
     std::getline(std::cin, typed);
-    if (security::normalize_code(QString::fromStdString(typed)) != security::normalize_code(challenge))
+    if (QString::fromStdString(typed).trimmed().compare(XDESK_UNBAN_WORD, Qt::CaseInsensitive) != 0)
         throw utils::exception::ErrorException(utils::exception::ExternalCode::Usage, "Wrong confirmation: nothing changed");
     registry.load();
     if (registry.find(target).has_value()) registry.unban(target);

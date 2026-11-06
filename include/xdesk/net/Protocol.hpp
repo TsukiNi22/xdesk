@@ -36,6 +36,7 @@ File Description:
     /* version */
     #define XDESK_PROTOCOL_VERSION 1 // bumped on every incompatible change of the wire format
     #define XDESK_DEFAULT_PORT 47800 // https + wss port of the host
+    #define XDESK_UNBAN_WORD "unban" // typed by the person in front of the PC to lift a ban (panels, xdesk unban)
     #define XDESK_DISCOVERY_PORT 47801 // udp broadcast of the hosts on the LAN
 
     /* limits */

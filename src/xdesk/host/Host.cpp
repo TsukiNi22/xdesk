@@ -25,14 +25,21 @@ File Description:
 #include "xdesk/host/Host.hpp"
 #include <QGuiApplication>
 #include <QJsonDocument>
+#include <QHostAddress>
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QEventLoop>
 #include <QClipboard>
 #include <QHostInfo>
 #include <QDateTime>
+#include <algorithm>
 #include <QFile>
 #include <QDir>
+
+//----------------------------------------------------------------//
+/* DEFINE */
+
+#define TAMPER_INPUT_WINDOW 5000 // ms: keyboard / mouse input this recent = a possible author of an unexplained file change
 
 // Human readable input of the activity feed
 static QString mouse_button_name(const std::uint8_t button)
@@ -381,6 +388,7 @@ void xdesk::host::Host::admit_(Session* session, const bool remember)
         device.id = security::random_id(12);
         device.since = now;
     }
+    device.sessions += this->foldDevice_(session, device.id, device.since);
     device.name = session->name();
     device.kind = net::client_kind_name(session->kind());
     device.os = session->os();
@@ -427,6 +435,8 @@ void xdesk::host::Host::onControl_(Session* session, const QJsonObject& message)
         session->setMode(mode);
         this->_log.info("session", session->id(), "Mode " + mode);
         this->updateMarker_();
+    } else if (type == "pause") {
+        if (this->_stream) QMetaObject::invokeMethod(this->_stream, "setPaused", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(bool, message.value("paused").toBool()));
     } else if (type == "refresh") {
         if (this->_stream) QMetaObject::invokeMethod(this->_stream, "refresh", Qt::QueuedConnection, Q_ARG(QString, session->id()));
     } else if (type == "term_open") {
@@ -638,13 +648,15 @@ void xdesk::host::Host::onTamper_(const QString& session, const QString& reason)
 
     if (!session.isEmpty()) suspects.append(session);
     else {
-        // Unknown author: every session able to act on the PC
+        // Unknown author: the sessions that could have done it right now (a command running in one of their terminals, keyboard / mouse input in the last seconds)
+        const QStringList busy = this->_guard.busyTerminals();
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
         for (Session* s: this->_sessions)
-            if (s->state() == State::Active && ((s->permissions().control && s->mode() == "control") || std::any_of(this->_terminals.cbegin(), this->_terminals.cend(), [&](const Terminal& t) {return t.session == s->id();})))
+            if (s->state() == State::Active && (busy.contains(s->id()) || (s->permissions().control && s->mode() == "control" && now - s->lastInput() < TAMPER_INPUT_WINDOW)))
                 suspects.append(s->id());
     }
     if (suspects.isEmpty()) {
-        this->_log.warn("tamper", "", "Protected file changed with no remote session able to act (local change): " + reason);
+        this->_log.warn("tamper", "", "Protected file changed while no remote session was acting (local change: a rebuild, an update): " + reason);
         return;
     }
     this->_log.alert("tamper", session, reason, {{"suspects", QJsonArray::fromStringList(suspects)}});
@@ -681,13 +693,43 @@ void xdesk::host::Host::kickAll(const QString& reason)
         session->kick(reason);
 }
 
+int xdesk::host::Host::foldDevice_(const Session* session, const QString& keep, qint64& since)
+{
+    const QString kind = net::client_kind_name(session->kind());
+    QStringList old;
+    int sessions = 0;
+
+    // Behind a relay every client has the loopback address: never the same machine for sure
+    if (QHostAddress(session->address()).isLoopback()) return 0;
+
+    // Same machine under another id (a browser keeps one id per site address, a cleared storage): its records are replaced, their trust is not inherited
+    for (const security::Device& d: this->_registry.devices()) {
+        if (d.id == keep || d.banned || d.address != session->address() || d.name != session->name() || d.kind != kind || d.os != session->os()) continue;
+        old.append(d.id);
+        sessions += d.sessions;
+        since = std::min(since, d.since > 0 ? d.since : since);
+    }
+    for (const QString& id: old)
+        this->_registry.remove(id);
+    if (!old.isEmpty()) this->_log.info("device", session->id(), "Device " + session->name() + " had other records: " + QString::number(old.size()) + " merged (their trust is not kept)");
+    return sessions;
+}
+
 void xdesk::host::Host::ban(const QString& id, const QString& reason)
 {
     Session* session = this->_sessions.value(id);
+    QStringList same;
 
     if (!session) return;
     this->_guard.beginTrustedWrite();
     if (!session->deviceId().isEmpty() && this->_registry.find(session->deviceId()).has_value()) this->_registry.ban(session->deviceId(), reason);
+
+    // The other records of this machine (same address and name) lose their trust and are banned too
+    if (!QHostAddress(session->address()).isLoopback())
+        for (const security::Device& d: this->_registry.devices())
+            if (d.id != session->deviceId() && !d.banned && d.address == session->address() && d.name == session->name()) same.append(d.id);
+    for (const QString& device: same)
+        this->_registry.ban(device, reason + " (same machine)");
     if (session->address() != "127.0.0.1" && session->address() != "::1") this->_registry.banAddress(session->address(), reason);
     this->_guard.endTrustedWrite();
     this->_log.alert("device", id, "Banned " + session->name() + " (" + session->address() + "): " + reason);

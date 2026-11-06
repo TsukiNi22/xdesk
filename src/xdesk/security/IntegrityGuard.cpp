@@ -192,6 +192,35 @@ void xdesk::security::IntegrityGuard::scanProcesses_(void)
     #endif
 }
 
+QStringList xdesk::security::IntegrityGuard::busyTerminals(void) const
+{
+    QStringList busy;
+
+    #if defined(__linux__)
+        // A shell waiting at its prompt has no child: a child = a command running (cp, a compiler, a script...)
+        for (const QString& entry: QDir("/proc").entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+            bool ok = false;
+            QFile stat("/proc/" + entry + "/stat");
+            QByteArray content;
+            qsizetype close = -1;
+
+            (void)entry.toLongLong(&ok);
+            if (!ok || !stat.open(QIODevice::ReadOnly)) continue;
+            content = stat.readAll();
+            close = content.lastIndexOf(')');
+            if (close < 0) continue;
+            const qint64 parent = content.mid(close + 2).split(' ').value(1).toLongLong();
+            for (QHash<QString, qint64>::const_iterator root = this->_roots.cbegin(); root != this->_roots.cend(); ++root)
+                if (root.value() == parent && !busy.contains(root.key().section('#', 0, 0))) busy.append(root.key().section('#', 0, 0));
+        }
+    #else
+        // No process tree read: every session with a terminal can be the author
+        for (QHash<QString, qint64>::const_iterator root = this->_roots.cbegin(); root != this->_roots.cend(); ++root)
+            if (!busy.contains(root.key().section('#', 0, 0))) busy.append(root.key().section('#', 0, 0));
+    #endif
+    return busy;
+}
+
 void xdesk::security::IntegrityGuard::harden(void)
 {
     #ifdef _WIN32

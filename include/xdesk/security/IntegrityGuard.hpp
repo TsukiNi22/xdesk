@@ -41,8 +41,8 @@ namespace xdesk::security { // namespace start
 /*
  * What is protected: the binary, the config folder, the data folder (devices, certificate) and the host process
  * What is watched:
- *  - file hashes (watcher + periodic re-hash): a change while remote sessions run = tamper (session unknown -> every
- *    session with control / terminal rights)
+ *  - file hashes (watcher + periodic re-hash): a change while remote sessions run = tamper when a session can be the
+ *    author (a command running in its terminal, or keyboard / mouse input in the last seconds), else a local change
  *  - the lines typed in the remote terminals (paths, process name, pid, kill / taskkill / systemctl...)
  *  - the processes started from the remote terminals (Linux: cmdline + open files of the descendants)
  *  - a crash / kill of the host while sessions were running (marker checked at the next start)
@@ -77,6 +77,7 @@ class IntegrityGuard: public QObject {
         _hot _nodiscard bool checkCommand(const QString& session, const QString& line); // true = suspicious (emits tamper)
         void writeMarker(const QStringList& sessions); // sessions alive (with control / terminal)
         _cold _nodiscard QStringList previousCrashSessions(void) const; // sessions of an unclean stop
+        _cold _nodiscard QStringList busyTerminals(void) const; // sessions whose terminal runs a command right now (not only its idle shell)
         _cold _nodiscard static bool isInsideRemoteSession(void); // this process descends from an xdesk terminal
 
         // ---------- Constructor --------- //

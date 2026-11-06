@@ -46,9 +46,9 @@ File Description:
     #include <QString>                                  // QString
     #include <memory>                                   // std::unique_ptr
     #include <QHash>                                    // QHash
-    #include <QSet>                                     // QSet
     #include <QList>                                    // QList
     #include <QSize>                                    // QSize
+    #include <QSet>                                     // QSet
 
 namespace xdesk::host { // namespace start
 //----------------------------------------------------------------//
@@ -109,6 +109,7 @@ class Host: public QObject {
         void onClosed_(Session* session);
         void onTamper_(const QString& session, const QString& reason);
         void admit_(Session* session, const bool remember); // after auth (+ approval)
+        _nodiscard int foldDevice_(const Session* session, const QString& keep, qint64& since); // other records of this machine removed (keep stays): their sessions, since lowered to the oldest
         void authFailed_(Session* session, const QString& reason);
         void openTerminal_(Session* session, const std::uint8_t id, const int cols, const int rows);
         void closeTerminal_(const QString& session, const std::uint8_t id);
