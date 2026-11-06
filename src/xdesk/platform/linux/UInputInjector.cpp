@@ -128,6 +128,7 @@ bool xdesk::platform::UInputInjector::start(const QSize& screen)
         this->_keyboard = -1;
         return false;
     }
+    (void)this->_layout.load(); // not loaded: the text is typed through the US layout
     return true;
 }
 
@@ -218,9 +219,60 @@ void xdesk::platform::UInputInjector::key(const QString& code, const bool down)
     this->keyEvdev_(info->evdev, down);
 }
 
+void xdesk::platform::UInputInjector::tap_(const LayoutKey& key)
+{
+    if (key.shift) this->keyEvdev_(KEY_LEFTSHIFT, true);
+    if (key.altgr) this->keyEvdev_(KEY_RIGHTALT, true);
+    this->keyEvdev_(key.evdev, true);
+    this->keyEvdev_(key.evdev, false);
+    if (key.altgr) this->keyEvdev_(KEY_RIGHTALT, false);
+    if (key.shift) this->keyEvdev_(KEY_LEFTSHIFT, false);
+}
+
+bool xdesk::platform::UInputInjector::typeUnicode_(const uint ucs)
+{
+    const QString hex = QString::number(ucs, 16);
+
+    for (const QChar digit: hex)
+        if (!this->_layout.find(digit.unicode())) return false;
+    this->keyEvdev_(KEY_LEFTCTRL, true);
+    this->keyEvdev_(KEY_LEFTSHIFT, true);
+    this->keyEvdev_(KEY_U, true);
+    this->keyEvdev_(KEY_U, false);
+    this->keyEvdev_(KEY_LEFTSHIFT, false);
+    this->keyEvdev_(KEY_LEFTCTRL, false);
+    for (const QChar digit: hex)
+        this->tap_(*this->_layout.find(digit.unicode()));
+    this->keyEvdev_(KEY_SPACE, true);
+    this->keyEvdev_(KEY_SPACE, false);
+    return true;
+}
+
 void xdesk::platform::UInputInjector::text(const QString& text)
 {
-    // uinput only knows physical keys: ascii through the US layout (best effort)
+    // Dead keys of xkb for the combining marks (a decomposed character: the dead key, then its base letter)
+    static const QHash<uint, uint> DEAD = {{0x300, 0xfe50}, {0x301, 0xfe51}, {0x302, 0xfe52}, {0x303, 0xfe53}, {0x308, 0xfe57}, {0x30A, 0xfe58}, {0x327, 0xfe5b}};
+
+    // The layout of the host: each character with the key that types it there (an "a" is KEY_Q on azerty)
+    if (this->_layout.isLoaded()) {
+        for (const uint ucs: text.toUcs4()) {
+            const std::optional<LayoutKey> key = this->_layout.find(ucs);
+            if (ucs == '\n' || ucs == '\r') {this->keyEvdev_(KEY_ENTER, true); this->keyEvdev_(KEY_ENTER, false); continue;}
+            if (ucs == '\t') {this->keyEvdev_(KEY_TAB, true); this->keyEvdev_(KEY_TAB, false); continue;}
+            if (key) {this->tap_(*key); continue;}
+            const QString parts = QString::fromUcs4(reinterpret_cast<const char32_t*>(&ucs), 1).normalized(QString::NormalizationForm_D);
+            const QList<uint> split = parts.toUcs4();
+            if (split.size() == 2 && DEAD.contains(split[1]) && this->_layout.dead(DEAD.value(split[1])) && this->_layout.find(split[0])) {
+                this->tap_(*this->_layout.dead(DEAD.value(split[1])));
+                this->tap_(*this->_layout.find(split[0]));
+                continue;
+            }
+            (void)this->typeUnicode_(ucs); // no key at all: the unicode input of gtk / ibus
+        }
+        return;
+    }
+
+    // uinput only knows physical keys: ascii through the US layout (layout of the session unknown)
     for (const QChar c: text) {
         const std::optional<TextKey> textKey = text_key(c);
         if (!textKey) continue;

@@ -193,6 +193,7 @@ set(SRC_UNIX
 )
 set(SRC_LINUX
     src/xdesk/platform/linux/UInputInjector.cpp
+    src/xdesk/platform/linux/XkbLayout.cpp
 )
 set(SRC_DBUS
     src/xdesk/platform/linux/PortalCapture.cpp

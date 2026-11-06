@@ -27,6 +27,7 @@ File Description:
     #define _Attribute
     #include <utils/utils.hpp>              // _hot, _cold, _nodiscard
     #include "../IInputInjector.hpp"        // xdesk::platform::IInputInjector
+    #include "XkbLayout.hpp"                // xdesk::platform::XkbLayout, LayoutKey
     #include <QString>                      // QString
     #include <QSize>                        // QSize
     #include <QSet>                         // QSet
@@ -45,11 +46,14 @@ class UInputInjector final: public IInputInjector {
         int _wheelY = 0; // hi-res remainder (120 = one notch)
         int _wheelX = 0;
         QString _error = "";
+        XkbLayout _layout; // keys of the layout of the session (text typed as on the host keyboard)
 
         // ---------- Pre-Function -------- //
         _hot void emit_(const int fd, const int type, const int code, const int value);
         _hot void sync_(const int fd);
         _hot void keyEvdev_(const int evdev, const bool down);
+        _hot void tap_(const LayoutKey& key); // press + release with its shift / altgr
+        _hot bool typeUnicode_(const uint ucs); // ctrl + shift + u, the hex code, space (gtk / ibus), false = not possible
 
     public:
         // ---------- Pre-Function -------- //

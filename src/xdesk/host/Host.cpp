@@ -375,10 +375,11 @@ void xdesk::host::Host::authFailed_(Session* session, const QString& reason)
 
     this->_log.warn("auth", session->id(), "Authentication failed (" + reason + ") from " + session->address(), {{"failures", failures}});
     if (failures >= max) {
-        this->_registry.banAddress(session->address(), "Too many failed authentications", 3600);
+        // Automatic bans off: the code under attack is still dropped, nobody is banned
+        if (this->_config.settings().banOnTamper) this->_registry.banAddress(session->address(), "Too many failed authentications", 3600);
         this->_authFailures.remove(session->address());
         this->_code.rotate(); // the code under attack is dropped
-        this->_log.alert("auth", session->id(), session->address() + " banned for 1 h after " + QString::number(failures) + " failures");
+        this->_log.alert("auth", session->id(), session->address() + (this->_config.settings().banOnTamper ? " banned for 1 h after " : " made ") + QString::number(failures) + " failures" + (this->_config.settings().banOnTamper ? QString() : QString(": new code (automatic bans off)")));
     }
     session->deny(reason);
 }

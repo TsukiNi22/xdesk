@@ -65,6 +65,7 @@ set(SRC
 
     ## Platform (sub-part: platform)
     xdesk/platform/FrameEncoder.cpp
+    xdesk/platform/XkbLayout.cpp
 
     ## User interface (sub-part: ui)
     xdesk/ui/tty/Ansi.cpp

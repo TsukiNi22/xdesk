@@ -1447,7 +1447,8 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     this->_setAllowTerminal = new QCheckBox("Allow remote terminals");
     this->_setAllowWeb = new QCheckBox("Allow browsers and the android app");
     this->_setViewOnly = new QCheckBox("New sessions start view only");
-    this->_setBanOnTamper = new QCheckBox("Ban a session that touches xdesk");
+    this->_setBanOnTamper = new QCheckBox("Automatic bans (tamper, unclean stop, wrong codes)");
+    this->_setBanOnTamper->setToolTip("On (default): a session touching xdesk, the sessions with control when xdesk stops uncleanly, and an address typing too many wrong codes are banned. Off: they are only disconnected / refused (and the code renewed)");
     this->_setFocusRequest = new QCheckBox("Viewers may ask the control back (panel focused)");
     this->_setFocusRequest->setToolTip("The remote control pauses while this panel has the focus; a viewer may ask it back, granted after the delay unless refused here");
     this->_setFocusDelay = new QSpinBox();
