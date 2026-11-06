@@ -36,7 +36,7 @@ File Description:
 
 // Answer headers of every response
 static const QByteArray SECURITY_HEADERS =
-    "Content-Security-Policy: default-src 'self'; img-src 'self' blob: data:; connect-src 'self'; style-src 'self'; script-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\n"
+    "Content-Security-Policy: default-src 'self'; img-src 'self' blob: data:; connect-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'\r\n"
     "X-Content-Type-Options: nosniff\r\n"
     "Referrer-Policy: no-referrer\r\n"
     "Cache-Control: no-store\r\n"

@@ -203,6 +203,8 @@
         frameW: 0,
         frameH: 0,
         drawQueue: Promise.resolve(),
+        drawing: 0, // frames received, not drawn yet
+        paused: false, // video stream paused (terminal tab, hidden page)
         frames: 0,
         bytes: 0,
         latency: -1,
@@ -354,6 +356,9 @@
         applyPerms();
         setMode(state.perms.control ? "control" : "view", true);
         sendQuality();
+        state.paused = false; // a new session streams until told otherwise
+        state.drawing = 0;
+        syncPause();
         $("screen").focus();
     }
 
@@ -629,6 +634,14 @@
             }
             tiles.push(tile);
         }
+        // Ack at once while the drawing keeps up (the host encodes the next frame meanwhile), else once drawn
+        const ack = new Uint8Array(5);
+        ack[0] = BIN.FrameAck;
+        new DataView(ack.buffer).setUint32(1, id);
+        const early = state.drawing < 1;
+        if (early) sendBin(ack);
+        state.drawing += 1;
+
         // Decode in parallel, draw in order (a frame never overtakes the previous one)
         const decoded = Promise.all(tiles.map((tl) => tl.blob ? createImageBitmap(tl.blob).catch(() => null) : null));
         state.drawQueue = state.drawQueue.then(() => decoded).then((bitmaps) => {
@@ -649,13 +662,11 @@
                     bitmaps[i].close();
                 }
             }
-            const ack = new Uint8Array(5);
-            ack[0] = BIN.FrameAck;
-            new DataView(ack.buffer).setUint32(1, id);
-            sendBin(ack);
+            state.drawing -= 1;
+            if (!early) sendBin(ack);
             state.frames += 1;
             placeCursor();
-        }).catch(() => {});
+        }).catch(() => {state.drawing = Math.max(0, state.drawing - 1); if (!early) sendBin(ack);});
     }
 
     function onCursor(data) {
@@ -982,7 +993,18 @@
     });
 
     window.addEventListener("blur", releaseAll);
-    document.addEventListener("visibilitychange", () => {if (document.hidden) releaseAll();});
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) releaseAll();
+        syncPause();
+    });
+
+    // No video while it cannot be seen (terminal tab, hidden page): the terminal bytes never wait behind frames
+    function syncPause() {
+        const paused = document.hidden || state.activeTab !== "screen";
+        if (paused === state.paused) return;
+        state.paused = paused;
+        sendJson({t: "pause", paused: paused});
+    }
 
     $("cadBtn").addEventListener("click", () => {
         if (!canControl()) {toast(t("controlDenied")); return;}
@@ -1045,6 +1067,7 @@
         $("termPane").hidden = name === "screen";
         $("screenTools").hidden = name !== "screen";
         if (name !== "screen") releaseAll();
+        syncPause();
         for (const [id, tm] of state.terms) tm.el.hidden = "term" + id !== name;
         if (name !== "screen") {
             const tm = state.terms.get(parseInt(name.slice(4), 10));
@@ -1079,15 +1102,33 @@
         $("termPane").appendChild(el);
         const term = new Terminal({
             cursorBlink: true,
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+            // Nerd / powerline fonts first when the device has one (prompt icons), then the system monospace ones
+            fontFamily: "'JetBrainsMono Nerd Font', 'MesloLGS NF', 'FiraCode Nerd Font', 'Hack Nerd Font', 'CaskaydiaCove Nerd Font', 'Symbols Nerd Font Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', 'Noto Sans Mono', monospace",
             fontSize: window.innerWidth < 600 ? 12 : 14,
             scrollback: 5000,
-            allowProposedApi: false,
+            allowProposedApi: true, // unicode 11 widths
+            customGlyphs: true, // box drawing and block characters drawn by the renderer (no gap, no missing glyph)
+            drawBoldTextInBrightColors: true,
+            minimumContrastRatio: 1,
             theme: {background: "#0b0d0f", foreground: "#e4e7e9", cursor: "#3ddc97", selectionBackground: "#3ddc9755"},
         });
         const fit = new FitAddon.FitAddon();
         term.loadAddon(fit);
+        if (window.Unicode11Addon) {
+            term.loadAddon(new Unicode11Addon.Unicode11Addon());
+            term.unicode.activeVersion = "11"; // emoji and wide symbols take 2 cells like in the real terminal
+        }
         term.open(el);
+        // GPU renderer (much faster than the DOM one on big outputs), the DOM one when WebGL is missing or lost
+        if (window.WebglAddon) {
+            try {
+                const webgl = new WebglAddon.WebglAddon();
+                webgl.onContextLoss(() => webgl.dispose());
+                term.loadAddon(webgl);
+            } catch (e) {
+                /* DOM renderer */
+            }
+        }
 
         const tab = document.createElement("button");
         tab.type = "button";

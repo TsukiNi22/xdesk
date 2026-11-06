@@ -123,6 +123,7 @@ bool xdesk::platform::PtyTerminal::start(const QString& shell, const int cols, c
     // Everything the child needs is prepared before the fork (only async signal safe calls after it)
     environment.insert("TERM", "xterm-256color");
     environment.insert("COLORTERM", "truecolor");
+    if (!environment.contains("LANG") && !environment.contains("LC_ALL") && !environment.contains("LC_CTYPE")) environment.insert("LANG", "C.UTF-8"); // started without a locale (service, ssh): accents and symbols stay utf-8
     environment.insert("XDESK_TERMINAL", "1");
     for (auto it = env.constBegin(); it != env.constEnd(); ++it)
         environment.insert(it.key(), it.value());
