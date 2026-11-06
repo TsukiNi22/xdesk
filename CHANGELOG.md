@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Terminal client: connect page (known hosts, LAN scan, address, port, code, view only), remote terminals in tabs drawn by the `VtScreen` emulator (status bar, scroll back, application cursor keys, bracketed paste, remote mouse programs), screen tab in truecolor half blocks with control, ctrl+alt+del, quality and frame rate; `xdesk connect --tty` without an address opens the connect page
 - Stream: tiles hashed and encoded on every core, lighter JPEG while a large part of the screen moves then the same tiles sent again sharp once still, nothing computed while the capture has no new frame, PipeWire buffers reused and converted once, frames acked on arrival and decoded on every core by the native client, video paused while a client shows a terminal (the capture only starts once a client looks at the screen)
 - Web terminal: xterm.js WebGL renderer, Unicode 11 widths, Nerd / powerline fonts when installed, styles allowed by the CSP (colors and attributes kept)
+- Phones and tablets (web client and Android app): trackpad mode (slide = pointer, tap = click, hold then slide = drag) or direct touch, two fingers tap = right click, two fingers slide = scroll, pinch = zoom (the view follows the pointer), three fingers tap = keyboard; special keys bar (Esc, Tab, sticky Ctrl / Alt / Shift / Win, arrows, Home / End / PgUp / PgDn, Del, Enter, F1-F12, Ins, PrtSc, Ctrl+Alt+Del, Paste, keyboard) for the screen and the terminals, held keys repeat, soft keyboard letters combined with the sticky modifiers; session tools in a menu on small screens
+- Terminal panel and client: every row, value arrow, banner, button and box clickable (a second click opens / changes), close buttons; colors lowered to 256 / 16 / none, ascii look-alikes without a UTF-8 locale and no mouse reports on the consoles that have none (`TERM`, `COLORTERM`, `NO_COLOR`, the locale, `XDESK_TTY` to force), a terminal that cannot draw (`TERM=dumb`) refused with a message
 - Scripts: `install.sh`, `install.ps1`, `bundle_windows.sh`, `build_apk.sh`
 - Unit tests: crypto, pairing code, device registry, protocol, frame encoder (motion then sharp), command line, sharing switch of the host, certificate chosen by name (SNI), terminal keys / mouse / canvas / QR code
 
@@ -51,5 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A device that came back under a new id (a browser keeps one id per site address) left a second record; a ban now also bans the other records of the same machine and removes their trust
 - A protected file changed by the local user (a rebuild) banned the remote sessions with a terminal: only a session acting at that moment is blamed
 - Remote shells started without a locale lost the accents and symbols
+- The terminal panel aborted when the QR code was asked with no address to show
+- Terminal numbers kept growing: a new terminal takes the smallest free number (1 again after a close or a reconnection)
 
 [v1.0.0]: https://github.com/TsukiNi22/external-desktop/releases/tag/v1.0.0

@@ -18,6 +18,8 @@
     const KIND = IN_APP ? "apk" : "web";
     const LONG_PRESS = 550; // ms before a still finger becomes a right click
     const TAP_SLOP = 10; // px a tap may move
+    const TAP_TIME = 450; // ms a tap may last
+    const MAX_ZOOM = 6; // pinch zoom of the screen
 
     // ---------------------------------------------------------------- //
     // Translations
@@ -44,6 +46,10 @@
             scan: "Scanner le QR code de l'hôte", scanTitle: "Visez le QR code avec la caméra", scanHint: "Affiché par le panneau de l'hôte : Vue d'ensemble, QR code",
             scanClose: "Annuler", scanNoCamera: "Caméra indisponible : autorisez-la, ou entrez le code à la main.",
             scanNotXdesk: "Ce QR code n'est pas un lien xdesk.", scanOther: "Ce QR code mène à un autre ordinateur : ",
+            keysTitle: "Touches spéciales", menu: "Menu", keyboard: "Clavier", paste: "Coller", trackpad: "Pavé", direct: "Direct",
+            helpTrackpad: "Pavé tactile : glissez pour bouger le pointeur, touchez pour cliquer, deux doigts = clic droit, glisser à deux doigts = défiler, pincer = zoomer, maintenir puis glisser = déplacer, trois doigts = clavier",
+            helpDirect: "Toucher direct : touchez là où cliquer, glisser = déplacer, maintenir = clic droit, glisser à deux doigts = défiler, pincer = zoomer, trois doigts = clavier",
+            pastePrompt: "Texte à coller sur l'ordinateur distant",
             states: {idle: "hors ligne", connecting: "connexion", pending: "en attente", active: "connecté", closed: "fermé", banned: "banni"},
         },
     };
@@ -58,6 +64,10 @@
         exited: "process exited", copied: "Copied", fullscreenFail: "Fullscreen unavailable",
         scanNoCamera: "Camera unavailable: allow it, or type the code.", scanNotXdesk: "This QR code is not an xdesk link.",
         scanOther: "This QR code leads to another computer: ",
+        keyboard: "Keyboard", paste: "Paste", trackpad: "Trackpad", direct: "Direct",
+        helpTrackpad: "Trackpad: slide to move the pointer, tap to click, two fingers tap = right click, two fingers slide = scroll, pinch = zoom, hold then slide = drag, three fingers tap = keyboard",
+        helpDirect: "Direct touch: tap where to click, slide = drag, hold = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard",
+        pastePrompt: "Text to paste on the remote computer",
     };
     let lang = load("lang") || ((navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en");
 
@@ -82,6 +92,7 @@
             el.title = tr !== undefined ? tr : el.dataset.i18nTitleEn;
         }
         setStatus(state.status);
+        if (typeof renderKeys === "function" && $("keysMain").childElementCount) renderKeys();
     }
 
     // ---------------------------------------------------------------- //
@@ -179,12 +190,12 @@
     }
 
     let toastTimer = 0;
-    function toast(text) {
+    function toast(text, ms) {
         const el = $("toast");
         el.textContent = text;
         el.hidden = false;
         clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => {el.hidden = true;}, 3200);
+        toastTimer = setTimeout(() => {el.hidden = true;}, ms || 3200);
     }
 
     // ---------------------------------------------------------------- //
@@ -476,6 +487,7 @@
     $("reconnectBtn").addEventListener("click", connect);
     $("backBtn").addEventListener("click", () => {closeSocket(); showConnect("");});
     $("disconnectBtn").addEventListener("click", () => {
+        setMenu(false);
         closeSocket();
         showClosed(t("closedTitle"), "", false);
     });
@@ -687,12 +699,14 @@
 
     function placeCursor() {
         // Own cursor while controlling with a mouse: the remote one would only lag behind it
-        const hide = !cursorPos.visible || cursorPos.x < 0 || !state.frameW || (state.mode === "control" && !touchMode);
+        // Trackpad: the local pointer (no round trip), else the remote one
+        const pos = trackpad() && state.mode === "control" && pad.x >= 0 ? {x: pad.x, y: pad.y, visible: true} : cursorPos;
+        const hide = !pos.visible || pos.x < 0 || !state.frameW || (state.mode === "control" && !touchMode);
         const box = hide ? null : drawnBox();
         cursorEl.hidden = !box;
         if (!box) return;
         const stage = $("stage").getBoundingClientRect();
-        cursorEl.style.transform = "translate(" + (box.left - stage.left + cursorPos.x * box.ratio) + "px," + (box.top - stage.top + cursorPos.y * box.ratio) + "px)";
+        cursorEl.style.transform = "translate(" + (box.left - stage.left + pos.x * box.ratio) + "px," + (box.top - stage.top + pos.y * box.ratio) + "px)";
     }
 
     // ---------------------------------------------------------------- //
@@ -709,7 +723,7 @@
             canvas.style.width = (state.frameW / ratio) + "px";
             canvas.style.height = (state.frameH / ratio) + "px";
         }
-        requestAnimationFrame(placeCursor);
+        requestAnimationFrame(applyZoom);
     }
 
     $("fitSelect").addEventListener("change", () => {save("fit", $("fitSelect").value); layoutCanvas();});
@@ -735,6 +749,7 @@
         $("viewport").hidden = !state.perms.view;
         if (!state.perms.control && state.mode === "control") setMode("view", false);
         if (!state.perms.terminal) destroyTerms();
+        updateKeybar();
     }
 
     function setMode(mode, send) {
@@ -839,8 +854,7 @@
     // Mouse (pointer events)
 
     let touchMode = false;
-    const touches = new Map(); // pointerId -> {x, y, startX, startY, t}
-    let touchState = {longTimer: 0, long: false, dragging: false, scrollY: 0, scrollX: 0, twoFinger: false};
+    const touches = new Map(); // pointerId -> {x, y, startX, startY}
 
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
@@ -876,7 +890,11 @@
     });
 
     canvas.addEventListener("pointercancel", (e) => {
-        if (e.pointerType === "touch") {touches.delete(e.pointerId); clearTimeout(touchState.longTimer);}
+        if (e.pointerType === "touch") {
+            touches.delete(e.pointerId);
+            if (gesture) clearTimeout(gesture.timer);
+            if (touches.size === 0) gesture = null;
+        }
         releaseAll();
     });
 
@@ -889,86 +907,216 @@
     }, {passive: false});
 
     // ---------------------------------------------------------------- //
-    // Touch: tap = click, one finger drag = left drag, long press = right click, two fingers = scroll
+    // Touch
+    //  trackpad (default): one finger slides the pointer, tap = click, hold then slide = drag
+    //  direct: the finger is the pointer, tap = click there, slide = drag, hold = right click
+    //  both: two fingers tap = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard
+
+    const view = {zoom: 1, panX: 0, panY: 0}; // zoom of the screen (fit mode), css pixels
+    const pad = {x: -1, y: -1}; // pointer moved by the trackpad (frame pixels)
+    let gesture = null;
+
+    function touchInput() {return load("touch") === "direct" ? "direct" : "trackpad";}
+    function trackpad() {return touchMode && touchInput() === "trackpad";}
+
+    function markTouch() {
+        if (touchMode && document.documentElement.classList.contains("touch")) return;
+        touchMode = true;
+        document.documentElement.classList.add("touch");
+        updateKeybar();
+    }
+
+    function applyZoom() {
+        if (view.zoom <= 1.01 || !$("viewport").classList.contains("fit")) {view.zoom = 1; view.panX = 0; view.panY = 0;}
+        const w = canvas.clientWidth;
+        const h = canvas.clientHeight;
+        view.panX = Math.min(0, Math.max(w - w * view.zoom, view.panX));
+        view.panY = Math.min(0, Math.max(h - h * view.zoom, view.panY));
+        canvas.style.transformOrigin = "0 0";
+        canvas.style.transform = view.zoom > 1 ? "translate(" + view.panX + "px," + view.panY + "px) scale(" + view.zoom + ")" : "";
+        placeCursor();
+    }
+
+    // Zoomed: the screen follows the trackpad pointer
+    function followPad() {
+        const box = drawnBox();
+        if (view.zoom <= 1 || !box) return;
+        const vp = $("viewport").getBoundingClientRect();
+        const x = box.left + pad.x * box.ratio;
+        const y = box.top + pad.y * box.ratio;
+        const margin = Math.min(60, vp.width / 5, vp.height / 5);
+        if (x < vp.left + margin) view.panX += vp.left + margin - x;
+        else if (x > vp.right - margin) view.panX -= x - (vp.right - margin);
+        if (y < vp.top + margin) view.panY += vp.top + margin - y;
+        else if (y > vp.bottom - margin) view.panY -= y - (vp.bottom - margin);
+        applyZoom();
+    }
+
+    // Trackpad pointer: from the remote one, else the middle of the screen
+    function padStart() {
+        if (pad.x >= 0 && pad.x < state.frameW && pad.y >= 0 && pad.y < state.frameH) return;
+        if (cursorPos.visible && cursorPos.x >= 0) {pad.x = cursorPos.x; pad.y = cursorPos.y;}
+        else {pad.x = state.frameW / 2; pad.y = state.frameH / 2;}
+    }
+
+    function padPoint() {return {x: Math.round(pad.x), y: Math.round(pad.y)};}
+
+    function click(button, p) {
+        if (p) sendMove(p);
+        sendButton(button, true);
+        sendButton(button, false);
+    }
+
+    function twoFingers() {
+        const list = Array.from(touches.values());
+        return {d: Math.hypot(list[0].x - list[1].x, list[0].y - list[1].y), x: (list[0].x + list[1].x) / 2, y: (list[0].y + list[1].y) / 2};
+    }
 
     function onTouchDown(e) {
-        touchMode = true;
-        if (!canControl()) return;
+        markTouch();
+        if (!state.perms.view) return;
         e.preventDefault();
         canvas.setPointerCapture(e.pointerId);
-        touches.set(e.pointerId, {x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, t: performance.now()});
+        const now = performance.now();
+        touches.set(e.pointerId, {x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY});
         if (touches.size === 1) {
-            touchState = {longTimer: 0, long: false, dragging: false, scrollY: 0, scrollX: 0, twoFinger: false};
-            const p = toFrame(e.clientX, e.clientY);
-            if (p) sendMove(p);
-            touchState.longTimer = setTimeout(() => {
-                touchState.long = true;
-                sendButton(2, true);
-                sendButton(2, false);
-                if (navigator.vibrate) navigator.vibrate(15);
-            }, LONG_PRESS);
-        } else {
-            clearTimeout(touchState.longTimer);
-            touchState.twoFinger = true;
-            if (touchState.dragging) {sendButton(0, false); touchState.dragging = false;}
+            gesture = {t: now, last: now, fingers: 1, moved: false, long: false, dragging: false, timer: 0, kind: "", two: null, scrollX: 0, scrollY: 0};
+            if (!canControl()) return;
+            if (trackpad()) {
+                padStart();
+                placeCursor();
+                gesture.timer = setTimeout(() => {
+                    // Held still: the left button stays down, the finger drags
+                    gesture.long = true;
+                    gesture.dragging = true;
+                    sendMove(padPoint());
+                    sendButton(0, true);
+                    if (navigator.vibrate) navigator.vibrate(15);
+                }, LONG_PRESS);
+            } else {
+                const p = toFrame(e.clientX, e.clientY);
+                if (p) sendMove(p);
+                gesture.timer = setTimeout(() => {
+                    gesture.long = true;
+                    click(2, null);
+                    if (navigator.vibrate) navigator.vibrate(15);
+                }, LONG_PRESS);
+            }
+            return;
+        }
+        if (!gesture) return;
+        clearTimeout(gesture.timer);
+        gesture.fingers = Math.max(gesture.fingers, touches.size);
+        if (gesture.dragging) {sendButton(0, false); gesture.dragging = false;}
+        if (touches.size === 2) {
+            // Untransformed position of the canvas: the pinch keeps the point under the fingers
+            const two = twoFingers();
+            const r = canvas.getBoundingClientRect();
+            gesture.two = {d: two.d, x: two.x, y: two.y, zoom: view.zoom, left: r.left - view.panX, top: r.top - view.panY, panX: view.panX, panY: view.panY};
+            gesture.kind = "";
         }
     }
 
     function onTouchMove(e) {
         const tp = touches.get(e.pointerId);
-        if (!tp || !canControl()) return;
+        if (!tp || !gesture) return;
         e.preventDefault();
         const dx = e.clientX - tp.x;
         const dy = e.clientY - tp.y;
+        const now = performance.now();
+        const dt = Math.max(1, now - gesture.last);
         tp.x = e.clientX;
         tp.y = e.clientY;
-        if (touchState.twoFinger) {
-            if (touches.size >= 2) {
-                // Average of the fingers: each finger reports half the move
-                touchState.scrollY += dy / touches.size;
-                touchState.scrollX += dx / touches.size;
-                const sy = Math.trunc(touchState.scrollY / 4);
-                const sx = Math.trunc(touchState.scrollX / 4);
-                if (sy || sx) {
-                    sendWheel(sx * 12, sy * 12);
-                    touchState.scrollY -= sy * 4;
-                    touchState.scrollX -= sx * 4;
-                }
-            }
+        gesture.last = now;
+        if (Math.hypot(e.clientX - tp.startX, e.clientY - tp.startY) > TAP_SLOP) {
+            gesture.moved = true;
+            if (!gesture.long) clearTimeout(gesture.timer);
+        }
+        if (touches.size >= 2) {twoFingerMove(dx, dy); return;}
+        if (gesture.fingers > 1) return; // the fingers of a two-finger gesture leaving one by one
+        if (!canControl()) {
+            // View only: one finger moves the zoomed screen
+            if (view.zoom > 1) {view.panX += dx; view.panY += dy; applyZoom();}
             return;
         }
-        const moved = Math.hypot(e.clientX - tp.startX, e.clientY - tp.startY) > TAP_SLOP;
-        if (moved && !touchState.long) {
-            clearTimeout(touchState.longTimer);
-            if (!touchState.dragging) {
-                touchState.dragging = true;
-                const start = toFrame(tp.startX, tp.startY);
-                if (start) sendMove(start);
-                sendButton(0, true);
-            }
+        if (trackpad()) {
+            const box = drawnBox();
+            if (!box || (!gesture.moved && !gesture.dragging)) return;
+            const accel = 1 + Math.min(2.5, Math.hypot(dx, dy) / dt * 0.9); // a fast slide goes further
+            pad.x = Math.max(0, Math.min(state.frameW - 1, pad.x + dx / box.ratio * accel));
+            pad.y = Math.max(0, Math.min(state.frameH - 1, pad.y + dy / box.ratio * accel));
+            sendMove(padPoint());
+            followPad();
+            placeCursor();
+            return;
         }
-        if (touchState.dragging) {
+        if (gesture.moved && !gesture.long && !gesture.dragging) {
+            gesture.dragging = true;
+            const start = toFrame(tp.startX, tp.startY);
+            if (start) sendMove(start);
+            sendButton(0, true);
+        }
+        if (gesture.dragging) {
             const p = toFrame(e.clientX, e.clientY);
             if (p) sendMove(p);
+        }
+    }
+
+    function twoFingerMove(dx, dy) {
+        const g = gesture.two;
+        if (!g) return;
+        const two = twoFingers();
+        if (!gesture.kind) {
+            // Fingers spreading = zoom, moving together = scroll
+            const spread = Math.abs(two.d - g.d);
+            const shift = Math.hypot(two.x - g.x, two.y - g.y);
+            if (spread > 14 && spread > shift * 0.6 && $("viewport").classList.contains("fit")) gesture.kind = "pinch";
+            else if (shift > 10) gesture.kind = "scroll";
+            else return;
+        }
+        if (gesture.kind === "pinch") {
+            const zoom = Math.max(1, Math.min(MAX_ZOOM, g.zoom * two.d / Math.max(1, g.d)));
+            const localX = (g.x - g.left - g.panX) / g.zoom;
+            const localY = (g.y - g.top - g.panY) / g.zoom;
+            view.zoom = zoom;
+            view.panX = two.x - g.left - localX * zoom;
+            view.panY = two.y - g.top - localY * zoom;
+            applyZoom();
+            return;
+        }
+        // Scroll: the remote wheel when controlling, else the zoomed screen moves
+        if (!canControl()) {
+            if (view.zoom > 1) {view.panX += dx / touches.size; view.panY += dy / touches.size; applyZoom();}
+            return;
+        }
+        gesture.scrollY += dy / touches.size;
+        gesture.scrollX += dx / touches.size;
+        const sy = Math.trunc(gesture.scrollY / 4);
+        const sx = Math.trunc(gesture.scrollX / 4);
+        if (sy || sx) {
+            sendWheel(sx * 12, sy * 12);
+            gesture.scrollY -= sy * 4;
+            gesture.scrollX -= sx * 4;
         }
     }
 
     function onTouchUp(e) {
         const tp = touches.get(e.pointerId);
         touches.delete(e.pointerId);
-        clearTimeout(touchState.longTimer);
-        if (!tp || !canControl()) return;
+        if (!tp || !gesture) return;
         e.preventDefault();
-        if (touches.size > 0) return;
-        if (touchState.dragging) {
-            sendButton(0, false);
-        } else if (!touchState.long && !touchState.twoFinger && performance.now() - tp.t < 600) {
-            const p = toFrame(tp.startX, tp.startY);
-            if (p) sendMove(p);
-            sendButton(0, true);
-            sendButton(0, false);
-        }
-        touchState.dragging = false;
+        clearTimeout(gesture.timer);
+        if (touches.size > 0) return; // the gesture ends with its last finger
+        const g = gesture;
+        const quick = performance.now() - g.t < TAP_TIME;
+        gesture = null;
+        if (g.dragging) {sendButton(0, false); return;}
+        if (g.kind || g.long) return;
+        if (g.fingers >= 3) {if (quick) toggleKeyboard(); return;}
+        if (!canControl()) return;
+        if (g.fingers === 2) {if (quick) click(2, trackpad() ? padPoint() : toFrame(tp.startX, tp.startY)); return;}
+        if (g.moved || !quick) return;
+        click(0, trackpad() ? padPoint() : toFrame(tp.startX, tp.startY));
     }
 
     // ---------------------------------------------------------------- //
@@ -1005,31 +1153,18 @@
         sendJson({t: "pause", paused: paused});
     }
 
-    $("cadBtn").addEventListener("click", () => {
-        if (!canControl()) {toast(t("controlDenied")); return;}
-        sendKey("ControlLeft", true);
-        sendKey("AltLeft", true);
-        sendKey("Delete", true);
-        sendKey("Delete", false);
-        sendKey("AltLeft", false);
-        sendKey("ControlLeft", false);
-    });
+    $("cadBtn").addEventListener("click", sendCad);
 
     // On-screen keyboard: a hidden input opens the soft keyboard, its text is sent as Text messages
-    $("kbdBtn").addEventListener("click", () => {
-        if (!state.perms.control) {toast(t("controlDenied")); return;}
-        if (state.mode !== "control") setMode("control", true);
-        kbdInput.value = "";
-        kbdInput.focus();
-    });
+    $("kbdBtn").addEventListener("click", toggleKeyboard);
 
     kbdInput.addEventListener("beforeinput", (e) => {
         if (!canControl()) return;
         switch (e.inputType) {
             case "insertText": case "insertReplacementText": case "insertCompositionText": break;
-            case "insertLineBreak": case "insertParagraph": e.preventDefault(); sendKey("Enter", true); sendKey("Enter", false); break;
-            case "deleteContentBackward": e.preventDefault(); sendKey("Backspace", true); sendKey("Backspace", false); break;
-            case "deleteContentForward": e.preventDefault(); sendKey("Delete", true); sendKey("Delete", false); break;
+            case "insertLineBreak": case "insertParagraph": e.preventDefault(); pressKey("Enter"); break;
+            case "deleteContentBackward": e.preventDefault(); pressKey("Backspace"); break;
+            case "deleteContentForward": e.preventDefault(); pressKey("Delete"); break;
             default: break;
         }
     });
@@ -1037,12 +1172,12 @@
     kbdInput.addEventListener("input", (e) => {
         if (!canControl()) return;
         if (e.isComposing) return;
-        if (kbdInput.value) sendText(kbdInput.value);
+        if (kbdInput.value && !typedWithMods(kbdInput.value)) {sendText(kbdInput.value); releaseOneShot();}
         kbdInput.value = "";
     });
 
     kbdInput.addEventListener("compositionend", () => {
-        if (kbdInput.value) sendText(kbdInput.value);
+        if (kbdInput.value && !typedWithMods(kbdInput.value)) {sendText(kbdInput.value); releaseOneShot();}
         kbdInput.value = "";
     });
 
@@ -1051,10 +1186,298 @@
         const special = ["Enter", "Escape", "Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"];
         if (!canControl() || !special.includes(e.key)) return;
         e.preventDefault();
-        const code = e.code || e.key;
-        sendKey(code, true);
-        sendKey(code, false);
+        pressKey(e.code || e.key);
     });
+
+    // ---------------------------------------------------------------- //
+    // Special keys (phones and tablets, or asked with the keys button)
+    //  a modifier: one tap = the next key only, a second tap = locked, one more = off
+
+    const MODIFIERS = {ctrl: "ControlLeft", alt: "AltLeft", shift: "ShiftLeft", meta: "MetaLeft"};
+    const mods = {ctrl: 0, alt: 0, shift: 0, meta: 0}; // 0 off, 1 next key, 2 locked
+    const modTaps = {};
+    const repeat = {timer: 0, interval: 0, fired: false};
+    const KBD_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 10h1M10 10h1M14 10h1M18 10h0M7 14h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+    const MAIN_KEYS = [
+        {act: "input", screen: true},
+        {act: "kbd", html: KBD_ICON, title: "keyboard"},
+        {code: "Escape", label: "Esc"},
+        {code: "Tab", label: "Tab"},
+        {mod: "ctrl", label: "Ctrl", gap: true},
+        {mod: "alt", label: "Alt"},
+        {mod: "shift", label: "Shift"},
+        {mod: "meta", label: "Win"},
+        {code: "ArrowLeft", label: "←", repeat: true, gap: true},
+        {code: "ArrowUp", label: "↑", repeat: true},
+        {code: "ArrowDown", label: "↓", repeat: true},
+        {code: "ArrowRight", label: "→", repeat: true},
+        {code: "Home", label: "Home", gap: true},
+        {code: "End", label: "End"},
+        {code: "PageUp", label: "PgUp", repeat: true},
+        {code: "PageDown", label: "PgDn", repeat: true},
+        {code: "Backspace", label: "⌫", repeat: true, gap: true},
+        {code: "Delete", label: "Del", repeat: true},
+        {code: "Enter", label: "⏎"},
+        {act: "fn", label: "Fn", gap: true},
+        {act: "paste", label: "paste"},
+        {act: "cad", label: "Ctrl+Alt+Del", screen: true},
+    ];
+    const FN_KEYS = ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"].map((f) => ({code: f, label: f}))
+        .concat([{code: "Insert", label: "Ins", gap: true}, {code: "PrintScreen", label: "PrtSc", screen: true}]);
+    // Terminal bytes: letter = CSI / SS3 final byte (cursor keys, F1-F4), else the whole sequence
+    const TERM_KEYS = {
+        ArrowUp: "A", ArrowDown: "B", ArrowRight: "C", ArrowLeft: "D", Home: "H", End: "F", F1: "P", F2: "Q", F3: "R", F4: "S",
+        Escape: "\x1b", Tab: "\t", Enter: "\r", Backspace: "\x7f", Insert: "\x1b[2~", Delete: "\x1b[3~", PageUp: "\x1b[5~", PageDown: "\x1b[6~",
+        F5: "\x1b[15~", F6: "\x1b[17~", F7: "\x1b[18~", F8: "\x1b[19~", F9: "\x1b[20~", F10: "\x1b[21~", F11: "\x1b[23~", F12: "\x1b[24~",
+    };
+    const CHAR_CODES = {" ": "Space", "-": "Minus", "=": "Equal", "[": "BracketLeft", "]": "BracketRight", ";": "Semicolon", "'": "Quote", ",": "Comma", ".": "Period", "/": "Slash", "\\": "Backslash", "`": "Backquote"};
+
+    function activeTerm() {
+        return state.activeTab.startsWith("term") ? state.terms.get(parseInt(state.activeTab.slice(4), 10)) : null;
+    }
+
+    function ensureControl() {
+        if (canControl()) return true;
+        if (!state.perms.control) {toast(t("controlDenied")); return false;}
+        setMode("control", true);
+        return canControl();
+    }
+
+    function termSequence(code, tm) {
+        const seq = TERM_KEYS[code];
+        const m = 1 + (mods.shift ? 1 : 0) + (mods.alt ? 2 : 0) + (mods.ctrl ? 4 : 0);
+        if (!seq) return "";
+        if (seq.length === 1 && /[A-DHFP-S]/.test(seq)) {
+            if (m > 1) return "\x1b[1;" + m + seq;
+            const app = /[A-DHF]/.test(seq) && tm.term.modes && tm.term.modes.applicationCursorKeysMode;
+            return (app || /[P-S]/.test(seq) ? "\x1bO" : "\x1b[") + seq;
+        }
+        if (seq.endsWith("~") && m > 1) return seq.slice(0, -1) + ";" + m + "~";
+        if (code === "Tab" && mods.shift) return "\x1b[Z";
+        if (code === "Backspace" && mods.ctrl) return (mods.alt ? "\x1b" : "") + "\x08";
+        return (mods.alt ? "\x1b" : "") + seq;
+    }
+
+    function sendTermBytes(tm, text) {
+        if (!text || tm.exited) return;
+        sendBin(concat(new Uint8Array([BIN.TermData, tm.id]), new TextEncoder().encode(text)));
+    }
+
+    // A key with the modifiers that are on (the screen: key events, a terminal: its bytes)
+    function pressKey(code) {
+        if (state.activeTab === "screen") {
+            if (!ensureControl()) return;
+            const held = Object.keys(mods).filter((name) => mods[name]).map((name) => MODIFIERS[name]);
+            for (const m of held) sendKey(m, true);
+            sendKey(code, true);
+            sendKey(code, false);
+            for (const m of held.reverse()) sendKey(m, false);
+        } else {
+            const tm = activeTerm();
+            if (tm) sendTermBytes(tm, termSequence(code, tm));
+        }
+        releaseOneShot();
+    }
+
+    function sendCad() {
+        if (!ensureControl()) return;
+        sendKey("ControlLeft", true);
+        sendKey("AltLeft", true);
+        sendKey("Delete", true);
+        sendKey("Delete", false);
+        sendKey("AltLeft", false);
+        sendKey("ControlLeft", false);
+    }
+
+    function tapModifier(name) {
+        const now = performance.now();
+        if (mods[name] === 1 && now - (modTaps[name] || 0) < 400) mods[name] = 2;
+        else mods[name] = mods[name] ? 0 : 1;
+        modTaps[name] = now;
+        renderMods();
+    }
+
+    function releaseOneShot() {
+        let changed = false;
+        for (const name of Object.keys(mods)) if (mods[name] === 1) {mods[name] = 0; changed = true;}
+        if (changed) renderMods();
+    }
+
+    function renderMods() {
+        for (const b of document.querySelectorAll("#keybar .key[data-mod]")) {
+            b.classList.toggle("on", mods[b.dataset.mod] === 1);
+            b.classList.toggle("lock", mods[b.dataset.mod] === 2);
+            b.setAttribute("aria-pressed", String(mods[b.dataset.mod] > 0));
+        }
+    }
+
+    // Soft keyboard text while ctrl / alt / win is on: sent as the key (ctrl+c, alt+f...)
+    function typedWithMods(text) {
+        if (!(mods.ctrl || mods.alt || mods.meta) || Array.from(text).length !== 1) return false;
+        const code = /^[a-z]$/i.test(text) ? "Key" + text.toUpperCase() : (/^[0-9]$/.test(text) ? "Digit" + text : (CHAR_CODES[text] || ""));
+        if (!code) return false;
+        pressKey(code);
+        return true;
+    }
+
+    // Same for a terminal: control characters, alt = escape first
+    function termWithMods(data) {
+        if (!(mods.ctrl || mods.alt) || Array.from(data).length !== 1) return data;
+        let out = data;
+        if (mods.ctrl) {
+            const c = data.toUpperCase().charCodeAt(0);
+            if (data === " ") out = "\x00";
+            else if (data === "?") out = "\x7f";
+            else if (c >= 64 && c <= 95) out = String.fromCharCode(c - 64);
+        }
+        if (mods.alt) out = "\x1b" + out;
+        releaseOneShot();
+        return out;
+    }
+
+    function toggleKeyboard() {
+        if (state.activeTab === "screen") {
+            if (document.activeElement === kbdInput) {kbdInput.blur(); return;}
+            if (!ensureControl()) return;
+            kbdInput.value = "";
+            kbdInput.focus();
+            return;
+        }
+        const tm = activeTerm();
+        if (!tm) return;
+        const area = tm.el.querySelector("textarea");
+        if (area && document.activeElement === area) area.blur();
+        else tm.term.focus();
+    }
+
+    function toggleInput() {
+        save("touch", touchInput() === "trackpad" ? "direct" : "trackpad");
+        pad.x = -1;
+        if (touchInput() === "trackpad") padStart();
+        renderKeys();
+        placeCursor();
+        toast(t(touchInput() === "trackpad" ? "helpTrackpad" : "helpDirect"), 7000);
+    }
+
+    async function pasteClipboard() {
+        let text = "";
+        try {
+            text = await navigator.clipboard.readText();
+        } catch (e) {
+            text = window.prompt(t("pastePrompt"), "") || ""; // clipboard refused (permission, app): typed or pasted by hand
+        }
+        if (!text) return;
+        if (state.activeTab === "screen") {
+            if (ensureControl()) sendText(text);
+            return;
+        }
+        const tm = activeTerm();
+        if (tm && !tm.exited) tm.term.paste(text); // bracketed when the program asked for it
+    }
+
+    function keyButton(k) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "key" + (k.gap ? " gap" : "");
+        if (k.code) b.dataset.code = k.code;
+        if (k.mod) {b.dataset.mod = k.mod; b.setAttribute("aria-pressed", "false");}
+        if (k.act) b.dataset.act = k.act;
+        if (k.repeat) b.dataset.repeat = "1";
+        if (k.screen) b.dataset.screen = "1";
+        if (k.html) b.innerHTML = k.html;
+        else b.textContent = k.label || "";
+        if (k.title) b.dataset.title = k.title;
+        return b;
+    }
+
+    function renderKeys() {
+        const screen = state.activeTab === "screen";
+        for (const b of document.querySelectorAll("#keybar .key")) {
+            if (b.dataset.screen) b.hidden = !screen;
+            if (b.dataset.act === "input") b.textContent = t(touchInput() === "trackpad" ? "trackpad" : "direct");
+            if (b.dataset.act === "paste") b.textContent = t("paste");
+            if (b.dataset.act === "fn") b.classList.toggle("on", !$("keysFn").hidden);
+            if (b.dataset.title) {b.title = t(b.dataset.title); b.setAttribute("aria-label", b.title);}
+        }
+        renderMods();
+    }
+
+    function keysWanted() {
+        const v = load("keys");
+        return v === null ? touchMode || window.matchMedia("(pointer: coarse)").matches : v === "1";
+    }
+
+    function updateKeybar() {
+        const want = keysWanted();
+        const show = want && state.status === "active" && (state.activeTab !== "screen" || state.perms.control);
+        $("keysBtn").classList.toggle("on", want);
+        $("keysBtn").setAttribute("aria-pressed", String(want));
+        if ($("keybar").hidden === !show) {renderKeys(); return;}
+        $("keybar").hidden = !show;
+        renderKeys();
+        requestAnimationFrame(() => {layoutCanvas(); fitActiveTerm();});
+    }
+
+    function activate(b) {
+        const d = b.dataset;
+        if (d.mod) tapModifier(d.mod);
+        else if (d.code) pressKey(d.code);
+        else if (d.act === "fn") {$("keysFn").hidden = !$("keysFn").hidden; renderKeys(); requestAnimationFrame(() => {layoutCanvas(); fitActiveTerm();});}
+        else if (d.act === "kbd") toggleKeyboard();
+        else if (d.act === "input") toggleInput();
+        else if (d.act === "cad") sendCad();
+        else if (d.act === "paste") pasteClipboard();
+    }
+
+    function stopRepeat() {
+        clearTimeout(repeat.timer);
+        clearInterval(repeat.interval);
+    }
+
+    for (const k of MAIN_KEYS) $("keysMain").appendChild(keyButton(k));
+    for (const k of FN_KEYS) $("keysFn").appendChild(keyButton(k));
+
+    // The focus (and the soft keyboard) stays where it is: the keys never take it
+    $("keybar").addEventListener("mousedown", (e) => {if (e.target.closest(".key")) e.preventDefault();});
+    $("keybar").addEventListener("click", (e) => {
+        const b = e.target.closest(".key");
+        if (!b) return;
+        if (repeat.fired) {repeat.fired = false; return;} // held: already sent
+        activate(b);
+    });
+    // Held arrows / erase keys repeat (a slide of the row cancels it)
+    $("keybar").addEventListener("pointerdown", (e) => {
+        const b = e.target.closest(".key");
+        stopRepeat();
+        repeat.fired = false;
+        if (!b || !b.dataset.repeat) return;
+        repeat.timer = setTimeout(() => {
+            repeat.fired = true;
+            activate(b);
+            repeat.interval = setInterval(() => activate(b), 60);
+        }, 450);
+    });
+    for (const name of ["pointerup", "pointercancel", "pointerleave"]) $("keybar").addEventListener(name, stopRepeat);
+
+    $("keysBtn").addEventListener("click", () => {
+        save("keys", keysWanted() ? "0" : "1");
+        updateKeybar();
+    });
+
+    // ---------------------------------------------------------------- //
+    // Tools menu (small screens)
+
+    function setMenu(open) {
+        $("toolsMenu").classList.toggle("open", open);
+        $("menuBtn").setAttribute("aria-expanded", String(open));
+    }
+
+    $("menuBtn").addEventListener("click", () => setMenu(!$("toolsMenu").classList.contains("open")));
+    document.addEventListener("pointerdown", (e) => {
+        if ($("toolsMenu").classList.contains("open") && !e.target.closest("#toolsMenu, #menuBtn")) setMenu(false);
+    });
+    document.addEventListener("keydown", (e) => {if (e.key === "Escape" && $("toolsMenu").classList.contains("open")) setMenu(false);});
+
 
     // ---------------------------------------------------------------- //
     // Terminals (xterm.js)
@@ -1068,6 +1491,7 @@
         if (name !== "screen") releaseAll();
         syncPause();
         for (const [id, tm] of state.terms) tm.el.hidden = "term" + id !== name;
+        updateKeybar();
         if (name !== "screen") {
             const tm = state.terms.get(parseInt(name.slice(4), 10));
             if (tm) {fitTerm(tm); tm.term.focus();}
@@ -1148,7 +1572,7 @@
         const encoder = new TextEncoder();
         term.onData((d) => {
             if (tm.exited) return;
-            sendBin(concat(new Uint8Array([BIN.TermData, id]), encoder.encode(d)));
+            sendBin(concat(new Uint8Array([BIN.TermData, id]), encoder.encode(termWithMods(d))));
         });
         term.onBinary((d) => {
             if (tm.exited) return;

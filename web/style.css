@@ -199,7 +199,11 @@ input.code { font-family: var(--mono); font-size: 26px !important; letter-spacin
     background: var(--surface);
     border-bottom: 1px solid var(--border);
 }
+.toolbar { position: relative; }
 .toolbar .group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tools { display: contents; } /* in the toolbar on wide screens, a menu on small ones */
+#menuBtn { display: none; }
+#keysBtn.on { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
 .tabs { display: flex; gap: 4px; overflow-x: auto; max-width: 100%; }
 .tab { font: inherit; font-size: 14px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 3px; padding: 4px 10px; min-height: 32px; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
 .tab:hover { background: var(--code-bg); }
@@ -237,6 +241,18 @@ input.code { font-family: var(--mono); font-size: 26px !important; letter-spacin
 .notice { margin: auto; color: var(--muted); padding: 24px; text-align: center; }
 .hidden-kbd { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0; pointer-events: none; }
 
+/* special keys (phones / tablets): sticky modifiers, arrows, function keys */
+.keybar { display: flex; flex-direction: column; gap: 4px; padding: 4px max(6px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)); background: var(--surface); border-top: 1px solid var(--border); user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+.keys { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; overscroll-behavior: contain; }
+.keys::-webkit-scrollbar { display: none; }
+.key { flex: 0 0 auto; min-width: 44px; min-height: 40px; padding: 0 10px; font: 600 14px/1 var(--font); color: var(--text); background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }
+.key:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.key.down { background: var(--accent-soft); border-color: var(--accent); }
+.key.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.key.lock { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.key.gap { margin-left: 8px; }
+.key svg { width: 18px; height: 18px; }
+
 .terms { flex-direction: column; background: #101114; padding: 6px; }
 .term { flex: 1; min-height: 0; }
 .term .xterm { height: 100%; padding: 4px; }
@@ -253,12 +269,25 @@ input.code { font-family: var(--mono); font-size: 26px !important; letter-spacin
     .slider input { width: 70px; }
     .stats { order: 10; width: 100%; justify-content: flex-end; }
 }
+@media (max-width: 760px) {
+    /* The tools of the session in a menu: the screen keeps the height */
+    #menuBtn { display: inline-flex; }
+    .tools { display: none; position: absolute; top: 100%; right: max(8px, env(safe-area-inset-right)); z-index: 30; flex-direction: column; align-items: stretch; gap: 12px; width: min(300px, calc(100vw - 16px)); padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0, 0, 0, .3); }
+    .tools.open { display: flex; }
+    .tools .group { flex-direction: column; align-items: stretch; gap: 10px; }
+    .tools .seg { display: flex; }
+    .tools .seg button { flex: 1; }
+    .tools .slider { justify-content: space-between; }
+    .tools .slider input { width: auto; flex: 1; }
+    .tools .stats { order: 0; width: auto; justify-content: space-between; }
+    .tabs { flex: 1; min-width: 0; }
+    .toolbar .spacer { display: none; }
+}
 @media (max-width: 600px) {
     .card { padding: 20px 16px; }
     .card h1 { font-size: 23px; }
     .bar { gap: 8px; }
     .brand .ver { display: none; }
-    #fitSelect, .slider, #fpsSelect { display: none; }
     .toolbar .btn { padding: 4px 8px; }
     input, select { font-size: 16px; }
 }

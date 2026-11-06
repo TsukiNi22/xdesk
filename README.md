@@ -209,6 +209,7 @@ xdesk connect 192.168.1.20 -c K7F-29Q-XM4    # control a PC (Qt viewer)
 xdesk connect my-pc.ts.net --tty             # remote terminal in this terminal (ctrl+] ? keys, ctrl+] q quit)
 xdesk connect bore.pub:41234 --tty --screen  # starts on the remote screen (ctrl+] c control)
 xdesk connect --tty                          # connect page: known hosts, LAN scan, address and code
+XDESK_TTY=ascii,16 xdesk host --tty          # force what the terminal shows (ascii, unicode, mono, 16, 256, truecolor, no-mouse)
 xdesk connect 192.168.1.20 --view-only       # never send keyboard / mouse
 xdesk viewer                                 # Qt viewer with its connect page (LAN scan, known hosts)
 xdesk scan                                   # hosts announced on the LAN
@@ -323,7 +324,7 @@ path it closes. The panel shows, for each path, who can use it and its address.
 ## Phone & browser
 
 - Scan the **QR code** of the panel (Overview, QR code, or the button of an address) with the camera: the xdesk app or the browser opens with the code filled in.
-- Open `https://<host>:<port>` (shown in the panel): the web client asks the code (or scans it: Scan the QR code of the host), then shows the screen (touch: tap = click, long press = right click, two fingers = scroll, keyboard button) and terminals (xterm.js).
+- Open `https://<host>:<port>` (shown in the panel): the web client asks the code (or scans it: Scan the QR code of the host), then shows the screen and terminals (xterm.js). On a phone or a tablet: trackpad mode (slide = pointer, tap = click, hold then slide = drag) or direct touch, two fingers tap = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard, and a bar of special keys (Esc, Tab, sticky Ctrl / Alt / Shift / Win, arrows, F1-F12, Ctrl+Alt+Del, Paste); the session tools sit in the menu.
 - On Android the page proposes the **xdesk app** (`/app/xdesk.apk`): full screen, certificate pinned on first use (or from the QR code), a QR code scanner (camera asked when it opens), and an update offered as soon as the host serves a newer version.
 - The certificate is self-signed: the browser asks to accept it once (compare the fingerprint with the host panel), or use the Tailscale name (real certificate, see above) / a tunnel with a real certificate.
 - LAN addresses use the `<pc>.local` name when avahi / Bonjour publishes it for that address, the IP otherwise.

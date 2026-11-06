@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="color-scheme" content="light dark">
     <meta name="theme-color" content="#101315">
     <title>xdesk</title>
@@ -102,6 +102,13 @@
                     <button class="tab add" type="button" id="newTermBtn" title="New terminal" data-i18n-title="newTerminal">+ <span data-i18n="terminal">Terminal</span></button>
                 </nav>
                 <span class="spacer"></span>
+                <button class="icon-btn" type="button" id="keysBtn" aria-label="Special keys" title="Special keys" data-i18n-title="keysTitle" aria-pressed="false">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="7" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="7" width="9" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 11h2M16 11h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </button>
+                <button class="icon-btn" type="button" id="menuBtn" aria-label="Menu" title="Menu" data-i18n-title="menu" aria-expanded="false" aria-controls="toolsMenu">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                </button>
+                <div class="tools" id="toolsMenu">
                 <div class="group" id="screenTools">
                     <div class="seg" role="group" aria-label="Mode">
                         <button type="button" id="modeView" class="on" data-i18n="view">View</button>
@@ -127,6 +134,7 @@
                 </div>
                 <div class="stats" id="stats" aria-live="off"><span id="statLatency">-- ms</span><span id="statFps">0 fps</span><span id="statKbps">0 kb/s</span></div>
                 <button class="btn danger" type="button" id="disconnectBtn" data-i18n="disconnect">Disconnect</button>
+                </div>
             </div>
 
             <div class="pane" id="screenPane">
@@ -140,6 +148,10 @@
                 <input class="hidden-kbd" id="kbdInput" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Keyboard input">
             </div>
             <div class="pane terms" id="termPane" hidden></div>
+            <div class="keybar" id="keybar" role="toolbar" aria-label="Special keys" hidden>
+                <div class="keys" id="keysFn" hidden></div>
+                <div class="keys" id="keysMain"></div>
+            </div>
             <div class="toast" id="toast" role="status" hidden></div>
         </section>
     </main>
