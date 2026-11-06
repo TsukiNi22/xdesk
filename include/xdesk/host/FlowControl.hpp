@@ -39,7 +39,8 @@ File Description:
     #define FLOW_RATE_WINDOW 2500 // ms of delivery rate samples kept (max filter)
     #define FLOW_RTT_WINDOW 10000 // ms of ping samples kept (min filter)
     #define FLOW_ACK_TIMEOUT 1500 // ms without ack before the frames in flight are given up
-    #define FLOW_QUEUE_HIGH 40.0 // ms of queuing (smoothed) from which the quality goes down
+    #define FLOW_QUEUE_WINDOW 500 // ms of acks whose lowest ping shows a standing queue
+    #define FLOW_QUEUE_HIGH 30.0 // ms of standing queue from which the quality goes down
     #define FLOW_QUEUE_LOW 15.0 // ms of queuing under which the quality may go up again
     #define FLOW_QUALITY_FLOOR 25 // lowest jpeg quality chosen by the flow control
     #define FLOW_DOWN_EVERY 400 // ms between two steps down of the quality
@@ -66,7 +67,8 @@ struct FlowFrame {
  *  - no queue: the frames the asked rate needs during one ping (min of the last acks), so a far viewer gets its frame
  *    rate instead of 2 frames per ping
  *  - a queue: what the path holds, its bandwidth (bytes acked over the time they took, max of the last samples) x ping
- * The time an ack takes beyond the ping is a queue: the jpeg quality steps down while it grows, up once it is gone.
+ * The lowest ping of the last half second above the lowest of all is a standing queue (one late ack is a loss or
+ * jitter, not a queue): the jpeg quality steps down while it grows, up once it is gone.
 */
 class FlowControl {
     private:
@@ -76,8 +78,7 @@ class FlowControl {
         std::int64_t _delivered = 0; // bytes acked since the reset
         std::int64_t _deliveredAt = 0; // ms of the last ack (or of the send that ended an idle time)
         std::int64_t _bytes = 0; // bytes in flight
-        double _size = 0.0; // usual size of a frame (smoothed bytes)
-        double _queue = 0.0; // smoothed queuing delay (ms)
+        double _queue = 0.0; // standing queuing delay (ms)
         int _quality = 100; // ceiling of the jpeg quality
         int _asked = 100; // quality asked by the viewer (last one seen)
         std::int64_t _changed = 0; // ms of the last quality step

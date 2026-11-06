@@ -41,7 +41,6 @@ void xdesk::host::FlowControl::sent(const std::uint32_t id, const std::int64_t b
     if (this->_flight.isEmpty()) this->_deliveredAt = now;
     this->_flight.append(FlowFrame{id, now, bytes, this->_delivered, this->_deliveredAt});
     this->_bytes += bytes;
-    this->_size = this->_size <= 0.0 ? static_cast<double>(bytes) : this->_size * 0.9 + static_cast<double>(bytes) * 0.1;
 }
 
 void xdesk::host::FlowControl::acked(const std::uint32_t id, const std::int64_t now)
@@ -62,7 +61,8 @@ void xdesk::host::FlowControl::acked(const std::uint32_t id, const std::int64_t 
     // Samples: delivery rate since the frame was sent, ping
     const double interval = static_cast<double>(std::max<std::int64_t>(1, now - last.deliveredAt));
     const double rtt = static_cast<double>(std::max<std::int64_t>(1, now - last.at));
-    const double bandwidth = this->bandwidth();
+    double recent = rtt;
+
     this->_rates.append(qMakePair(now, static_cast<double>(this->_delivered - last.delivered) / interval));
     this->_rtts.append(qMakePair(now, rtt));
     while (!this->_rates.isEmpty() && now - this->_rates.first().first > FLOW_RATE_WINDOW)
@@ -70,10 +70,11 @@ void xdesk::host::FlowControl::acked(const std::uint32_t id, const std::int64_t 
     while (this->_rtts.size() > 1 && now - this->_rtts.first().first > FLOW_RTT_WINDOW)
         this->_rtts.removeFirst();
 
-    // Queue: what the ack took beyond the ping (a frame bigger than usual takes longer: not a queue)
-    const double bigger = bandwidth > 0.0 ? std::max(0.0, static_cast<double>(last.bytes) - this->_size) / bandwidth : 0.0;
-    const double queued = std::max(0.0, rtt - this->minRtt() - bigger);
-    this->_queue = this->_queue * 0.8 + queued * 0.2;
+    // Standing queue: the lowest ping of the last moments above the lowest of all (a lost packet, jitter or a big frame
+    // makes one ack late, a queue makes all of them late)
+    for (const QPair<std::int64_t, double>& sample: this->_rtts)
+        if (now - sample.first <= FLOW_QUEUE_WINDOW) recent = std::min(recent, sample.second);
+    this->_queue = std::max(0.0, recent - this->minRtt());
 
     // Quality: down while a queue grows, up again once it is gone
     if (this->_queue > FLOW_QUEUE_HIGH && now - this->_changed >= FLOW_DOWN_EVERY) {

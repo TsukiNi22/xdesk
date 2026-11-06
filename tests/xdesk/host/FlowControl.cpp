@@ -98,8 +98,8 @@ TEST(FlowControl, SlowLinkLowersTheQualityInsteadOfQueuing)
 
     EXPECT_LT(after.quality, 70);
     EXPECT_LT(after.latency, 400.0);
-    EXPECT_GT(after.fps, before.fps); // lighter frames: more of them
-    EXPECT_LE(after.latency, before.latency);
+    EXPECT_GT(after.fps, before.fps * 2.5); // lighter frames: many more of them
+    EXPECT_LT(after.latency, before.latency * 1.15); // for about the same lag
 }
 
 TEST(FlowControl, LanKeepsTheSmallWindowAndTheQuality)
