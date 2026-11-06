@@ -672,7 +672,7 @@ cmake -S . -B build -DBUILD_TESTS=ON && cmake --build build && ./unit_tests</cod
 <tr><td><code>lane</code></td><td><span data-lang="en">C → S (first message of <code>/lane</code>)</span><span data-lang="fr">C → S (premier message de <code>/lane</code>)</span></td><td><code>session token index</code></td></tr>
 <tr><td><code>quality</code> / <code>mode</code> / <code>refresh</code></td><td>C → S</td><td><code>quality scale fps</code> / <code>view|control</code></td></tr>
 <tr><td><code>term_open</code> / <code>term_resize</code> / <code>term_close</code> / <code>term_exit</code></td><td>↔</td><td><code>id cols rows code</code></td></tr>
-<tr><td><code>perms</code> / <code>screen</code> / <code>info</code> / <code>bye</code> / <code>clip</code></td><td>S → C (<code>clip</code> ↔)</td><td><code>perms</code>, <code>w h</code>, <code>text</code>, <code>reason banned</code></td></tr>
+<tr><td><code>perms</code> / <code>screen</code> / <code>info</code> / <code>bye</code> / <code>clip</code></td><td>S → C (<code>clip</code> ↔)</td><td><code>perms</code>, <code>w h</code>, <code>text</code> <span data-lang="en">(ex: why the remote control is unavailable)</span><span data-lang="fr">(ex : pourquoi le contrôle à distance est indisponible)</span>, <code>reason banned</code></td></tr>
     </tbody>
   </table></div>
   <h3><span data-lang="en">5.2 Binary messages</span><span data-lang="fr">5.2 Messages binaires</span></h3>
@@ -683,7 +683,7 @@ cmake -S . -B build -DBUILD_TESTS=ON && cmake --build build && ./unit_tests</cod
 <tr><td><code>0x11</code> FrameAck</td><td>C → S</td><td><code>u32 id</code></td></tr>
 <tr><td><code>0x12</code> Cursor</td><td>S → C</td><td><code>i16 x, i16 y, u8 visible</code></td></tr>
 <tr><td><code>0x20</code> / <code>0x21</code> / <code>0x22</code></td><td>C → S</td><td><span data-lang="en">mouse move <code>u16 x y</code>, button <code>u8 b, u8 down</code>, wheel <code>i16 dx dy</code> (120 / notch)</span><span data-lang="fr">souris <code>u16 x y</code>, bouton <code>u8 b, u8 down</code>, molette <code>i16 dx dy</code> (120 / cran)</span></td></tr>
-<tr><td><code>0x23</code> Key / <code>0x24</code> Text</td><td>C → S</td><td><span data-lang="en"><code>u8 down, u8 len</code> + <code>KeyboardEvent.code</code> / utf8</span><span data-lang="fr"><code>u8 down, u8 len</code> + <code>KeyboardEvent.code</code> / utf8</span></td></tr>
+<tr><td><code>0x23</code> Key / <code>0x24</code> Text</td><td>C → S</td><td><span data-lang="en"><code>u8 down, u8 len</code> + <code>KeyboardEvent.code</code> / utf8; a soft keyboard sends only what changed in its input (<code>Backspace</code> keys + the new letters), so a suggestion or an autocorrection never types the word twice</span><span data-lang="fr"><code>u8 down, u8 len</code> + <code>KeyboardEvent.code</code> / utf8 ; un clavier virtuel n'envoie que ce qui a changé dans son champ (touches <code>Backspace</code> + les nouvelles lettres), une suggestion ou une correction ne tape donc jamais le mot deux fois</span></td></tr>
 <tr><td><code>0x31</code> TermData</td><td>↔</td><td><code>u8 id</code> + bytes</td></tr>
     </tbody>
   </table></div>
