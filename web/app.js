@@ -52,8 +52,8 @@
             scanClose: "Annuler", scanNoCamera: "Caméra indisponible : autorisez-la, ou entrez le code à la main.",
             scanNotXdesk: "Ce QR code n'est pas un lien xdesk.", scanOther: "Ce QR code mène à un autre ordinateur : ",
             keysTitle: "Touches spéciales", menu: "Menu", keyboard: "Clavier", paste: "Coller", trackpad: "Pavé", direct: "Direct",
-            helpTrackpad: "Pavé tactile : glissez pour bouger le pointeur, touchez pour cliquer, touchez deux fois = double clic, touchez puis glissez ou maintenez puis glissez = déplacer, deux doigts = clic droit, glisser à deux doigts = défiler, pincer = zoomer, trois doigts = clavier",
-            helpDirect: "Toucher direct : touchez là où cliquer, touchez deux fois = double clic, glisser = déplacer, maintenir puis lâcher = clic droit, glisser à deux doigts = défiler, pincer = zoomer, trois doigts = clavier",
+            helpTrackpad: "Pavé tactile : glissez pour bouger le pointeur, touchez pour cliquer, touchez deux fois = double clic (maintenu au second : sélection par mots), touchez puis glissez ou maintenez puis glissez = déplacer, deux doigts = clic droit, glisser à deux doigts = défiler, pincer = zoomer, trois doigts = clavier",
+            helpDirect: "Toucher direct : touchez là où cliquer, touchez deux fois = double clic (maintenu au second : sélection par mots), glisser = déplacer, maintenir puis lâcher = clic droit, glisser à deux doigts = défiler, pincer = zoomer, trois doigts = clavier",
             pastePrompt: "Texte à coller sur l'ordinateur distant",
             states: {idle: "hors ligne", connecting: "connexion", pending: "en attente", active: "connecté", closed: "fermé", banned: "banni"},
         },
@@ -70,8 +70,8 @@
         scanNoCamera: "Camera unavailable: allow it, or type the code.", scanNotXdesk: "This QR code is not an xdesk link.",
         scanOther: "This QR code leads to another computer: ",
         keyboard: "Keyboard", paste: "Paste", trackpad: "Trackpad", direct: "Direct",
-        helpTrackpad: "Trackpad: slide to move the pointer, tap to click, double tap = double click, tap then slide or hold then slide = drag, two fingers tap = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard",
-        helpDirect: "Direct touch: tap where to click, double tap = double click, slide = drag, hold then lift = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard",
+        helpTrackpad: "Trackpad: slide to move the pointer, tap to click, double tap = double click (held on the second: select by words), tap then slide or hold then slide = drag, two fingers tap = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard",
+        helpDirect: "Direct touch: tap where to click, double tap = double click (held on the second: select by words), slide = drag, hold then lift = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard",
         pastePrompt: "Text to paste on the remote computer",
     };
     let lang = load("lang") || ((navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en");
@@ -1074,6 +1074,7 @@
     // Touch
     //  trackpad (default): one finger slides the pointer, tap = click, double tap = double click, tap then slide or hold then slide = drag
     //  direct: the finger is the pointer, tap = click there, double tap = double click, slide = drag, hold then lift = right click, hold then slide = drag
+    //  both: the second tap of a double tap holds the button while the finger stays (double click + hold / slide, as with a mouse)
     //  both: two fingers tap = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard
 
     const view = {zoom: 1, panX: 0, panY: 0}; // zoom of the screen (fit mode), css pixels
@@ -1171,6 +1172,12 @@
                 const near = chained && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < DOUBLE_SLOP;
                 gesture.p = near ? lastTap.p : toFrame(e.clientX, e.clientY);
                 if (gesture.p) sendMove(gesture.p);
+                if (near) {
+                    // Second tap: the button follows the finger like a mouse (double click, double click + hold / slide = select by words)
+                    gesture.dragging = true;
+                    sendButton(0, true);
+                    return;
+                }
                 gesture.timer = setTimeout(() => {
                     // Held still: right click when lifted, drag when it slides
                     gesture.long = true;
@@ -1231,7 +1238,7 @@
             if (start) sendMove(start);
             sendButton(0, true);
         }
-        if (gesture.dragging) {
+        if (gesture.dragging && gesture.moved) {
             const p = toFrame(e.clientX, e.clientY);
             if (p) sendMove(p);
         }
