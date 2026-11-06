@@ -24,9 +24,11 @@ File Description:
 #include <QCoreApplication>
 #include <gtest/gtest.h>
 #include <QSslSocket>
+#include <cstdint>
 
-// Host on a free port of the loopback, LAN only, no discovery (an application is needed for the sockets and the thread)
-static xdesk::core::Config& test_config(void)
+// Host on a port of the loopback, LAN only, no discovery (an application is needed for the sockets and the thread)
+// Each test its own port: ctest runs them in parallel processes (one would see the port of another open)
+static xdesk::core::Config& test_config(const std::uint16_t port = 47977)
 {
     static int argc = 1;
     static char name[] = "unit_tests";
@@ -37,7 +39,7 @@ static xdesk::core::Config& test_config(void)
     (void)app;
     config.load();
     config.settings().bind = "127.0.0.1";
-    config.settings().port = 47977;
+    config.settings().port = port;
     config.settings().discovery = false;
     config.settings().exposure = xdesk::core::Exposure::Lan;
     return config;
@@ -54,13 +56,13 @@ static bool listening(const quint16 port)
 /* Sharing */
 TEST(Host, StartWithoutSharingListensNowhere)
 {
-    xdesk::host::Host host(test_config());
+    xdesk::host::Host host(test_config(47978));
 
     host.start(false);
     EXPECT_TRUE(host.isRunning());
     EXPECT_FALSE(host.isSharing());
     EXPECT_TRUE(host.exposure().endpoints().isEmpty());
-    EXPECT_FALSE(listening(47977));
+    EXPECT_FALSE(listening(47978));
     host.stop();
 }
 
@@ -88,7 +90,7 @@ TEST(Host, SharingTurnsOnAndOffWithoutRestart)
 
 TEST(Host, SharingCodeChangesAtEachStart)
 {
-    xdesk::host::Host host(test_config());
+    xdesk::host::Host host(test_config(47979));
     QString first;
 
     host.start(false);
