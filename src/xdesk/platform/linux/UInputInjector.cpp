@@ -57,8 +57,11 @@ _cold static int create_device(const int fd, const char* name, const std::uint16
 _cold static int open_uinput(void)
 {
     int fd = ::open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+    const int first = errno;
 
-    if (fd < 0) fd = ::open("/dev/input/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+    if (fd >= 0) return fd;
+    fd = ::open("/dev/input/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0 && errno == ENOENT) errno = first; // the old path missing: the reason of the real one (no rights)
     return fd;
 }
 

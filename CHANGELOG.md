@@ -51,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests: crypto, pairing code, device registry, protocol, frame encoder (motion then sharp), command line, sharing switch of the host, certificate chosen by name (SNI), terminal keys / mouse / canvas / QR code
 
 ### Changed
+- Web viewer and host: 60 fps by default (the flow control still lowers it when the link cannot follow)
 - Confirmations: only lifting a ban asks a typed word (`unban`), trust and forget are a yes / no, untrust and the settings need nothing more (all of them stay refused while a remote session has control or a terminal)
 - Host window: grows to show the whole page (up to the screen, then the page scrolls), settings columns stacked when the window is too narrow (no horizontal scroll)
 - Terminal panel and client restyled: rounded cards titled on their border (sharing with the code and a colored countdown, reach, addresses, system; sessions, devices, log; settings in two columns), selected rows with an accent bar, `● on` / `○ off` toggles, state marks (`✓ trusted`, `⊘ banned`, `● control`), underlined current page, connect page in cards; small terminals stack the cards and drop the ones that do not fit
@@ -61,5 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remote shells started without a locale lost the accents and symbols
 - The terminal panel aborted when the QR code was asked with no address to show
 - Terminal numbers kept growing: a new terminal takes the smallest free number (1 again after a close or a reconnection)
+- Phone keyboards: a suggestion or an autocorrection typed the whole word (or the text before) again in the screen and the terminals; only the difference is sent now, every letter at once (no wait for the end of the word)
+- Phones: the tooltips of the buttons stayed on screen after a long press (no native tooltip on touch screens, no sticky hover)
+- Clicks and keys of a viewer did nothing without a word when the host had no input backend: the viewer is told why, and the backend is tried again when it asks for control (`/dev/uinput` rights given meanwhile); the uinput error shows its real reason
+- `scripts/install.sh --uinput`: the remote control works at once for the user at the screen (`uaccess`), no new login needed
 
 [v1.0.0]: https://github.com/TsukiNi22/external-desktop/releases/tag/v1.0.0

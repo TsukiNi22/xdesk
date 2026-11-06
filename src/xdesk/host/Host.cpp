@@ -484,6 +484,9 @@ void xdesk::host::Host::onControl_(Session* session, const QJsonObject& message)
         if (mode != "control" && session->mode() == "control" && this->_injector) this->_injector->releaseAll();
         session->setMode(mode);
         this->_log.info("session", session->id(), "Mode " + mode);
+        // Input rights given since the capture started (uinput rule): tried again, else the viewer is told why its clicks do nothing
+        if (mode == "control" && !this->_injector && this->_screen.isValid()) this->openInjector_();
+        if (mode == "control" && !this->_injector) session->sendJson({{"t", "info"}, {"text", "Remote control unavailable on the host: " + (this->_inputError.isEmpty() ? QString("no input backend") : this->_inputError)}});
         this->updateMarker_();
     } else if (type == "pause") {
         if (this->_stream) QMetaObject::invokeMethod(this->_stream, "setPaused", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(bool, message.value("paused").toBool()));

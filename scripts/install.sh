@@ -142,11 +142,13 @@ if [ "$UINPUT" -eq 1 ]; then
     say "giving the group xdesk access to /dev/uinput (sudo)"
     getent group xdesk > /dev/null || $SUDO groupadd --system xdesk
     $SUDO usermod -aG xdesk "$USER"
-    echo 'KERNEL=="uinput", GROUP="xdesk", MODE="0660", OPTIONS+="static_node=uinput"' | $SUDO tee /etc/udev/rules.d/70-xdesk-uinput.rules > /dev/null
+    # uaccess: the user logged in at the screen gets it at once (no new login), the group covers the other sessions
+    $SUDO rm -f /etc/udev/rules.d/70-xdesk-uinput.rules
+    echo 'KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="xdesk", MODE="0660", TAG+="uaccess", OPTIONS+="static_node=uinput"' | $SUDO tee /etc/udev/rules.d/60-xdesk-uinput.rules > /dev/null
     echo uinput | $SUDO tee /etc/modules-load.d/xdesk-uinput.conf > /dev/null
     $SUDO modprobe uinput || true
     $SUDO udevadm control --reload-rules && $SUDO udevadm trigger /dev/uinput || true
-    say "log out and back in (new group), then the remote control works on Wayland too"
+    say "the remote control works now on Wayland too (other users of the group xdesk: after a new login)"
 fi
 
 case ":$PATH:" in
