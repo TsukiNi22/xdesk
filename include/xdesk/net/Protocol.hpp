@@ -57,6 +57,7 @@ enum class Binary: std::uint8_t {
     Frame = 0x10, // S->C u32 id, u16 width, u16 height, u16 count, count * tile
     FrameAck = 0x11, // C->S u32 id, sent on arrival (the acks size the frames in flight and measure the ping / bandwidth)
     Cursor = 0x12, // S->C i16 x, i16 y, u8 visible
+    Video = 0x13, // S->C u32 id, u16 width, u16 height, u8 flags (1 = key frame), H.264 annex B access unit of the whole frame (constrained baseline, BT.709 limited range, size rounded up to even: drawn cropped); acked like a Frame, only to the clients listing "h264" in "enc" and while their frames keep their order
     MouseMove = 0x20, // C->S u16 x, u16 y (absolute, pixels of the host screen)
     MouseButton = 0x21, // C->S u8 button (MouseButton), u8 down
     MouseWheel = 0x22, // C->S i16 dx, i16 dy (1/120 of a notch, like Qt angleDelta)

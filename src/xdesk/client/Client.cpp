@@ -68,7 +68,9 @@ xdesk::client::Client::Client(QObject* parent)
         if (this->_ws) this->_ws->sendText(QString(R"({"t":"ping","ts":%1})").arg(QDateTime::currentMSecsSinceEpoch()));
     });
     QObject::connect(&this->_udp, &UdpLink::frame, this, [this](const QByteArray& message) {
-        if (this->_state == State::Active) this->decodeFrame_(message, true);
+        if (this->_state != State::Active || message.isEmpty()) return;
+        if (static_cast<std::uint8_t>(message[0]) == static_cast<std::uint8_t>(net::Binary::Video)) this->decodeVideo_(message, true);
+        else this->decodeFrame_(message, true);
     });
     QObject::connect(&this->_udp, &UdpLink::gaveUp, this, [this]() {
         if (this->_ws && this->_state == State::Active) this->_ws->sendText(R"({"t":"refresh"})"); // a frame lost for good: a complete one
@@ -173,7 +175,7 @@ void xdesk::client::Client::sendHello_(void)
     this->_ws->sendText(QString::fromUtf8(QJsonDocument(QJsonObject{
         {"t", "hello"}, {"v", XDESK_PROTOCOL_VERSION}, {"kind", net::client_kind_name(this->_options.kind)},
         {"name", this->_options.name}, {"os", QSysInfo::prettyProductName()}, {"device", known.value("device").toString()},
-        {"nonce", QString::fromLatin1(this->_clientNonce.toBase64())}, {"enc", QJsonArray{"palette", "copy"}},
+        {"nonce", QString::fromLatin1(this->_clientNonce.toBase64())}, {"enc", platform::h264_available() ? QJsonArray{"palette", "copy", "h264"} : QJsonArray{"palette", "copy"}},
     }).toJson(QJsonDocument::Compact)));
 }
 
@@ -279,6 +281,7 @@ void xdesk::client::Client::onBinary_(const QByteArray& data)
     if (this->_state != State::Active) return;
     switch (type) {
         case net::Binary::Frame: this->decodeFrame_(data); break;
+        case net::Binary::Video: this->decodeVideo_(data); break;
         case net::Binary::Cursor: {
             const int x = r.i16();
             const int y = r.i16();
@@ -293,6 +296,45 @@ void xdesk::client::Client::onBinary_(const QByteArray& data)
         }
         default: break;
     }
+}
+
+void xdesk::client::Client::fitCanvas_(const int width, const int height)
+{
+    this->_canvas = QImage(width, height, QImage::Format_RGB32);
+    this->_canvas.fill(Qt::black);
+    this->_tileColumns = (width + XDESK_TILE_SIZE - 1) / XDESK_TILE_SIZE;
+    this->_tiles = QVector<std::uint32_t>(this->_tileColumns * ((height + XDESK_TILE_SIZE - 1) / XDESK_TILE_SIZE), 0);
+}
+
+void xdesk::client::Client::decodeVideo_(const QByteArray& data, const bool udp)
+{
+    net::ByteReader r(data);
+    const std::uint32_t id = r.u32();
+    const int width = r.u16();
+    const int height = r.u16();
+    const bool key = (r.u8() & 1) != 0;
+    const QByteArray unit = r.rest();
+
+    if (!r.ok() || width == 0 || height == 0) return;
+    if (!udp) {
+        net::ByteWriter ack(net::Binary::FrameAck, 5);
+        this->_ws->sendBinary(ack.u32(id).data());
+    }
+
+    // After a broken frame only a key frame can be decoded
+    if (key) this->_videoBroken = false;
+    if (this->_videoBroken) return;
+    const QImage image = this->_video.decode(unit, width, height);
+    if (image.isNull() || image.size() != QSize(width, height)) {
+        this->_videoBroken = true;
+        this->_video.reset();
+        if (this->_ws) this->_ws->sendText(R"({"t":"refresh"})"); // a complete frame and a key frame
+        return;
+    }
+    if (this->_canvas.size() != image.size()) this->fitCanvas_(width, height);
+    this->_canvas = image;
+    std::fill(this->_tiles.begin(), this->_tiles.end(), id); // the whole screen comes from this frame (ordered path)
+    emit this->frameUpdated(this->_canvas.rect());
 }
 
 void xdesk::client::Client::decodeFrame_(const QByteArray& data, const bool udp)
@@ -313,10 +355,7 @@ void xdesk::client::Client::decodeFrame_(const QByteArray& data, const bool udp)
         this->_ws->sendBinary(ack.u32(id).data());
     }
     if (this->_canvas.size() != QSize(width, height)) {
-        this->_canvas = QImage(width, height, QImage::Format_RGB32);
-        this->_canvas.fill(Qt::black);
-        this->_tileColumns = (width + XDESK_TILE_SIZE - 1) / XDESK_TILE_SIZE;
-        this->_tiles = QVector<std::uint32_t>(this->_tileColumns * ((height + XDESK_TILE_SIZE - 1) / XDESK_TILE_SIZE), 0);
+        this->fitCanvas_(width, height);
         dirty = this->_canvas.rect();
     }
 

@@ -51,6 +51,8 @@ File Description:
 #define COPY_MIN_MOVED 4 // known tiles changed before a scroll is looked for
 #define COPY_MIN_TILES 2 // changed tiles of a column before its lines are compared
 #define COPY_MIN_VOTES 12 // lines of a column found at the same offset before it is trusted
+#define VIDEO_MAX_PIXELS (1920 * 1200) // larger frames stay in tiles (the software encoder would hold the stream back)
+#define VIDEO_QUALITY 1 // quality the tiles are known with after a video frame (sent again sharp once still)
 
 //----------------------------------------------------------------//
 /* STRUCT */
@@ -327,7 +329,8 @@ void xdesk::platform::FrameEncoder::reset(void)
 {
     std::fill(this->_hashes.begin(), this->_hashes.end(), 0);
     std::fill(this->_quality.begin(), this->_quality.end(), 0);
-    this->_copied = false;
+    this->_ordered = false;
+    if (this->_h264) this->_h264->forceKey(); // the client may have lost its decoder state too
 }
 
 void xdesk::platform::FrameEncoder::findCopies_(const QImage& image, const QVector<std::uint64_t>& hashes, QVector<int>& offsets) const
@@ -425,8 +428,28 @@ QList<QByteArray> xdesk::platform::FrameEncoder::copyTiles_(const QVector<int>& 
         }
     }
     this->_quality = quality;
-    if (!tiles.isEmpty()) this->_copied = true;
+    if (!tiles.isEmpty()) this->_ordered = true;
     return tiles;
+}
+
+QByteArray xdesk::platform::FrameEncoder::encodeVideo_(const QImage& image, const QVector<std::uint64_t>& hashes, const int quality)
+{
+    bool key = false;
+
+    if (!this->_h264) this->_h264 = std::make_shared<H264Encoder>();
+    const QByteArray unit = this->_h264->encode(image, quality, &key);
+    if (unit.isEmpty()) return {};
+
+    // The client now has this frame (lossy): every tile known, sent again sharp once still
+    this->_hashes = hashes;
+    std::fill(this->_quality.begin(), this->_quality.end(), VIDEO_QUALITY);
+    this->_ordered = true;
+    if (this->_copy) this->_previous = image;
+    net::ByteWriter message(net::Binary::Video, static_cast<std::size_t>(unit.size()) + 16);
+    message.u32(++this->_id).u16(static_cast<std::uint16_t>(this->_width)).u16(static_cast<std::uint16_t>(this->_height));
+    message.u8(key ? 1 : 0);
+    message.bytes(unit);
+    return message.data();
 }
 
 QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int quality)
@@ -488,6 +511,11 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
         if (hashes[i] == this->_hashes[i] || offsets[i] != 0) continue;
         changed++;
         if (this->_hashes[i] != 0) moved++;
+    }
+    // Video: a large move with no scroll found, while the link is the bottleneck: one H.264 frame of the whole screen
+    if (this->_video && copies.isEmpty() && moved * MOTION_SHARE > count && static_cast<qsizetype>(this->_width) * this->_height <= VIDEO_MAX_PIXELS) {
+        const QByteArray video = this->encodeVideo_(image, hashes, quiet);
+        if (!video.isEmpty()) return video;
     }
     const int motion = moved * MOTION_SHARE > count ? std::max(20, quiet * 3 / 5) : quiet;
     const bool still = static_cast<qsizetype>(changed) * STILL_SHARE < count;

@@ -27,6 +27,7 @@ File Description:
     #define _Attribute
     #include <utils/utils.hpp>          // _hot, _cold, _nodiscard
     #include "../net/WebSocket.hpp"     // xdesk::net::WebSocket
+    #include "../platform/H264.hpp"     // xdesk::platform::H264Decoder
     #include "../net/Protocol.hpp"      // xdesk::net::ClientKind, xdesk::net::MouseButton
     #include "UdpLink.hpp"              // xdesk::client::UdpLink
     #include <QJsonObject>              // QJsonObject
@@ -34,11 +35,11 @@ File Description:
     #include <QObject>                  // QObject
     #include <QString>                  // QString
     #include <cstdint>                  // std::uint8_t
-    #include <QTimer>                   // QTimer
-    #include <QSet>                     // QSet
     #include <QVector>                  // QVector
+    #include <QTimer>                   // QTimer
     #include <QImage>                   // QImage
     #include <QPoint>                   // QPoint
+    #include <QSet>                     // QSet
 
 namespace xdesk::client { // namespace start
 //----------------------------------------------------------------//
@@ -94,6 +95,8 @@ class Client: public QObject {
         UdpLink _udp; // video over encrypted udp when the host offers it
         QVector<std::uint32_t> _tiles; // id of the frame each 64 x 64 tile comes from (udp frames complete in any order: an older one never covers a newer tile)
         int _tileColumns = 0;
+        platform::H264Decoder _video; // H.264 frames of the large moves (when openh264 is there)
+        bool _videoBroken = false; // a video frame could not be decoded: the next ones wait for a key frame (asked with a refresh)
         QSet<std::uint8_t> _openTerminals; // ids in use: a new terminal takes the smallest free one (1 again after a close or a reconnection)
 
         // ---------- Pre-Function -------- //
@@ -104,6 +107,8 @@ class Client: public QObject {
         void sendAuth_(void);
         void setState_(const State state);
         void decodeFrame_(const QByteArray& data, const bool udp = false); // udp: already acked by the link
+        void decodeVideo_(const QByteArray& data, const bool udp = false); // one H.264 frame of the whole screen
+        void fitCanvas_(const int width, const int height); // a black canvas of a new size, no tile drawn yet
 
     public:
         // ---------- Pre-Function -------- //
@@ -132,7 +137,7 @@ class Client: public QObject {
 
         // ------------ Function ---------- //
         /* getter */
-        _cold _nodiscard inline bool overUdp(void) const {return this->_udp.isActive();}; // the video comes over udp
+        _cold _nodiscard inline bool overUdp(void) const                   {return this->_udp.isActive();}; // the video comes over udp
         _cold _nodiscard inline State state(void) const                    {return this->_state;};
         _cold _nodiscard inline const QByteArray& fingerprint(void) const  {return this->_fingerprint;};
         _cold _nodiscard inline const QString& hostName(void) const        {return this->_hostName;};

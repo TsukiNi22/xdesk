@@ -21,6 +21,7 @@ File Description:
 #define _Attribute
 #include <utils/utils.hpp>
 #include "xdesk/platform/FrameEncoder.hpp"
+#include "xdesk/platform/H264.hpp"
 #include "xdesk/net/Protocol.hpp"
 #include <gtest/gtest.h>
 #include <QElapsedTimer>
@@ -371,7 +372,7 @@ TEST(FrameEncoder, ScrollIsCopiedWhenAskedAndExact)
     const QByteArray with = copying.encode(next, 70);
     EXPECT_EQ(apply_frame(plainCanvas, without), 0); // never asked: never a copy
     EXPECT_GT(apply_frame(canvas, with), 10);
-    EXPECT_TRUE(copying.copied());
+    EXPECT_TRUE(copying.orderBound());
     EXPECT_LT(with.size() * 4, without.size()); // the scroll costs only the revealed lines
     std::cout << "scroll of 37 rows: " << without.size() / 1024 << " KiB without the copies, " << with.size() / 1024 << " KiB with" << std::endl;
 
@@ -384,7 +385,7 @@ TEST(FrameEncoder, ScrollIsCopiedWhenAskedAndExact)
     // Still afterwards: nothing more, and a reset forgets the sources
     EXPECT_TRUE(copying.encode(next, 70).isEmpty());
     copying.reset();
-    EXPECT_FALSE(copying.copied());
+    EXPECT_FALSE(copying.orderBound());
     EXPECT_EQ(apply_frame(canvas, copying.encode(scrolled_frame(80), 70)), 0);
 }
 
@@ -409,4 +410,51 @@ TEST(FrameEncoder, DISABLED_BenchmarkScroll)
         }
         std::cout << (copy ? "copy " : "plain") << "  scroll " << scrollNs / 10000000.0 << " ms " << scrollBytes / 1024 << " KiB" << std::endl;
     }
+}
+
+// Whole frame moving (a video, a dragged window): every pixel changes with step
+static QImage video_frame(const int step)
+{
+    QImage frame(640, 360, QImage::Format_RGB32);
+
+    for (int y = 0; y < frame.height(); ++y)
+        for (int x = 0; x < frame.width(); ++x)
+            frame.setPixel(x, y, qRgb((x + step * 5) & 255, (y * 2 + step) & 255, ((x + y) / 2 + step * 7) & 255));
+    return frame;
+}
+
+TEST(FrameEncoder, LargeMovesGoAsVideoWhenAskedThenTilesSharpOnceStill)
+{
+    xdesk::platform::FrameEncoder encoder;
+    xdesk::platform::FrameEncoder tiles;
+    xdesk::platform::H264Decoder decoder;
+    const std::function<std::uint8_t(const QByteArray&)> type = [](const QByteArray& message) {return message.isEmpty() ? 0 : static_cast<std::uint8_t>(message[0]);};
+    const std::function<bool(const QByteArray&)> key = [](const QByteArray& message) {return message.size() > 9 && (message[9] & 1) != 0;};
+
+    if (!xdesk::platform::h264_available()) GTEST_SKIP() << xdesk::platform::h264_library().toStdString();
+    encoder.setVideo(true);
+    EXPECT_EQ(type(encoder.encode(video_frame(0), 70)), static_cast<std::uint8_t>(xdesk::net::Binary::Frame)); // the first frame: sharp tiles
+    EXPECT_EQ(type(tiles.encode(video_frame(0), 70)), static_cast<std::uint8_t>(xdesk::net::Binary::Frame));
+    for (int step = 1; step < 4; ++step) {
+        const QByteArray message = encoder.encode(video_frame(step), 70);
+        ASSERT_EQ(type(message), static_cast<std::uint8_t>(xdesk::net::Binary::Video));
+        EXPECT_EQ(key(message), step == 1); // a key frame first, then predicted ones
+        EXPECT_FALSE(decoder.decode(message.mid(10), 640, 360).isNull());
+        EXPECT_EQ(type(tiles.encode(video_frame(step), 70)), static_cast<std::uint8_t>(xdesk::net::Binary::Frame)); // never asked: tiles
+    }
+    EXPECT_TRUE(encoder.orderBound());
+
+    // Still: the whole screen sent again sharp in tiles, then nothing
+    const QByteArray sharp = encoder.encode(video_frame(3), 70);
+    ASSERT_EQ(type(sharp), static_cast<std::uint8_t>(xdesk::net::Binary::Frame));
+    EXPECT_EQ(std::get<3>(tiles_of(sharp)), 640L * 360L);
+    EXPECT_TRUE(encoder.encode(video_frame(3), 70).isEmpty());
+
+    // After a reset: sharp tiles, then a key frame for a new decoder
+    encoder.reset();
+    EXPECT_FALSE(encoder.orderBound());
+    EXPECT_EQ(type(encoder.encode(video_frame(4), 70)), static_cast<std::uint8_t>(xdesk::net::Binary::Frame));
+    const QByteArray again = encoder.encode(video_frame(5), 70);
+    ASSERT_EQ(type(again), static_cast<std::uint8_t>(xdesk::net::Binary::Video));
+    EXPECT_TRUE(key(again));
 }

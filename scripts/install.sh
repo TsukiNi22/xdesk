@@ -93,6 +93,11 @@ if [ "$DEPS" -eq 1 ]; then
     else
         die "unknown package manager: install cmake, clang, Qt 6 (Core Gui Widgets Network), OpenSSL >= 3.2, libjpeg-turbo yourself"
     fi
+    # openh264 (run time, optional): H.264 video of the large moves for the far viewers, tiles only without it
+    if command -v dnf > /dev/null; then $SUDO dnf install -y openh264 || say "openh264 not installed: tiles only for the far viewers"
+    elif command -v apt-get > /dev/null; then $SUDO apt-get install -y libopenh264-8 || say "openh264 2.6 not installed: tiles only for the far viewers"
+    elif command -v pacman > /dev/null; then $SUDO pacman -S --needed --noconfirm openh264 || say "openh264 not installed: tiles only for the far viewers"
+    fi
     install_libutils
 fi
 

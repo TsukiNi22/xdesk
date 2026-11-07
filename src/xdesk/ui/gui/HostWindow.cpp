@@ -25,6 +25,7 @@ File Description:
 #include <utils/utils.hpp>
 #include "xdesk/ui/gui/HostWindow.hpp"
 #include "xdesk/security/Crypto.hpp"
+#include "xdesk/platform/H264.hpp"
 #include "xdesk/ui/gui/Theme.hpp"
 #include <qrcodegen/qrcodegen.hpp>
 #include <QDesktopServices>
@@ -1420,6 +1421,9 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     this->_setAutoResolution = new QCheckBox("Automatic resolution (slow links)");
     this->_setAutoResolution->setToolTip("A viewer whose link cannot follow even at the lowest quality gets a lower resolution, raised again once the link is calm");
     stream->addRow("", this->_setAutoResolution);
+    this->_setH264 = new QCheckBox("H.264 video for far viewers");
+    this->_setH264->setToolTip(platform::h264_available() ? "While the link of a viewer is the bottleneck, the large moves (video, dragged windows) go as H.264 (" + platform::h264_library() + "): far fewer bytes, then the screen is sent again sharp once still" : "Needs openh264 2.6+ (" + platform::h264_library() + "): tiles only meanwhile");
+    stream->addRow("", this->_setH264);
     stream->addRow(make_label("Image quality", "muted"), this->_setQuality);
     stream->addRow(streamHint);
     stream->addRow(make_label("Language", "muted"), this->_setLanguage);
@@ -1522,6 +1526,7 @@ void xdesk::ui::gui::HostWindow::loadSettings_(void)
     this->_setShell->setText(s.shell);
     this->_setFps->setValue(s.fps);
     this->_setAutoResolution->setChecked(s.autoResolution);
+    this->_setH264->setChecked(s.h264);
     this->_setResolution->setCurrentIndex(std::max(0, this->_setResolution->findData(s.maxHeight)));
     if (this->_setResolution->findData(s.maxHeight) < 0) {
         this->_setResolution->addItem(QString::number(s.maxHeight) + "p (config.json)", s.maxHeight);
@@ -1562,6 +1567,7 @@ void xdesk::ui::gui::HostWindow::saveSettings_(void)
     s.quality = this->_setQuality->currentData().toInt();
     s.maxHeight = this->_setResolution->currentData().toInt();
     s.autoResolution = this->_setAutoResolution->isChecked();
+    s.h264 = this->_setH264->isChecked();
     s.language = this->_setLanguage->currentText();
     s.startMinimized = this->_setMinimized->isChecked();
     try {

@@ -65,6 +65,7 @@ set(SRC
 
     ## Platform (sub-part: platform)
     xdesk/platform/FrameEncoder.cpp
+    xdesk/platform/H264.cpp
     xdesk/platform/XkbLayout.cpp
 
     ## User interface (sub-part: ui)
@@ -76,6 +77,7 @@ add_executable(${TARGET} ${SRC} ${SRC_PROJECT})
 # Dependencies
 # =========================
 target_include_directories(${TARGET} PRIVATE ../include/ ../include/exception/ ../third_party/ .)
+target_include_directories(${TARGET} SYSTEM PRIVATE ../third_party/openh264) # <wels/...>
 if(XDESK_HAS_PIPEWIRE)
     target_include_directories(${TARGET} SYSTEM PRIVATE ../third_party/pipewire) # <pipewire/...>, <spa/...>
 endif()

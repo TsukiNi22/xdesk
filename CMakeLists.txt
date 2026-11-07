@@ -165,6 +165,7 @@ set(SRC_SHARED
 
     ## Platform (sub-part: platform)
     src/xdesk/platform/FrameEncoder.cpp
+    src/xdesk/platform/H264.cpp
     src/xdesk/platform/ScreenCapture.cpp
     src/xdesk/platform/QtCapture.cpp
     src/xdesk/platform/InputInjector.cpp
@@ -391,6 +392,7 @@ add_custom_target(package_release
 # =========================
 foreach(target ${COMPILED_TARGETS})
     target_include_directories(${target} PRIVATE include/exception third_party)
+    target_include_directories(${target} SYSTEM PRIVATE third_party/openh264) # <wels/...>: openh264 is loaded at run time
     if(XDESK_HAS_PIPEWIRE)
         target_include_directories(${target} SYSTEM PRIVATE third_party/pipewire) # <pipewire/...>, <spa/...>
     endif()
@@ -860,10 +862,16 @@ else()
         if(WIN32)
             set(CPACK_RPM_BIN_PACKAGE_REQUIRES "mingw64-openssl") # dll of the sysroot needed by libutils
         endif()
+        if(NOT WIN32)
+            # openh264 (loaded at run time): H.264 video of the large moves for the far viewers, tiles only without it
+            set(CPACK_RPM_BIN_PACKAGE_SUGGESTS "openh264")
+            set(CPACK_DEBIAN_BIN_PACKAGE_SUGGESTS "libopenh264-8")
+            set(CPACK_ARCH_BIN_PACKAGE_OPTDEPENDS "openh264: H.264 video for far viewers")
+        endif()
         if(VARIANT STREQUAL "db" AND NOT WIN32)
-            set(CPACK_RPM_BIN_PACKAGE_SUGGESTS "gdb") # Suggests the installation of gdb along side the debug version
-            set(CPACK_DEBIAN_BIN_PACKAGE_SUGGESTS "gdb")
-            set(CPACK_ARCH_BIN_PACKAGE_OPTDEPENDS "gdb: debugging")
+            set(CPACK_RPM_BIN_PACKAGE_SUGGESTS "openh264, gdb") # Suggests the installation of gdb along side the debug version
+            set(CPACK_DEBIAN_BIN_PACKAGE_SUGGESTS "libopenh264-8, gdb")
+            set(CPACK_ARCH_BIN_PACKAGE_OPTDEPENDS "openh264: H.264 video for far viewers" "gdb: debugging")
         endif()
     endif()
 

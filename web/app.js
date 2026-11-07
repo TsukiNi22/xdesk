@@ -10,9 +10,10 @@
     // Constants
 
     const PROTOCOL = 1;
-    const BIN = {Frame: 0x10, FrameAck: 0x11, Cursor: 0x12, MouseMove: 0x20, MouseButton: 0x21, MouseWheel: 0x22, Key: 0x23, Text: 0x24, TermData: 0x31};
+    const BIN = {Frame: 0x10, FrameAck: 0x11, Cursor: 0x12, Video: 0x13, MouseMove: 0x20, MouseButton: 0x21, MouseWheel: 0x22, Key: 0x23, Text: 0x24, TermData: 0x31};
     const TILE = {Jpeg: 1, Solid: 2, Palette: 3, Copy: 4};
     const PALETTE = typeof DecompressionStream === "function"; // lossless palette tiles (text / ui) need the zlib inflater of the browser
+    const VIDEO_WAIT = 150; // ms a decoder may hold a video frame before it is flushed out (the next move then starts from a key frame)
     const STORAGE = "xdesk";
     const UA = navigator.userAgent;
     const IN_APP = /xdesk-app\//.test(UA);
@@ -424,6 +425,7 @@
         state.tileIds = new Uint32Array(0);
         state.frameW = 0;
         state.frameH = 0;
+        h264Reset(false); // the stream of the new session starts with a key frame
         state.input = {state: "loading", error: ""}; // until the host says (its capture starts with the first viewer)
         state.hostW = msg.screen && msg.screen.w || 0;
         state.hostH = msg.screen && msg.screen.h || 0;
@@ -466,7 +468,7 @@
         ws.onopen = () => {
             const device = getDevice();
             // The udp of the app (udp = 1 in the storage) only on demand: each of its frames crosses the ui thread of android as base64 text
-            sendJson({t: "hello", v: PROTOCOL, kind: KIND, name: name, os: guessOs(), device: device ? device.id : "", nonce: b64encode(state.clientNonce), udp: !!bridge.port && load("udp") === "1", enc: PALETTE ? ["palette", "copy"] : ["copy"]});
+            sendJson({t: "hello", v: PROTOCOL, kind: KIND, name: name, os: guessOs(), device: device ? device.id : "", nonce: b64encode(state.clientNonce), udp: !!bridge.port && load("udp") === "1", enc: (PALETTE ? ["palette", "copy"] : ["copy"]).concat(h264.supported ? ["h264"] : [])});
         };
         ws.onmessage = (e) => {
             if (typeof e.data === "string") onText(e.data);
@@ -527,6 +529,7 @@
             const data = new Uint8Array(e.data);
             state.bytes += data.length;
             if (data.length > 0 && data[0] === BIN.Frame) onFrame(data, ws);
+            else if (data.length > 0 && data[0] === BIN.Video) onVideo(data, ws);
         };
         ws.onclose = () => {
             if (state.lanes[index] !== ws) return;
@@ -567,6 +570,7 @@
             const data = base64Bytes(text.slice(1));
             state.bytes += data.length;
             if (state.status === "active" && data[0] === BIN.Frame) onFrame(data, null);
+            else if (state.status === "active" && data[0] === BIN.Video) onVideo(data, null);
             return;
         }
         let msg;
@@ -613,6 +617,7 @@
         if (data.length < 1) return;
         switch (data[0]) {
             case BIN.Frame: onFrame(data, state.ws); break;
+            case BIN.Video: onVideo(data, state.ws); break;
             case BIN.Cursor: onCursor(data); break;
             case BIN.TermData: onTermData(data); break;
             default: break;
@@ -846,21 +851,7 @@
         // Decode in parallel, draw in order of arrival; a tile already drawn by a newer frame is kept
         const decoded = Promise.all(tiles.map((tl) => tl.blob ? createImageBitmap(tl.blob).catch(() => null) : (tl.z ? decodePalette(tl).catch(() => null) : null)));
         state.drawQueue = state.drawQueue.then(() => decoded).then((bitmaps) => {
-            if (w !== state.frameW || h !== state.frameH) {
-                if (state.frameW && ((id - state.sizeId) | 0) < 0) bitmaps = []; // a late frame of the old size
-                else {
-                    state.frameW = w;
-                    state.frameH = h;
-                    state.sizeId = id;
-                    updateScreenState();
-                    showResolution();
-                    state.tileCols = Math.ceil(w / TILE_SIZE);
-                    state.tileIds = new Uint32Array(state.tileCols * Math.ceil(h / TILE_SIZE));
-                    canvas.width = w;
-                    canvas.height = h;
-                    layoutCanvas();
-                }
-            }
+            if (!fitFrame(id, w, h)) bitmaps = [];
             copyTiles(id, tiles, bitmaps.length > 0);
             for (let i = 0; i < tiles.length && bitmaps.length; ++i) {
                 const tl = tiles[i];
@@ -883,6 +874,120 @@
             state.frames += 1;
             placeCursor();
         }).catch(() => {state.drawing = Math.max(0, state.drawing - 1); if (!early) sendAck();});
+    }
+
+    // Size of the frames: false for a late frame of the old size
+    function fitFrame(id, w, h) {
+        if (w === state.frameW && h === state.frameH) return true;
+        if (state.frameW && ((id - state.sizeId) | 0) < 0) return false;
+        state.frameW = w;
+        state.frameH = h;
+        state.sizeId = id;
+        updateScreenState();
+        showResolution();
+        state.tileCols = Math.ceil(w / TILE_SIZE);
+        state.tileIds = new Uint32Array(state.tileCols * Math.ceil(h / TILE_SIZE));
+        canvas.width = w;
+        canvas.height = h;
+        layoutCanvas();
+        return true;
+    }
+
+    // H.264 frame of the whole screen (large moves while the link is the bottleneck): submitted to the decoder at once (a
+    // decoder may hold a frame until the next one comes), drawn in the order of the frames
+    function onVideo(data, via) {
+        if (data.length < 11) return;
+        const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+        const id = view.getUint32(1);
+        const w = view.getUint16(5);
+        const h = view.getUint16(7);
+        const shown = h264Submit(id, (data[9] & 1) !== 0, data.subarray(10));
+        const ack = new Uint8Array(5);
+        ack[0] = BIN.FrameAck;
+        new DataView(ack.buffer).setUint32(1, id);
+        const sendAck = () => {if (via && via.readyState === WebSocket.OPEN) via.send(ack);};
+        const early = state.drawing < 1;
+        if (early) sendAck();
+        state.drawing += 1;
+        state.drawQueue = state.drawQueue.then(() => Promise.race([shown, new Promise((resolve) => setTimeout(resolve, VIDEO_WAIT))])).then((frame) => {
+            if (frame !== undefined) return frame;
+            // The decoder holds its frames: flushed out, the next move starts from a key frame (asked with a refresh)
+            const decoder = h264.decoder;
+            if (!decoder || decoder.state !== "configured") return shown;
+            h264.needKey = true;
+            if (state.status === "active") sendJson({t: "refresh"});
+            return decoder.flush().then(() => shown, () => shown);
+        }).then((frame) => {
+            if (frame) {
+                if (fitFrame(id, w, h)) {
+                    ctx.drawImage(frame, 0, 0, w, h, 0, 0, w, h);
+                    state.tileIds.fill(id); // the whole screen comes from this frame (ordered path)
+                }
+                frame.close();
+            }
+            state.drawing -= 1;
+            if (!early) sendAck();
+            state.frames += 1;
+            placeCursor();
+        }).catch(() => {state.drawing = Math.max(0, state.drawing - 1); if (!early) sendAck();});
+    }
+
+    // Decoder of the video (WebCodecs): pending = the resolves of the chunks decoded, in their order (no B frame)
+    const h264 = {decoder: null, codec: "", needKey: true, pending: [], supported: false};
+    if (typeof VideoDecoder === "function")
+        VideoDecoder.isConfigSupported({codec: "avc1.42E034", optimizeForLatency: true}).then((r) => {h264.supported = !!(r && r.supported);}).catch(() => {});
+
+    function h264Reset(refresh) {
+        const pending = h264.pending;
+        h264.pending = [];
+        for (const done of pending)
+            done(null);
+        if (h264.decoder && h264.decoder.state !== "closed") {
+            try {h264.decoder.close();} catch (e) {/* closed meanwhile */}
+        }
+        h264.decoder = null;
+        h264.codec = "";
+        h264.needKey = true;
+        if (refresh && state.status === "active") sendJson({t: "refresh"}); // a complete frame, and a key frame for the next move
+    }
+
+    // Codec string from the SPS of a key frame (avc1.<profile><constraints><level>)
+    function avcCodec(unit) {
+        const hex = (b) => (b < 16 ? "0" : "") + b.toString(16).toUpperCase();
+        for (let i = 0; i + 6 < unit.length; ++i)
+            if (unit[i] === 0 && unit[i + 1] === 0 && unit[i + 2] === 1 && (unit[i + 3] & 0x1F) === 7)
+                return "avc1." + hex(unit[i + 4]) + hex(unit[i + 5]) + hex(unit[i + 6]);
+        return "avc1.42E034";
+    }
+
+    // Promise of the picture of a chunk (null: not decodable, waits for a key frame)
+    function h264Submit(id, key, unit) {
+        if (key) {
+            const codec = avcCodec(unit);
+            if (!h264.decoder || h264.decoder.state !== "configured" || h264.codec !== codec) {
+                h264Reset(false);
+                try {
+                    h264.decoder = new VideoDecoder({
+                        output: (frame) => {const done = h264.pending.shift(); if (done) done(frame); else frame.close();},
+                        error: () => h264Reset(true),
+                    });
+                    h264.decoder.configure({codec: codec, optimizeForLatency: true});
+                    h264.codec = codec;
+                } catch (e) {
+                    h264Reset(true);
+                    return Promise.resolve(null);
+                }
+            }
+            h264.needKey = false;
+        }
+        if (h264.needKey || !h264.decoder) return Promise.resolve(null);
+        const shown = new Promise((resolve) => h264.pending.push(resolve));
+        try {
+            h264.decoder.decode(new EncodedVideoChunk({type: key ? "key" : "delta", timestamp: id * 1000, data: unit}));
+        } catch (e) {
+            h264Reset(true);
+        }
+        return shown;
     }
 
     // Copy tiles (scroll): their sources taken in one go into a spare canvas before any of them is drawn

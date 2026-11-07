@@ -32,7 +32,7 @@ File Description:
 
 #define OPEN_DELAY 400 // ms waited after a new client before the capture starts (its pause message comes first)
 #define AUTO_MIN_HEIGHT 720.0 // the automatic resolution never goes under this height (the text stays readable), unless the viewer asked less
-#define PALETTE_RTT 20.0 // ms of ping from which a viewer is far (its link, not the cpu, is the bottleneck): palette tiles
+#define PALETTE_RTT 20.0 // ms of ping from which a viewer is far (its link, not the cpu, is the bottleneck): palette tiles, H.264 for the large moves
 
 xdesk::host::Stream::Stream(QObject* parent)
 : QObject(parent)
@@ -89,7 +89,7 @@ void xdesk::host::Stream::closeCapture_(void)
     emit this->closed();
 }
 
-void xdesk::host::Stream::addClient(const QString& session, const int quality, const double scale, const int fps, const bool palette, const bool copy)
+void xdesk::host::Stream::addClient(const QString& session, const int quality, const double scale, const int fps, const bool palette, const bool copy, const bool h264)
 {
     StreamClient client;
 
@@ -99,6 +99,7 @@ void xdesk::host::Stream::addClient(const QString& session, const int quality, c
     client.flow.setAutoScale(this->_autoResolution);
     client.palette = palette;
     client.copy = copy;
+    client.h264 = h264;
     this->_clients.insert(session, client);
     if (this->_idle) this->_idle->stop();
     if (!this->_capture) QTimer::singleShot(OPEN_DELAY, this, &Stream::openIfWatched_); // a client opening on a terminal pauses at once: no capture for it
@@ -165,7 +166,7 @@ void xdesk::host::Stream::setOrdered(const QString& session, const bool ordered)
     it->settling = ordered;
     if (ordered) return;
     it->encoder.setCopy(false);
-    if (it->encoder.copied()) it->encoder.reset(); // a frame of another path may overtake a copy: everything again, newer than both
+    if (it->encoder.orderBound()) it->encoder.reset(); // a frame of another path may overtake a copy / a video frame: everything again (and a key frame), newer than both
     it->idle = 0;
 }
 
@@ -238,11 +239,13 @@ void xdesk::host::Stream::tick_(void)
         if (!scaled.contains(key))
             scaled.insert(key, key >= 1000 ? frame : frame.scaled(std::max(1, static_cast<int>(frame.width() * effective)), std::max(1, static_cast<int>(frame.height() * effective)), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
         client.lastFrame = now - client.lastFrame < interval * 2 ? client.lastFrame + interval : now; // on the slots of the rate (the 4 ms tick would make 30 fps 27)
-        // Lossless palette tiles (text, ui): half the bytes for twice the cpu, so only while the link is the bottleneck
-        client.encoder.setPalette(client.palette && (client.flow.minRtt() > PALETTE_RTT || client.flow.queue() >= FLOW_QUEUE_LOW || client.flow.ceiling() < 100));
-        // Copy tiles (scroll) only while the frames keep their order and every frame of the other paths arrived
+        // Lossless palette tiles (text, ui) and H.264 for the large moves: far fewer bytes for more cpu, so only while the link is the bottleneck
+        const bool linkBound = client.flow.minRtt() > PALETTE_RTT || client.flow.queue() >= FLOW_QUEUE_LOW || client.flow.ceiling() < 100;
+        client.encoder.setPalette(client.palette && linkBound);
+        // Copy tiles (scroll) and video frames only while the frames keep their order and every frame of the other paths arrived
         if (client.settling && client.flow.queue() == 0) client.settling = false;
         client.encoder.setCopy(client.copy && client.ordered && !client.settling);
+        client.encoder.setVideo(client.h264 && this->_video && linkBound && client.ordered && !client.settling);
         message = client.encoder.encode(scaled.value(key), client.flow.quality(client.quality));
         client.idle = message.isEmpty() ? frame.cacheKey() : 0;
         if (message.isEmpty()) continue;

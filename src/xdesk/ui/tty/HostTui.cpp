@@ -125,6 +125,7 @@ static const QList<SettingField>& settings_fields(void)
         {"Stream", "Resolution", FieldKind::Choice, 0, 0, 0, "", {{"Screen size (native)", 0}, {"1440p", 1440}, {"1080p - Full HD", 1080}, {"720p - HD", 720}, {"480p", 480}, {"360p", 360}, {"240p", 240}, {"144p", 144}},
             [](const S& s) {return QVariant(s.maxHeight);}, [](S& s, const QVariant& v) {s.maxHeight = v.toInt();}},
         {"Stream", "Automatic resolution (slow links)", FieldKind::Toggle, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.autoResolution);}, [](S& s, const QVariant& v) {s.autoResolution = v.toBool();}},
+        {"Stream", "H.264 video for far viewers (openh264)", FieldKind::Toggle, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.h264);}, [](S& s, const QVariant& v) {s.h264 = v.toBool();}},
         {"Stream", "Image quality", FieldKind::Choice, 0, 0, 0, "", {{"Low - 40", 40}, {"Medium - 55", 55}, {"High - 70 (default)", 70}, {"Very high - 85", 85}, {"Maximum - 100", 100}},
             [](const S& s) {return QVariant(s.quality);}, [](S& s, const QVariant& v) {s.quality = v.toInt();}},
         {"Stream", "Language", FieldKind::Choice, 0, 0, 0, "", {{"en", "en"}, {"fr", "fr"}}, [](const S& s) {return QVariant(s.language);}, [](S& s, const QVariant& v) {s.language = v.toString();}},

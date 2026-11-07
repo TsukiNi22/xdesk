@@ -51,6 +51,7 @@ struct StreamClient {
     double scale = 1.0; // frame scale asked by the client
     bool palette = false; // the client decodes the palette tiles (used while its link is the bottleneck)
     bool copy = false; // the client applies the copy tiles (scroll)
+    bool h264 = false; // the client decodes the H.264 video frames (used for the large moves while its link is the bottleneck)
     bool ordered = true; // its frames arrive in the order they are sent (one tcp socket: no udp, no extra lane)
     bool settling = false; // ordered again, frames of the other paths may still be on their way: no copy until none is in flight
     double effective = 0.0; // scale applied: the asked one, capped by the max height of the host (0 = not computed yet)
@@ -80,6 +81,7 @@ class Stream: public QObject {
         QString _backend = ""; // name of the capture backend
         int _maxHeight = 0; // frames at most this tall, the width follows (0 = the screen size)
         bool _autoResolution = true; // the flow control may lower the resolution of a client whose link cannot follow
+        bool _video = true; // the large moves go as H.264 to the clients that decode it while their link is the bottleneck
 
         // ---------- Pre-Function -------- //
         void tick_(void);
@@ -91,17 +93,18 @@ class Stream: public QObject {
         // ---------- Pre-Function -------- //
         void start(void); // prepare the timers (the capture waits for the first viewer)
         void stop(void);
-        void addClient(const QString& session, const int quality, const double scale, const int fps, const bool palette = false, const bool copy = false); // palette / copy: the client decodes the lossless palette / the copy (scroll) tiles
+        void addClient(const QString& session, const int quality, const double scale, const int fps, const bool palette = false, const bool copy = false, const bool h264 = false); // what the client decodes: lossless palette tiles, copy (scroll) tiles, H.264 video frames
         void removeClient(const QString& session);
         void ack(const QString& session, const std::uint32_t id);
         void setQuality(const QString& session, const int quality, const double scale, const int fps);
         void refresh(const QString& session); // next frame complete
-        void setOrdered(const QString& session, const bool ordered); // false: the copy tiles stop (a complete frame if some were sent)
+        void setOrdered(const QString& session, const bool ordered); // false: the copy tiles and the video frames stop (a complete frame if some were sent)
         void setPaused(const QString& session, const bool paused);
         void setAutoResolution(const bool enabled); // setting autoResolution (every client)
 
         // ------------ Function ---------- //
         inline void setMaxHeight(const int height) {this->_maxHeight = std::max(0, height);}; // 0 = the screen size
+        inline void setVideo(const bool enabled)   {this->_video = enabled;}; // setting h264 (every client)
 
     public:
         // ---------- Constructor --------- //

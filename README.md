@@ -37,7 +37,7 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 | Devices | Trusted (reconnect without code), known, banned devices and banned addresses, one record per machine (a browser coming back with a new id replaces its old records, their trust is not kept); unban / trust only locally |
 | Tamper protection | A session touching xdesk (its binary, config, data, process) is banned at once (see [Security](#security)) |
 | Audit log | `jsonl` per day (connections, decisions, inputs, terminal commands) + full terminal transcripts |
-| Screen | Dirty 64x64 tiles (JPEG via libjpeg-turbo or solid color) hashed and encoded on every core, lighter JPEG while a large part moves (scroll, video) then the same tiles sent again sharp once still, scroll sent as copies of what the viewer already has (only the revealed lines are encoded), nothing computed while the capture has no new frame, frames in flight sized from the measured ping and bandwidth (2 on a LAN, up to 8 for a far viewer, acked on arrival) and JPEG quality lowered while a queue builds up then raised again, paused while the client shows a terminal, remote cursor |
+| Screen | Dirty 64x64 tiles (JPEG via libjpeg-turbo or solid color) hashed and encoded on every core, lighter JPEG while a large part moves (scroll, video) then the same tiles sent again sharp once still, scroll sent as copies of what the viewer already has (only the revealed lines are encoded), large moves sent as H.264 video (openh264 loaded at run time, decoded by WebCodecs in the browsers and the app, by openh264 in the Qt viewer) while the link of the viewer is the bottleneck, nothing computed while the capture has no new frame, frames in flight sized from the measured ping and bandwidth (2 on a LAN, up to 8 for a far viewer, acked on arrival) and JPEG quality lowered while a queue builds up then raised again, paused while the client shows a terminal, remote cursor |
 | Capture | Windows DXGI Desktop Duplication, X11 / macOS through Qt, Wayland through the xdg-desktop-portal ScreenCast + PipeWire video stream (no screenshots: no flash, no shutter sound, only the changed tiles sent) |
 | Input | Windows `SendInput` (scancodes + unicode), Linux `uinput` (Wayland and X11) or XTest, physical key codes (layout of the host) |
 | Terminals | Linux / macOS `forkpty`, Windows ConPTY; up to 4 per session, resizable, `xterm-256color` + truecolor, UTF-8 (`C.UTF-8` when started without a locale); web client: xterm.js with the WebGL renderer, Unicode 11 widths and Nerd / powerline fonts when installed |
@@ -73,7 +73,7 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 ## Dependencies
 
 > [!CAUTION]
-> The MIT license of this project ([LICENSE](LICENSE)) only applies to the code of `xdesk` itself, not to its dependencies (Qt 6: LGPLv3, OpenSSL: Apache 2.0, libjpeg-turbo: BSD-style, xterm.js: MIT, jsQR: Apache 2.0, qrcodegen: MIT, PipeWire headers: MIT).
+> The MIT license of this project ([LICENSE](LICENSE)) only applies to the code of `xdesk` itself, not to its dependencies (Qt 6: LGPLv3, OpenSSL: Apache 2.0, libjpeg-turbo: BSD-style, xterm.js: MIT, jsQR: Apache 2.0, qrcodegen: MIT, PipeWire headers: MIT, openh264 headers: BSD-2-Clause; the openh264 library is loaded at run time, the binaries of Cisco come with their own license and H.264 patent coverage).
 
 | Name + Link | Status | Last Update |
 | ----------- | ------ | ----------- |
@@ -89,6 +89,7 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 | libjpeg-turbo | any | `libjpeg-turbo-devel` | `libjpeg-turbo8-dev` | `libjpeg-turbo` |
 | PipeWire (run time, Wayland) | `0.3` / `1.x` | `pipewire-libs` | `libpipewire-0.3-0` | `pipewire` |
 | XTest **[OPTIONAL]** | any | `libXtst-devel` | `libxtst-dev` | `libxtst` |
+| openh264 (run time) **[OPTIONAL]** | `2.6+` (`libopenh264.so.8`, Windows: the `openh264-2.6.x-win64.dll` of Cisco next to `xdesk.exe`) | `openh264` | `libopenh264-8` | `openh264` |
 | GoogleTest (tests only) | any | `gtest-devel` | `libgtest-dev` | `gtest` |
 | MinGW-w64 (Windows only) | GCC `>= 13` | `mingw64-gcc-c++ mingw64-qt6-qtbase mingw64-openssl mingw64-libjpeg-turbo mingw64-libutils` | - | - |
 | Android SDK (APK only) | build-tools `>= 34` | [Android SDK](https://developer.android.com/studio#command-line-tools-only) | same | same |
@@ -361,7 +362,8 @@ cmake --build build --parallel $(nproc)                       # ./unit_tests at 
 | `tests/xdesk/security/PairingCode.cpp` | plain / proof checks, rotation, length and expiry |
 | `tests/xdesk/security/DeviceRegistry.cpp` | bans, address bans, a `devices.json` edited by hand is refused |
 | `tests/xdesk/net/Protocol.cpp` | binary writer / reader, overflow detection |
-| `tests/xdesk/platform/FrameEncoder.cpp` | complete then dirty frames, JPEG round trip, resize, lossless palette tiles, scroll copied exactly |
+| `tests/xdesk/platform/FrameEncoder.cpp` | complete then dirty frames, JPEG round trip, resize, lossless palette tiles, scroll copied exactly, large moves as H.264 then sharp tiles once still |
+| `tests/xdesk/platform/H264.cpp` | H.264 encode / decode round trip (odd size, key then predicted frames, key frame on demand), quality and size |
 | `tests/xdesk/Desktop.cpp` | command line |
 
 ## Known limits
