@@ -22,6 +22,7 @@ File Description:
 #include <utils/utils.hpp>
 #include "xdesk/platform/FrameEncoder.hpp"
 #include "xdesk/net/Protocol.hpp"
+#include <unordered_map>
 #include <QThreadPool>
 #include <QSemaphore>
 #include <functional>
@@ -32,7 +33,9 @@ File Description:
 #include <cstring>
 #include <cstdlib>
 #include <atomic>
+#include <vector>
 #include <cstdio>
+#include <QHash>
 #include <QRect>
 #include <QList>
 
@@ -45,6 +48,9 @@ File Description:
 #define MAX_WORKERS 8 // encoding threads (rows of tiles in parallel)
 #define PALETTE_MAX 64 // colors of a palette tile at most (text, ui; a photo or a gradient has more: jpeg)
 #define PALETTE_SHARE 3 // a palette tile is kept when its bytes are under 1 / 3 of its pixels (else jpeg is lighter)
+#define COPY_MIN_MOVED 4 // known tiles changed before a scroll is looked for
+#define COPY_MIN_TILES 2 // changed tiles of a column before its lines are compared
+#define COPY_MIN_VOTES 12 // lines of a column found at the same offset before it is trusted
 
 //----------------------------------------------------------------//
 /* STRUCT */
@@ -240,6 +246,56 @@ _hot static bool palette_tile(const unsigned char* bits, const int stride, const
     return true;
 }
 
+// Hash of each line of a tile column, 0 = a line of one color (found anywhere: no clue of a move)
+_hot static void line_hashes(const unsigned char* bits, const int stride, const int x, const int w, const int height, std::uint64_t* out)
+{
+    for (int y = 0; y < height; ++y) {
+        const std::uint32_t* line = reinterpret_cast<const std::uint32_t*>(bits + static_cast<std::size_t>(y) * static_cast<std::size_t>(stride)) + x;
+        const std::uint32_t first = line[0] & 0x00FFFFFFu;
+        std::uint64_t hash = 0x9E3779B97F4A7C15ull;
+        std::uint32_t differ = 0;
+
+        for (int col = 0; col < w; ++col) {
+            const std::uint32_t color = line[col] & 0x00FFFFFFu;
+            differ |= color ^ first;
+            hash = (hash ^ color) * 0xC4CEB9FE1A85EC53ull;
+        }
+        out[y] = differ == 0 ? 0 : (hash ^ (hash >> 29)) | 1;
+    }
+}
+
+// Rows a tile column moved down between two frames (negative: up), 0 = none: vote of the lines met once before
+_hot static int column_offset(const std::uint64_t* before, const std::uint64_t* after, const int height)
+{
+    std::unordered_map<std::uint64_t, int> lines; // hash -> its line in the previous frame (-1 = several lines)
+    std::vector<int> votes(static_cast<std::size_t>(height) * 2 + 1, 0);
+    int best = 0;
+
+    lines.reserve(static_cast<std::size_t>(height));
+    for (int y = 0; y < height; ++y) {
+        if (before[y] == 0) continue;
+        const auto &[it, inserted] = lines.try_emplace(before[y], y);
+        if (!inserted) it->second = -1;
+    }
+    for (int y = 0; y < height; ++y) {
+        if (after[y] == 0) continue;
+        auto it = lines.find(after[y]);
+        if (it == lines.end() || it->second < 0 || it->second == y) continue;
+        ++votes[static_cast<std::size_t>(y - it->second + height)];
+    }
+    for (int i = 0; i < static_cast<int>(votes.size()); ++i)
+        if (votes[static_cast<std::size_t>(i)] > votes[static_cast<std::size_t>(best)]) best = i;
+    return votes[static_cast<std::size_t>(best)] >= COPY_MIN_VOTES ? best - height : 0;
+}
+
+// true when the rectangle of a frame is the one of another frame sy - y rows higher
+_hot static bool same_rect(const QImage& now, const QImage& before, const int x, const int y, const int sy, const int w, const int h)
+{
+    for (int row = 0; row < h; ++row)
+        if (std::memcmp(now.constScanLine(y + row) + static_cast<std::size_t>(x) * 4, before.constScanLine(sy + row) + static_cast<std::size_t>(x) * 4, static_cast<std::size_t>(w) * 4) != 0) return false;
+    return true;
+}
+
 void xdesk::platform::parallel_for(const int count, const std::function<void(const int)>& fn)
 {
     static QThreadPool pool; // own pool: never waits behind the tasks of the global one
@@ -271,6 +327,106 @@ void xdesk::platform::FrameEncoder::reset(void)
 {
     std::fill(this->_hashes.begin(), this->_hashes.end(), 0);
     std::fill(this->_quality.begin(), this->_quality.end(), 0);
+    this->_copied = false;
+}
+
+void xdesk::platform::FrameEncoder::findCopies_(const QImage& image, const QVector<std::uint64_t>& hashes, QVector<int>& offsets) const
+{
+    QVector<int> columns(this->_cols, 0);
+    QHash<int, int> seen; // offset -> columns
+    int common = 0;
+
+    // Offset of each column that changed enough (line hashes of both frames, columns in parallel)
+    parallel_for(this->_cols, [&](const int tx) {
+        const int x = tx * XDESK_TILE_SIZE;
+        const int w = std::min(XDESK_TILE_SIZE, this->_width - x);
+        int changed = 0;
+
+        for (int ty = 0; ty < this->_rows; ++ty) {
+            const qsizetype index = static_cast<qsizetype>(ty) * this->_cols + tx;
+            if (hashes[index] != this->_hashes[index] && this->_hashes[index] != 0) changed++;
+        }
+        if (changed < COPY_MIN_TILES) return;
+        std::vector<std::uint64_t> before(static_cast<std::size_t>(this->_height));
+        std::vector<std::uint64_t> after(static_cast<std::size_t>(this->_height));
+        line_hashes(this->_previous.constBits(), static_cast<int>(this->_previous.bytesPerLine()), x, w, this->_height, before.data());
+        line_hashes(image.constBits(), static_cast<int>(image.bytesPerLine()), x, w, this->_height, after.data());
+        columns[tx] = column_offset(before.data(), after.data(), this->_height);
+    });
+
+    // The offset most columns found also tries the columns that found none (few distinct lines)
+    for (const int offset: columns)
+        if (offset != 0) seen[offset]++;
+    for (QHash<int, int>::const_iterator it = seen.cbegin(); it != seen.cend(); ++it)
+        if (common == 0 || it.value() > seen.value(common)) common = it.key();
+    if (seen.isEmpty()) return;
+
+    // Each changed tile found exactly at one of them in the previous frame, from tiles the client has
+    parallel_for(this->_rows, [&](const int ty) {
+        for (int tx = 0; tx < this->_cols; ++tx) {
+            const qsizetype index = static_cast<qsizetype>(ty) * this->_cols + tx;
+            const int x = tx * XDESK_TILE_SIZE;
+            const int y = ty * XDESK_TILE_SIZE;
+            const int w = std::min(XDESK_TILE_SIZE, this->_width - x);
+            const int h = std::min(XDESK_TILE_SIZE, this->_height - y);
+
+            if (hashes[index] == this->_hashes[index]) continue;
+            for (const int offset: {columns[tx], common}) {
+                const int sy = y - offset;
+                bool known = offset != 0 && sy >= 0 && sy + h <= this->_height;
+
+                // The client has every source tile
+                for (int sty = std::max(0, sy / XDESK_TILE_SIZE); known && sty <= (sy + h - 1) / XDESK_TILE_SIZE; ++sty)
+                    known = this->_hashes[static_cast<qsizetype>(sty) * this->_cols + tx] != 0;
+                if (!known || !same_rect(image, this->_previous, x, y, sy, w, h)) continue;
+                offsets[index] = offset;
+                break;
+            }
+        }
+    });
+}
+
+QList<QByteArray> xdesk::platform::FrameEncoder::copyTiles_(const QVector<int>& offsets)
+{
+    QList<QByteArray> tiles;
+    QVector<std::uint8_t> quality = this->_quality;
+
+    for (int ty = 0; ty < this->_rows; ++ty) {
+        int tx = 0;
+
+        while (tx < this->_cols) {
+            const int offset = offsets[static_cast<qsizetype>(ty) * this->_cols + tx];
+            int end = tx;
+
+            if (offset == 0) {++tx; continue;}
+            while (end < this->_cols && offsets[static_cast<qsizetype>(ty) * this->_cols + end] == offset)
+                ++end;
+            const int x = tx * XDESK_TILE_SIZE;
+            const int y = ty * XDESK_TILE_SIZE;
+            const int w = std::min(end * XDESK_TILE_SIZE, this->_width) - x;
+            const int h = std::min(XDESK_TILE_SIZE, this->_height - y);
+            net::ByteWriter tile(net::Binary::Frame, 16);
+            tile.u16(static_cast<std::uint16_t>(x)).u16(static_cast<std::uint16_t>(y)).u16(static_cast<std::uint16_t>(w)).u16(static_cast<std::uint16_t>(h));
+            tile.u8(static_cast<std::uint8_t>(net::TileEncoding::Copy));
+            tile.u16(static_cast<std::uint16_t>(x)).u16(static_cast<std::uint16_t>(y - offset));
+            tiles.append(tile.data().mid(1));
+
+            // A copy is as sharp as the worst of its sources (sent again sharp once still)
+            for (int i = tx; i < end; ++i) {
+                const int sy = y - offset;
+                int worst = 101; // 101 = exact
+                for (int sty = sy / XDESK_TILE_SIZE; sty <= (sy + h - 1) / XDESK_TILE_SIZE; ++sty) {
+                    const int q = this->_quality[static_cast<qsizetype>(sty) * this->_cols + i];
+                    worst = std::min(worst, q == 0 ? 101 : q);
+                }
+                quality[static_cast<qsizetype>(ty) * this->_cols + i] = static_cast<std::uint8_t>(worst > 100 ? 0 : worst);
+            }
+            tx = end;
+        }
+    }
+    this->_quality = quality;
+    if (!tiles.isEmpty()) this->_copied = true;
+    return tiles;
 }
 
 QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int quality)
@@ -280,6 +436,8 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
     QVector<std::uint64_t> hashes;
     QVector<int> want; // jpeg quality to send each tile with (0 = nothing to send)
     QVector<QList<QByteArray>> rows;
+    QVector<int> offsets; // per tile: rows its content moved (copy tile), 0 = sent as itself
+    QList<QByteArray> copies;
     int changed = 0;
     int moved = 0;
 
@@ -315,15 +473,26 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
         }
     });
 
+    // Scroll: the tiles found higher / lower in the previous frame are copied by the client from what it has
+    offsets = QVector<int>(count, 0);
+    if (this->_copy && this->_previous.size() == image.size()) {
+        for (qsizetype i = 0; i < count; ++i)
+            if (hashes[i] != this->_hashes[i] && this->_hashes[i] != 0) moved++;
+        if (moved >= COPY_MIN_MOVED) this->findCopies_(image, hashes, offsets);
+        moved = 0;
+    }
+    copies = this->copyTiles_(offsets);
+
     // Motion (many known tiles changed): lighter jpeg, still (almost nothing changed): the light tiles sent again sharp
     for (qsizetype i = 0; i < count; ++i) {
-        if (hashes[i] == this->_hashes[i]) continue;
+        if (hashes[i] == this->_hashes[i] || offsets[i] != 0) continue;
         changed++;
         if (this->_hashes[i] != 0) moved++;
     }
     const int motion = moved * MOTION_SHARE > count ? std::max(20, quiet * 3 / 5) : quiet;
     const bool still = static_cast<qsizetype>(changed) * STILL_SHARE < count;
     for (qsizetype i = 0; i < count; ++i) {
+        if (offsets[i] != 0) continue; // copied
         if (hashes[i] != this->_hashes[i]) want[i] = this->_hashes[i] != 0 ? motion : quiet; // a new tile (first frame, reset): sharp at once
         else if (still && this->_quality[i] != 0 && this->_quality[i] < quiet) want[i] = quiet;
     }
@@ -392,6 +561,8 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
         }
     });
     this->_hashes = hashes;
+    if (this->_copy) this->_previous = image;
+    tiles = copies; // first: the client copies from the frame as it was before this message
     for (const QList<QByteArray>& row: rows)
         tiles.append(row);
     if (tiles.isEmpty()) return {};

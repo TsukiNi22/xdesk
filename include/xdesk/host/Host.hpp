@@ -134,6 +134,7 @@ class Host: public QObject {
         void startStream_(void); // capture thread (a new stream for each sharing)
         void stopStream_(void);
         void listenUdp_(void); // the udp port of the video (when the setting allows it)
+        void orderChanged_(const QString& id); // tells the stream whether the frames of a session keep their order (copy tiles)
         _cold _nodiscard QSslConfiguration tls_(void) const; // certificate + post-quantum groups
         _cold _nodiscard Permissions defaultPermissions_(const Session* session) const;
 

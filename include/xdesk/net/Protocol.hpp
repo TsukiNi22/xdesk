@@ -69,6 +69,7 @@ enum class TileEncoding: std::uint8_t {
     Jpeg = 1, // u32 length, jpeg data
     Solid = 2, // u8 r, u8 g, u8 b (whole tile of one color)
     Palette = 3, // u8 n (1..64), n x (u8 r, u8 g, u8 b), u32 length, zlib stream of w x h u8 indices (lossless: text, ui); only to the clients whose hello lists "palette" in "enc"
+    Copy = 4, // u16 sx, u16 sy: the w x h rectangle at (sx, sy) of the frame as it was before this message (scroll); first tiles of a frame, only to the clients listing "copy" in "enc" and while their frames keep their order
 };
 
 enum class MouseButton: std::uint8_t {

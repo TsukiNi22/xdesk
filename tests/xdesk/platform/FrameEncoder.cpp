@@ -23,10 +23,11 @@ File Description:
 #include "xdesk/platform/FrameEncoder.hpp"
 #include "xdesk/net/Protocol.hpp"
 #include <gtest/gtest.h>
-#include <functional>
 #include <QElapsedTimer>
+#include <functional>
 #include <QPainter>
 #include <iostream>
+#include <cstring>
 #include <QImage>
 
 // Tiles of a Frame message: <count, jpeg tiles, solid tiles, covered pixels>
@@ -272,3 +273,140 @@ TEST(FrameEncoder, PaletteTilesAreLosslessAndOnlyWhenAsked)
     EXPECT_GT(checked, 0);
 }
 
+// Desktop frame whose editor is scrolled by scroll rows: a pure shift of its text (what a scroll copies)
+static QImage scrolled_frame(const int scroll)
+{
+    static QImage document;
+    QImage frame = desktop_frame(0);
+
+    if (document.isNull()) {
+        document = QImage(1100, 2400, QImage::Format_RGB32);
+        document.fill(QColor(250, 250, 250));
+        for (int line = 0; line < 170; ++line)
+            for (int col = 0; col < 130; ++col)
+                if ((line * 7 + col * 3) % 11 != 0) glyph(document, 10 + col * 8, 4 + line * 14, static_cast<unsigned>(line * 131 + col), qRgb(30, 30, 30), qRgb(250, 250, 250));
+    }
+    for (int y = 0; y < 980; ++y)
+        std::memcpy(frame.scanLine(40 + y) + 40 * 4, document.constScanLine(y + scroll), 1100 * 4);
+    return frame;
+}
+
+// What a client draws from a Frame message (every encoding), returns its copy tiles
+static int apply_frame(QImage& canvas, const QByteArray& message)
+{
+    xdesk::net::ByteReader r(message);
+    const QImage before = canvas.copy(); // the copy tiles read the frame as it was before the message
+    int copies = 0;
+
+    (void)r.u32();
+    const int width = r.u16();
+    const int height = r.u16();
+    const int count = r.u16();
+    if (canvas.size() != QSize(width, height)) {
+        canvas = QImage(width, height, QImage::Format_RGB32);
+        canvas.fill(Qt::black);
+    }
+    for (int i = 0; i < count && r.ok(); ++i) {
+        const int x = r.u16();
+        const int y = r.u16();
+        const int w = r.u16();
+        const int h = r.u16();
+        const std::uint8_t encoding = r.u8();
+        QImage tile(w, h, QImage::Format_RGB32);
+        if (encoding == 1) {
+            tile = xdesk::platform::FrameEncoder::decodeJpeg(r.bytes(static_cast<qsizetype>(r.u32())));
+        } else if (encoding == 2) {
+            const int red = r.u8();
+            const int green = r.u8();
+            const int blue = r.u8();
+            tile.fill(qRgb(red, green, blue));
+        } else if (encoding == 3) {
+            const int colors = r.u8();
+            const QByteArray table = r.bytes(colors * 3);
+            const QByteArray packed = r.bytes(static_cast<qsizetype>(r.u32()));
+            const qsizetype pixels = static_cast<qsizetype>(w) * h;
+            QByteArray sized(4, Qt::Uninitialized);
+            sized[0] = static_cast<char>((pixels >> 24) & 0xFF); sized[1] = static_cast<char>((pixels >> 16) & 0xFF);
+            sized[2] = static_cast<char>((pixels >> 8) & 0xFF); sized[3] = static_cast<char>(pixels & 0xFF);
+            const QByteArray indices = qUncompress(sized + packed);
+            EXPECT_EQ(indices.size(), pixels);
+            for (qsizetype p = 0; p < indices.size(); ++p) {
+                const int index = static_cast<unsigned char>(indices[p]) * 3;
+                tile.setPixel(static_cast<int>(p % w), static_cast<int>(p / w), qRgb(static_cast<unsigned char>(table[index]), static_cast<unsigned char>(table[index + 1]), static_cast<unsigned char>(table[index + 2])));
+            }
+        } else if (encoding == 4) {
+            const int sx = r.u16();
+            const int sy = r.u16();
+            EXPECT_EQ(copies, i); // the copies come first
+            EXPECT_TRUE(QRect(0, 0, width, height).contains(QRect(sx, sy, w, h)));
+            tile = before.copy(sx, sy, w, h);
+            copies++;
+        } else {
+            ADD_FAILURE() << "unknown tile encoding " << static_cast<int>(encoding);
+            break;
+        }
+        for (int row = 0; row < h && !tile.isNull(); ++row)
+            std::memcpy(canvas.scanLine(y + row) + static_cast<qsizetype>(x) * 4, tile.constScanLine(row), static_cast<std::size_t>(w) * 4);
+    }
+    EXPECT_TRUE(r.ok());
+    return copies;
+}
+
+TEST(FrameEncoder, ScrollIsCopiedWhenAskedAndExact)
+{
+    const QImage first = scrolled_frame(0);
+    const QImage next = scrolled_frame(37);
+    xdesk::platform::FrameEncoder plain;
+    xdesk::platform::FrameEncoder copying;
+    QImage plainCanvas;
+    QImage canvas;
+    long wrong = 0;
+
+    plain.setPalette(true);
+    copying.setPalette(true);
+    copying.setCopy(true);
+    (void)apply_frame(plainCanvas, plain.encode(first, 70));
+    EXPECT_EQ(apply_frame(canvas, copying.encode(first, 70)), 0); // nothing to copy from yet
+    const QByteArray without = plain.encode(next, 70);
+    const QByteArray with = copying.encode(next, 70);
+    EXPECT_EQ(apply_frame(plainCanvas, without), 0); // never asked: never a copy
+    EXPECT_GT(apply_frame(canvas, with), 10);
+    EXPECT_TRUE(copying.copied());
+    EXPECT_LT(with.size() * 4, without.size()); // the scroll costs only the revealed lines
+    std::cout << "scroll of 37 rows: " << without.size() / 1024 << " KiB without the copies, " << with.size() / 1024 << " KiB with" << std::endl;
+
+    // The editor (lossless palette tiles and copies of them) is exactly the new frame
+    for (int y = 40; y < 1020; ++y)
+        for (int x = 40; x < 1140; ++x)
+            wrong += (canvas.pixel(x, y) & 0xFFFFFF) != (next.pixel(x, y) & 0xFFFFFF);
+    EXPECT_EQ(wrong, 0);
+
+    // Still afterwards: nothing more, and a reset forgets the sources
+    EXPECT_TRUE(copying.encode(next, 70).isEmpty());
+    copying.reset();
+    EXPECT_FALSE(copying.copied());
+    EXPECT_EQ(apply_frame(canvas, copying.encode(scrolled_frame(80), 70)), 0);
+}
+
+// Not a check: time and bytes of a scroll without / with the copy tiles (run like the palette benchmark)
+TEST(FrameEncoder, DISABLED_BenchmarkScroll)
+{
+    const QImage first = scrolled_frame(0);
+    const QImage next = scrolled_frame(37);
+
+    for (const bool copy: {false, true}) {
+        qint64 scrollNs = 0;
+        qsizetype scrollBytes = 0;
+        for (int run = 0; run < 10; ++run) {
+            xdesk::platform::FrameEncoder encoder;
+            QElapsedTimer timer;
+            encoder.setPalette(true);
+            encoder.setCopy(copy);
+            (void)encoder.encode(first, 70);
+            timer.start();
+            scrollBytes = encoder.encode(next, 70).size();
+            scrollNs += timer.nsecsElapsed();
+        }
+        std::cout << (copy ? "copy " : "plain") << "  scroll " << scrollNs / 10000000.0 << " ms " << scrollBytes / 1024 << " KiB" << std::endl;
+    }
+}

@@ -89,7 +89,7 @@ void xdesk::host::Stream::closeCapture_(void)
     emit this->closed();
 }
 
-void xdesk::host::Stream::addClient(const QString& session, const int quality, const double scale, const int fps, const bool palette)
+void xdesk::host::Stream::addClient(const QString& session, const int quality, const double scale, const int fps, const bool palette, const bool copy)
 {
     StreamClient client;
 
@@ -98,6 +98,7 @@ void xdesk::host::Stream::addClient(const QString& session, const int quality, c
     client.fps = fps;
     client.flow.setAutoScale(this->_autoResolution);
     client.palette = palette;
+    client.copy = copy;
     this->_clients.insert(session, client);
     if (this->_idle) this->_idle->stop();
     if (!this->_capture) QTimer::singleShot(OPEN_DELAY, this, &Stream::openIfWatched_); // a client opening on a terminal pauses at once: no capture for it
@@ -152,6 +153,19 @@ void xdesk::host::Stream::refresh(const QString& session)
 
     if (it == this->_clients.end()) return;
     it->encoder.reset();
+    it->idle = 0;
+}
+
+void xdesk::host::Stream::setOrdered(const QString& session, const bool ordered)
+{
+    QHash<QString, StreamClient>::iterator it = this->_clients.find(session);
+
+    if (it == this->_clients.end() || it->ordered == ordered) return;
+    it->ordered = ordered;
+    it->settling = ordered;
+    if (ordered) return;
+    it->encoder.setCopy(false);
+    if (it->encoder.copied()) it->encoder.reset(); // a frame of another path may overtake a copy: everything again, newer than both
     it->idle = 0;
 }
 
@@ -226,6 +240,9 @@ void xdesk::host::Stream::tick_(void)
         client.lastFrame = now - client.lastFrame < interval * 2 ? client.lastFrame + interval : now; // on the slots of the rate (the 4 ms tick would make 30 fps 27)
         // Lossless palette tiles (text, ui): half the bytes for twice the cpu, so only while the link is the bottleneck
         client.encoder.setPalette(client.palette && (client.flow.minRtt() > PALETTE_RTT || client.flow.queue() >= FLOW_QUEUE_LOW || client.flow.ceiling() < 100));
+        // Copy tiles (scroll) only while the frames keep their order and every frame of the other paths arrived
+        if (client.settling && client.flow.queue() == 0) client.settling = false;
+        client.encoder.setCopy(client.copy && client.ordered && !client.settling);
         message = client.encoder.encode(scaled.value(key), client.flow.quality(client.quality));
         client.idle = message.isEmpty() ? frame.cacheKey() : 0;
         if (message.isEmpty()) continue;

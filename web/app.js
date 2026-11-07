@@ -11,7 +11,7 @@
 
     const PROTOCOL = 1;
     const BIN = {Frame: 0x10, FrameAck: 0x11, Cursor: 0x12, MouseMove: 0x20, MouseButton: 0x21, MouseWheel: 0x22, Key: 0x23, Text: 0x24, TermData: 0x31};
-    const TILE = {Jpeg: 1, Solid: 2, Palette: 3};
+    const TILE = {Jpeg: 1, Solid: 2, Palette: 3, Copy: 4};
     const PALETTE = typeof DecompressionStream === "function"; // lossless palette tiles (text / ui) need the zlib inflater of the browser
     const STORAGE = "xdesk";
     const UA = navigator.userAgent;
@@ -466,7 +466,7 @@
         ws.onopen = () => {
             const device = getDevice();
             // The udp of the app (udp = 1 in the storage) only on demand: each of its frames crosses the ui thread of android as base64 text
-            sendJson({t: "hello", v: PROTOCOL, kind: KIND, name: name, os: guessOs(), device: device ? device.id : "", nonce: b64encode(state.clientNonce), udp: !!bridge.port && load("udp") === "1", enc: PALETTE ? ["palette"] : []});
+            sendJson({t: "hello", v: PROTOCOL, kind: KIND, name: name, os: guessOs(), device: device ? device.id : "", nonce: b64encode(state.clientNonce), udp: !!bridge.port && load("udp") === "1", enc: PALETTE ? ["palette", "copy"] : ["copy"]});
         };
         ws.onmessage = (e) => {
             if (typeof e.data === "string") onText(e.data);
@@ -818,6 +818,12 @@
                 if (pos + len > data.length) return;
                 tile.z = data.slice(pos, pos + len);
                 pos += len;
+            } else if (tile.enc === TILE.Copy) {
+                // Scroll: a rectangle of the frame as it was before this message
+                if (pos + 4 > data.length) return;
+                tile.sx = view.getUint16(pos);
+                tile.sy = view.getUint16(pos + 2);
+                pos += 4;
             } else if (tile.enc === TILE.Solid) {
                 if (pos + 3 > data.length) return;
                 tile.color = "rgb(" + data[pos] + "," + data[pos + 1] + "," + data[pos + 2] + ")";
@@ -855,8 +861,10 @@
                     layoutCanvas();
                 }
             }
+            copyTiles(id, tiles, bitmaps.length > 0);
             for (let i = 0; i < tiles.length && bitmaps.length; ++i) {
                 const tl = tiles[i];
+                if (tl.sx !== undefined) continue;
                 const cells = newerCells(id, tl);
                 if (tl.color) {
                     ctx.fillStyle = tl.color;
@@ -875,6 +883,33 @@
             state.frames += 1;
             placeCursor();
         }).catch(() => {state.drawing = Math.max(0, state.drawing - 1); if (!early) sendAck();});
+    }
+
+    // Copy tiles (scroll): their sources taken in one go into a spare canvas before any of them is drawn
+    const spare = document.createElement("canvas");
+    const spareCtx = spare.getContext("2d", {alpha: false});
+    function copyTiles(id, tiles, draw) {
+        let left = Infinity, top = Infinity, right = 0, bottom = 0;
+        for (const tl of tiles) {
+            if (tl.sx === undefined) continue;
+            left = Math.min(left, tl.sx);
+            top = Math.min(top, tl.sy);
+            right = Math.max(right, tl.sx + tl.w);
+            bottom = Math.max(bottom, tl.sy + tl.h);
+        }
+        if (!draw || right <= left || bottom <= top) return;
+        right = Math.min(right, state.frameW);
+        bottom = Math.min(bottom, state.frameH);
+        if (spare.width < right - left || spare.height < bottom - top) {
+            spare.width = Math.max(spare.width, right - left);
+            spare.height = Math.max(spare.height, bottom - top);
+        }
+        spareCtx.drawImage(canvas, left, top, right - left, bottom - top, 0, 0, right - left, bottom - top);
+        for (const tl of tiles) {
+            if (tl.sx === undefined) continue;
+            for (const c of newerCells(id, tl).kept)
+                ctx.drawImage(spare, tl.sx - left + (c[0] - tl.x), tl.sy - top + (c[1] - tl.y), c[2], c[3], c[0], c[1], c[2], c[3]);
+        }
     }
 
     // Palette tile -> bitmap: inflate the indices, look the colors up

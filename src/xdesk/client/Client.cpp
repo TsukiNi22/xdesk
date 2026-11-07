@@ -173,7 +173,7 @@ void xdesk::client::Client::sendHello_(void)
     this->_ws->sendText(QString::fromUtf8(QJsonDocument(QJsonObject{
         {"t", "hello"}, {"v", XDESK_PROTOCOL_VERSION}, {"kind", net::client_kind_name(this->_options.kind)},
         {"name", this->_options.name}, {"os", QSysInfo::prettyProductName()}, {"device", known.value("device").toString()},
-        {"nonce", QString::fromLatin1(this->_clientNonce.toBase64())}, {"enc", QJsonArray{"palette"}},
+        {"nonce", QString::fromLatin1(this->_clientNonce.toBase64())}, {"enc", QJsonArray{"palette", "copy"}},
     }).toJson(QJsonDocument::Compact)));
 }
 
@@ -335,11 +335,31 @@ void xdesk::client::Client::decodeFrame_(const QByteArray& data, const bool udp)
         return kept;
     };
 
+    // Copy tiles (scroll, first of the frame): their pixels taken before any tile of this frame is drawn
+    QList<QPair<QRect, QImage>> copies; // destination, its pixels
+    const std::function<void(void)> flush = [this, &copies, &newer](void) {
+        for (const QPair<QRect, QImage>& copy: copies)
+            for (const QRect& area: newer(copy.first))
+                for (int y = area.top(); y <= area.bottom(); ++y)
+                    std::memcpy(this->_canvas.scanLine(y) + static_cast<qsizetype>(area.left()) * 4, copy.second.constScanLine(y - copy.first.top()) + static_cast<qsizetype>(area.left() - copy.first.left()) * 4, static_cast<std::size_t>(area.width()) * 4);
+        copies.clear();
+    };
+
     // Solid tiles at once, the jpeg ones decoded in parallel (the tiles of a frame never overlap)
     QList<QList<QRect>> keep; // per jpeg: its tiles to draw
     for (int i = 0; i < count && r.ok(); ++i) {
         const QRect tile(r.u16(), r.u16(), r.u16(), r.u16());
         const std::uint8_t encoding = r.u8();
+        if (encoding == static_cast<std::uint8_t>(net::TileEncoding::Copy)) {
+            const int sx = r.u16();
+            const int sy = r.u16();
+            const QRect source(sx, sy, tile.width(), tile.height());
+            if (!r.ok() || !bounds.contains(source) || !bounds.contains(tile)) break; // a broken tile: the frame stops here
+            copies.append({tile, this->_canvas.copy(source)});
+            dirty = dirty.united(tile);
+            continue;
+        }
+        flush();
         if (encoding == static_cast<std::uint8_t>(net::TileEncoding::Jpeg)) {
             jpegs.append({tile, r.bytes(static_cast<qsizetype>(r.u32()))});
             keep.append(newer(tile));
@@ -380,6 +400,7 @@ void xdesk::client::Client::decodeFrame_(const QByteArray& data, const bool udp)
         } else break;
         dirty = dirty.united(tile);
     }
+    flush();
     uchar* bits = this->_canvas.bits(); // detached here, before the threads write their own rectangles
     const qsizetype stride = this->_canvas.bytesPerLine();
     platform::parallel_for(static_cast<int>(jpegs.size()), [&jpegs, &keep, bits, stride](const int i) {

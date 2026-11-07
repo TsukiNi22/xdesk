@@ -85,6 +85,7 @@ xdesk::host::Host::Host(core::Config& config, QObject* parent)
         if (this->_stream) QMetaObject::invokeMethod(this->_stream, "refresh", Qt::QueuedConnection, Q_ARG(QString, id)); // its tiles went with the socket
     });
     QObject::connect(&this->_lanes, &Lanes::changed, this, [this](const QString& id) {
+        this->orderChanged_(id);
         if (Session* s = this->_sessions.value(id)) emit this->sessionChanged(s);
     });
     QObject::connect(&this->_udp, &UdpServer::acked, this, [this](const QString& id, const std::uint32_t frame) {
@@ -97,6 +98,7 @@ xdesk::host::Host::Host(core::Config& config, QObject* parent)
         this->_log.info("session", id, active ? "Video over encrypted UDP" : "Video back on TCP (UDP silent or blocked)");
         emit this->activity(id, active ? "video over encrypted UDP" : "video back on TCP");
         if (!active && this->_stream) QMetaObject::invokeMethod(this->_stream, "refresh", Qt::QueuedConnection, Q_ARG(QString, id)); // the pieces lost with the udp path
+        this->orderChanged_(id);
         emit this->sessionChanged(s);
     });
 }
@@ -191,6 +193,13 @@ void xdesk::host::Host::setSharing(const bool share)
     this->_code.rotate(); // a fresh code for each sharing
     this->_log.info("server", "", "Sharing started on " + s.bind + ":" + QString::number(this->_server.port()) + " (" + core::exposure_name(s.exposure) + ", " + security::tls_summary() + ")");
     emit this->stateChanged();
+}
+
+void xdesk::host::Host::orderChanged_(const QString& id)
+{
+    const bool ordered = this->_udp.describe(id).isEmpty() && this->_lanes.describe(id).isEmpty();
+
+    if (this->_stream) QMetaObject::invokeMethod(this->_stream, "setOrdered", Qt::QueuedConnection, Q_ARG(QString, id), Q_ARG(bool, ordered));
 }
 
 void xdesk::host::Host::listenUdp_(void)
@@ -494,7 +503,7 @@ void xdesk::host::Host::admit_(Session* session, const bool remember)
     this->sendInputState_(session);
     this->_scales[session->id()] = s.scale;
     if (this->_stream)
-        QMetaObject::invokeMethod(this->_stream, "addClient", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(int, s.quality), Q_ARG(double, s.scale), Q_ARG(int, s.fps), Q_ARG(bool, session->encodings().contains("palette")));
+        QMetaObject::invokeMethod(this->_stream, "addClient", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(int, s.quality), Q_ARG(double, s.scale), Q_ARG(int, s.fps), Q_ARG(bool, session->encodings().contains("palette")), Q_ARG(bool, session->encodings().contains("copy")));
     this->_log.info("session", session->id(), "Session started: " + session->name() + " (" + net::client_kind_name(session->kind()) + ", " + session->address() + ")", session->describe());
     this->updateMarker_();
     emit this->sessionChanged(session);

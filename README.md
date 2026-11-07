@@ -37,7 +37,7 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 | Devices | Trusted (reconnect without code), known, banned devices and banned addresses, one record per machine (a browser coming back with a new id replaces its old records, their trust is not kept); unban / trust only locally |
 | Tamper protection | A session touching xdesk (its binary, config, data, process) is banned at once (see [Security](#security)) |
 | Audit log | `jsonl` per day (connections, decisions, inputs, terminal commands) + full terminal transcripts |
-| Screen | Dirty 64x64 tiles (JPEG via libjpeg-turbo or solid color) hashed and encoded on every core, lighter JPEG while a large part moves (scroll, video) then the same tiles sent again sharp once still, nothing computed while the capture has no new frame, frames in flight sized from the measured ping and bandwidth (2 on a LAN, up to 8 for a far viewer, acked on arrival) and JPEG quality lowered while a queue builds up then raised again, paused while the client shows a terminal, remote cursor |
+| Screen | Dirty 64x64 tiles (JPEG via libjpeg-turbo or solid color) hashed and encoded on every core, lighter JPEG while a large part moves (scroll, video) then the same tiles sent again sharp once still, scroll sent as copies of what the viewer already has (only the revealed lines are encoded), nothing computed while the capture has no new frame, frames in flight sized from the measured ping and bandwidth (2 on a LAN, up to 8 for a far viewer, acked on arrival) and JPEG quality lowered while a queue builds up then raised again, paused while the client shows a terminal, remote cursor |
 | Capture | Windows DXGI Desktop Duplication, X11 / macOS through Qt, Wayland through the xdg-desktop-portal ScreenCast + PipeWire video stream (no screenshots: no flash, no shutter sound, only the changed tiles sent) |
 | Input | Windows `SendInput` (scancodes + unicode), Linux `uinput` (Wayland and X11) or XTest, physical key codes (layout of the host) |
 | Terminals | Linux / macOS `forkpty`, Windows ConPTY; up to 4 per session, resizable, `xterm-256color` + truecolor, UTF-8 (`C.UTF-8` when started without a locale); web client: xterm.js with the WebGL renderer, Unicode 11 widths and Nerd / powerline fonts when installed |
@@ -361,7 +361,7 @@ cmake --build build --parallel $(nproc)                       # ./unit_tests at 
 | `tests/xdesk/security/PairingCode.cpp` | plain / proof checks, rotation, length and expiry |
 | `tests/xdesk/security/DeviceRegistry.cpp` | bans, address bans, a `devices.json` edited by hand is refused |
 | `tests/xdesk/net/Protocol.cpp` | binary writer / reader, overflow detection |
-| `tests/xdesk/platform/FrameEncoder.cpp` | complete then dirty frames, JPEG round trip, resize |
+| `tests/xdesk/platform/FrameEncoder.cpp` | complete then dirty frames, JPEG round trip, resize, lossless palette tiles, scroll copied exactly |
 | `tests/xdesk/Desktop.cpp` | command line |
 
 ## Known limits
