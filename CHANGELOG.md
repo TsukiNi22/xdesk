@@ -18,7 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [pre-release] (empty)
+## [pre-release]
+### Changed
+- Documentation site in the better-html-doc style ([tsukini22.github.io/xdesk/docs](https://tsukini22.github.io/xdesk/docs/)): user guide, concepts (pairing, screen stream), commands and settings generated from the sources, protocol, files, security and tamper protection, EN / FR with search; sources in `docs/site/`
 
 ## v1.0.0 - 2026-11-09
 ### Added
