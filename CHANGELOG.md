@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [pre-release] (empty)
 
-## v1.0.0 - 2026-11-05
+## v1.0.0 - 2026-11-09
 ### Added
 - First version of `xdesk` (binary), set up from [cpp_project_template](https://github.com/TsukiNi22/cpp_project_template)
 - Host: Qt6 panel (overview, live sessions, devices, logs, settings, tray, approval prompt, tamper banner) and terminal panel (`--tty`)
