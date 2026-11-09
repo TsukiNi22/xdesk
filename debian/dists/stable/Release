@@ -1,0 +1,29 @@
+Origin: TsukiNi22
+Label: xdesk
+Suite: stable
+Codename: stable
+Architectures: amd64
+Components: main
+Description: xdesk APT repository
+Date: Mon, 09 Nov 2026 01:32:15 +0000
+Date: Mon, 09 Nov 2026 01:32:15 +0000
+MD5Sum:
+ 72684ede23a2bffa7235d4afe55ad7d5              210 Release
+ 0f17fc87dde2567959e9f55c3db6118e             4361 main/binary-amd64/Packages
+ 5af8c6e45862eec78f2a37bdf2dd6d90             1246 main/binary-amd64/Packages.gz
+ 7b42f6ef219aca7928e7b19c416288e9             1244 main/binary-amd64/Packages.xz
+SHA1:
+ 09e6f090314d888ab0efdb60725580d94908a745              210 Release
+ d8630dd1b3d2fcdf22909e2fb547dc12aa4e2129             4361 main/binary-amd64/Packages
+ 224cf64367a327525269ed8e3071f9ebe5cc751b             1246 main/binary-amd64/Packages.gz
+ 24b21520c116ae341b9ff345f297ba29ac15b264             1244 main/binary-amd64/Packages.xz
+SHA256:
+ ba847cabece856800b6dc709cbab5682d75ef2303e7463dbf15f03533a4e528c              210 Release
+ 65c10f939f94082f14beaa98f9f8cafdcacc1afb27a89dd29b0ea9628021e436             4361 main/binary-amd64/Packages
+ 8187c3ae73a53d51c5bd3b0b7e433a71ab81751b743b005bb60c4c601207866c             1246 main/binary-amd64/Packages.gz
+ b6b44a8baff74145660799882e6c5bcf45cca53cc12a6031e95cc5f18f5d731b             1244 main/binary-amd64/Packages.xz
+SHA512:
+ a4b10b44353e51fa6a48ec05c7a951d01aa5f2b005f85d38b7bc9989126f000cdf9f2f558a4af6ec23af27c15f7e8a0fdc8171f0b3cd3dfffe34325cebb59913              210 Release
+ 353a0acfda3428fb2b72d7cd7b9ce41f6508fe47924e10cd7acf66954bc4877747193e4bef2b42a3264244bfe30f2398ba463b365fe7f82bb1a003314b69b334             4361 main/binary-amd64/Packages
+ 2e65d08ac0c848ed631236ae6f8886db6419df19395ca03b75c2801e8666008b3fb8c2509224410f115d1339c6edbd8e3a1945859b114e91e578504fe61866c3             1246 main/binary-amd64/Packages.gz
+ 2cc2c946e4a13ee399184ab22277d1cd457eaa096dc73e7a51c977f736ec973626cf2edfd20c6a5dc4d77523b43fdb2686aba67ffb072eb15ef49420fc7ab379             1244 main/binary-amd64/Packages.xz
