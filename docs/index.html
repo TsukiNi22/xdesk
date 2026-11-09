@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en" data-page="technical" data-storage-key="xdesk" data-repo="TsukiNi22/xdesk">
+<html lang="en" data-storage-key="xdesk-docs">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>xdesk · Technical documentation</title>
+<title>xdesk documentation</title><link rel="icon" type="image/svg+xml" href="logo.svg">
 <style>
 /* Visual system of the user's HTML pages (source: html-doc/templates/technical.html, R-Type doc colors +
    context-forge layout). Inlined in each page by scripts/new_page.py: pages stay self-contained. */
@@ -454,29 +454,165 @@ footer.site { padding-bottom: max(30px, env(safe-area-inset-bottom)); }
   body { background: var(--bg); color: var(--text); }
   a { color: inherit; }
 }
-/* ---------- Additions of this page to html-style/templates/style.css ---------- */
-/* ---------- End of the additions ---------- */
+
+/* better-html-style - the documentation site style (from the claude-cluster docs), on top of html-style: home hero, search
+   box and results, section tiles, sidebar groups, page meta, changelog list, kinds of results; phone / tablet / print */
+.layout.wide { grid-template-columns: minmax(0, 1fr); max-width: 1040px; margin-left: auto; margin-right: auto; }
+/* a page without sidebar (the home): its column centered at every width (html-style puts main in column 2 from 1340px) */
+@media (min-width: 1340px) { .layout.wide { max-width: 1040px; } .layout.wide > main { grid-column: 1; } }
+.embed .topbar, .embed footer.site { display: none; }
+.embed .sidebar { top: 0; }
+/* what a link reaches (a section, a heading, a message) stays visible under what sticks on top: the bar, the search of a phone */
+main, main [id] { scroll-margin-top: 72px; }
+.embed main, .embed main [id] { scroll-margin-top: 16px; }
+
+/* ----- home ----- */
+.hero { text-align: center; padding: 28px 0 8px; }
+.hero h1 { font-size: 40px; margin: 0 0 6px; }
+.hero .lead { margin: 0 auto 18px; }
+.badge { display: inline-block; max-width: 100%; padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px; font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); background: var(--surface); text-transform: none; letter-spacing: 0; overflow-wrap: anywhere; } /* a version, a commit: never the capitals of the eyebrow */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr)); gap: 16px; margin: 24px 0; }
+.tile { display: block; padding: 20px 22px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; color: var(--text); text-decoration: none; transition: border-color .15s, background .15s; }
+.tile:hover { border-color: var(--accent); background: var(--code-bg); }
+.tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tile h2 { margin: 8px 0 4px; font-size: 17px; } /* a tile is a section of the home: h2 under the h1 (RGAA 9.1) */
+.tile p { margin: 0; color: var(--muted); font-size: 14.5px; }
+.tile svg { width: 26px; height: 26px; color: var(--accent); }
+.tile .count { float: right; font-size: 12.5px; color: var(--muted); }
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; } /* minmax(0): a wide table or code scrolls in its column, never pushes it out of the card */
+.links { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 8px 0 0; }
+.links a { min-width: 0; padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); text-decoration: none; overflow-wrap: anywhere; }
+.links a:hover { border-color: var(--accent); }
+.cl { list-style: none; margin: 0; padding: 0; }
+.cl li { display: flex; gap: 12px; max-width: none; padding: 8px 0; border-top: 1px solid var(--border); }
+.cl li:first-child { border-top: 0; }
+.cl b { flex: none; min-width: 56px; max-width: 38%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 600; overflow-wrap: anywhere; } /* a long version wraps in its column, the text keeps the width of the row */
+.cl li > span { flex: 1; min-width: 0; max-width: 75ch; overflow-wrap: anywhere; }
+
+/* ----- search ----- */
+.sbox { position: relative; max-width: 640px; margin: 0 auto; text-align: left; }
+.sbox input { display: block; width: 100%; box-sizing: border-box; padding: 14px 16px 14px 44px; font: inherit; font-size: 17px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+.sbox input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.sbox > svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; color: var(--muted); pointer-events: none; }
+.sbox.small input { padding: 7px 10px 7px 34px; font-size: 14.5px; }
+.sbox.small > svg { left: 10px; width: 16px; height: 16px; }
+.sbox kbd.hint { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; pointer-events: none; }
+.sbox input:focus ~ kbd.hint, .sbox input:not(:placeholder-shown) ~ kbd.hint { display: none; }
+.results { position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 6px); margin: 0; padding: 6px; list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 40px rgba(0, 0, 0, .2); max-height: 60vh; overflow: auto; }
+.results[hidden] { display: none; }
+.results a { display: flex; gap: 10px; align-items: baseline; padding: 8px 10px; border-radius: 6px; color: var(--text); text-decoration: none; }
+.results li.sel a, .results a:hover { background: var(--code-bg); }
+.results .t { flex: 1 1 60%; min-width: 0; overflow-wrap: anywhere; }
+.results .d { display: block; font-size: 13px; color: var(--muted); }
+.results mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px; padding: 0 1px; }
+.results .none { padding: 10px; color: var(--muted); }
+.kind { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.results .kind { flex: 0 1 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* a long kind never takes the room of its title */
+.kind.docs, .kind.page { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.kind.settings, .kind.config { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+.kind.tools, .kind.api, .kind.message, .kind.protocol { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+.kind.keys, .kind.explain { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+/* the bar holds everything on one line at any width: its name gives way first, then the search */
+.topbar .brand { flex-shrink: 100; min-width: 28px; }
+.topbar .top-actions { flex: 0 1 auto; min-width: 0; }
+.top-actions .divider { flex: none; }
+.topbar .sbox.small { flex: 0 1 260px; width: 260px; min-width: 110px; margin: 0 8px; }
+.topbar .sbox.small .results { left: auto; right: 0; width: 440px; max-width: calc(100vw - 24px); }
+/* a narrow bar: the switches after the box leave it far from the right of the screen, the results hold to the screen, never past its left edge */
+@media (max-width: 1100px) { .topbar .sbox.small .results { position: fixed; top: 62px; right: 12px; width: min(440px, calc(100vw - 24px)); } }
+@media (max-width: 1100px) and (max-height: 480px) and (orientation: landscape) { .topbar .sbox.small .results { top: 54px; } }
+.sbox.small.mob { position: sticky; top: 56px; z-index: 19; width: auto; margin: 0; padding: 8px 12px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.embed .sbox.small.mob { top: 0; } /* the embedded copy has no top bar: the very top */
+@media (max-height: 480px) and (orientation: landscape) { .sbox.small.mob { top: 48px; } .embed .sbox.small.mob { top: 0; } }
+.sbox.small.mob > svg { left: 22px; }
+.sbox.small.mob .results, .topbar .sbox.small.mob .results { left: 12px; right: 12px; width: auto; }
+
+/* ----- pages ----- */
+kbd { display: inline-block; max-width: 100%; white-space: normal; overflow-wrap: break-word; padding: 0 6px; font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text); background: var(--code-bg); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; }
+.sidebar .grp { margin: 16px 0 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.sidebar a.cur { color: var(--accent); font-weight: 600; }
+.sidebar hr { border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
+.brand .logo { width: 28px; height: 28px; }
+header p:has(+ .page-meta) { margin-bottom: 12px; }
+.page-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 24px; font-size: 13px; color: var(--muted); } /* close to the lead, not stuck on the first card */
+.page-meta > * { min-width: 0; overflow-wrap: anywhere; }
+.page-meta a { color: var(--muted); }
+.page-meta a:hover { color: var(--accent); }
+main pre { overflow-x: auto; }
+main li > ul, main li > ol { margin-top: 4px; }
+.callout.planned { border-left-color: var(--warn); }
+.pill { display: inline-block; max-width: 100%; padding: 0 8px; overflow-wrap: anywhere; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); color: var(--muted); }
+details.more { margin: 14px 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+details.more > summary { cursor: pointer; padding: 10px 14px; font-weight: 600; }
+details.more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+details.more > div { padding: 0 14px 6px; }
+.feedback { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 24px; padding: 14px 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.feedback > span { min-width: 0; overflow-wrap: anywhere; }
+.feedback button { padding: 5px 14px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+.feedback button:hover { border-color: var(--accent); }
+.feedback button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ----- responsive ----- */
+@media (max-width: 860px) { .two { grid-template-columns: minmax(0, 1fr); } .hero h1 { font-size: 30px; } .topbar .sbox.small { flex-basis: 200px; width: 200px; } .sbox.small input { font-size: 16px; } .sbox kbd.hint { display: none; } } /* 16px: under it iOS zooms the page on focus; the hint: the box may be too small for it */
+@media (max-width: 480px) { body:has(.sbox.small) .hero .sbox { display: none; } } /* a phone: the search under the top bar only (never two, one in the middle of the home) */
+@media (max-width: 480px) { .tile { padding: 16px; } .hero { padding-top: 12px; } .hero h1 { font-size: 26px; } .sbox input { font-size: 16px; } main, main [id] { scroll-margin-top: 128px; } .embed main, .embed main [id] { scroll-margin-top: 72px; } } /* the bar + the search under it */
+@media (pointer: coarse) { .results a { min-height: 44px; align-items: center; } .links a { min-height: 44px; display: inline-flex; align-items: center; } .topbar .menu-btn { width: 40px; height: 40px; } summary { display: list-item; } } /* a summary keeps its marker: a flex one loses it */
+@media print {
+  .topbar, .sidebar, .pager, .feedback, .sbox, .page-meta a.edit, .keys-toggle { display: none !important; }
+  /* paper does not scroll: the short cells docTables kept on one line wrap there and the table is denser, so that a wide one fits the page */
+  table { font-size: 12px; }
+  th, td { padding: 4px 6px; white-space: normal !important; }
+}
+
+/* RGAA 12.10: the one-character shortcut of the search can be turned off */
+.sbox kbd.hint[hidden] { display: none; }
+.keys-toggle { display: inline-flex; align-items: center; gap: 8px; margin-left: 16px; cursor: pointer; }
+@media (max-width: 480px) { .keys-toggle { display: flex; margin: 6px 0 0; } } /* its own line under the text of the footer, not indented */
+.keys-toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+.keys-toggle input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (pointer: coarse) { .keys-toggle { display: none; } }
+
+/* better-html-doc - what mdlib.py and the generator write and the style skills do not know: on top of better-html-style, tokens only */
+/* a task item: the box where the bullet would be, its text aligned like any item, the state readable in both themes (a disabled box of the browser is pale) */
+main li.task { position: relative; list-style: none; }
+main li.task > input { appearance: none; position: absolute; left: -1.45em; top: .3em; width: 1em; height: 1em; margin: 0; border: 1.5px solid var(--muted); border-radius: 3px; background: var(--surface); }
+main li.task > input:checked { border-color: var(--accent); background: var(--accent); }
+main li.task > input:checked::after { content: ""; position: absolute; left: 30%; top: 8%; width: 28%; height: 56%; border: solid var(--surface); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+/* an item with blocks: its paragraphs without the margin that would push its first line under its bullet */
+main li > p:first-child { margin-top: 0; }
+main li > p:last-child { margin-bottom: 0; }
+main del { color: var(--muted); }
+/* raw HTML of a page: a frame never wider than its card (the other media are in html-style) */
+main iframe, main embed, main object, main audio { max-width: 100%; }
+/* the title of the previous / next page: every language in its span, the same as the bare text of a site of one language (only the label is small) */
+.pager a > span + span { font-size: inherit; color: inherit; }
+/* on paper a table has the width of the page: what its columns keep (a min-width on its first row) is for a screen, where it can scroll */
+@media print { main th, main td { min-width: 0 !important; } }
 </style>
 </head>
 <body>
 <a class="skip-link" href="#main" data-i18n>Skip to the content</a>
 <header class="topbar">
   <button class="icon-btn menu-btn" type="button" id="menuBtn" aria-label="Open the navigation" data-i18n-aria-label><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-  <a class="brand" href="index.html"><svg class="logo" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="xdesk"><rect x="2" y="2" width="60" height="60" rx="6" fill="#14181b"/><rect x="2" y="54" width="60" height="4" fill="#3ddc97"/><g fill="none" stroke-linecap="square"><rect x="12" y="13" width="40" height="28" stroke="#3ddc97" stroke-width="4"/><line x1="24" y1="47" x2="40" y2="47" stroke="#3ddc97" stroke-width="4"/><line x1="26" y1="21" x2="38" y2="33" stroke="#e4e7e9" stroke-width="4"/><line x1="38" y1="21" x2="26" y2="33" stroke="#e4e7e9" stroke-width="4"/></g></svg><span class="repo-name">xdesk</span><span class="ver repo-version">v1.0.0</span></a>
-  <nav class="tabs" aria-label="Pages">
-    <a href="index.html" class="current" aria-current="page" data-i18n>Technical</a>
-    <a href="graph.html" data-i18n>Graph</a>
-  </nav>
+  <a class="brand" href="index.html"><svg class="logo" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="xdesk">
+  <rect x="2" y="2" width="60" height="60" rx="6" fill="#14181b"/>
+  <rect x="2" y="54" width="60" height="4" fill="#3ddc97"/>
+  <g fill="none" stroke-linecap="square">
+    <rect x="12" y="13" width="40" height="28" stroke="#3ddc97" stroke-width="4"/>
+    <line x1="24" y1="47" x2="40" y2="47" stroke="#3ddc97" stroke-width="4"/>
+    <line x1="26" y1="21" x2="38" y2="33" stroke="#e4e7e9" stroke-width="4"/>
+    <line x1="38" y1="21" x2="26" y2="33" stroke="#e4e7e9" stroke-width="4"/>
+  </g>
+</svg><span class="repo-name">xdesk</span><span class="ver repo-version">v1.0.0</span></a>
+  <nav class="tabs" aria-label="Pages" hidden></nav>
   <span class="spacer"></span>
   <div class="top-actions">
-  <a class="icon-btn repo-link" href="https://github.com/TsukiNi22/xdesk" title="GitHub repository" data-i18n-title aria-label="GitHub repository" data-i18n-aria-label>
-    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.71 1.23 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
-  </a>
-  <span class="divider" aria-hidden="true"></span>
-  <div class="lang-switch" role="group" aria-label="Language">
+  <div class="lang-switch" role="group" aria-label="Language" data-i18n-aria-label>
     <button type="button" data-set-lang="en" class="on">EN</button>
     <button type="button" data-set-lang="fr">FR</button>
   </div>
+  <span class="divider" aria-hidden="true"></span><div class="sbox small"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" autocomplete="off" aria-label="Search" data-i18n-aria-label placeholder="Search…" data-ph-fr="Rechercher…"><kbd class="hint" aria-hidden="true">/</kbd><ul class="results" hidden></ul></div>
+<a class="icon-btn" href="https://github.com/TsukiNi22/xdesk" aria-label="GitHub repository" data-i18n-aria-label title="GitHub repository" data-i18n-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6l-5 6 5 6M16 6l5 6-5 6"/></svg></a>
   <button class="theme-switch" type="button" id="themeToggle" role="switch" aria-checked="false" aria-label="Toggle theme" data-i18n-aria-label title="Toggle theme" data-i18n-title>
     <span class="stars" aria-hidden="true"><i></i><i></i><i></i></span>
     <span class="knob" aria-hidden="true">
@@ -486,331 +622,12 @@ footer.site { padding-bottom: max(30px, env(safe-area-inset-bottom)); }
   </button>
   </div>
 </header>
-<div class="layout">
-<aside class="sidebar" id="sidebar" aria-label="Contents" data-i18n-aria-label>
-  <p data-i18n>Contents</p>
-  <a href="#overview"><span data-lang="en">1. Overview</span><span data-lang="fr">1. Vue d'ensemble</span></a>
-  <a href="#install"><span data-lang="en">2. Install & build</span><span data-lang="fr">2. Installation & build</span></a>
-  <a href="#usage"><span data-lang="en">3. Usage</span><span data-lang="fr">3. Utilisation</span></a>
-  <a href="#security"><span data-lang="en">4. Security</span><span data-lang="fr">4. Sécurité</span></a>
-  <a href="#protocol"><span data-lang="en">5. Protocol</span><span data-lang="fr">5. Protocole</span></a>
-  <a href="#host"><span data-lang="en">6. Host internals</span><span data-lang="fr">6. Fonctionnement de l'hôte</span></a>
-  <a href="#exposure"><span data-lang="en">7. Exposure</span><span data-lang="fr">7. Exposition</span></a>
-  <a href="#platforms"><span data-lang="en">8. Platforms & limits</span><span data-lang="fr">8. Plateformes & limites</span></a>
-</aside>
-
-<main id="main" tabindex="-1">
-<header>
-  <div class="page-eyebrow" data-i18n>Technical documentation</div>
-  <h1><span data-lang="en">xdesk: remote desktop & terminal</span><span data-lang="fr">xdesk : bureau et terminal à distance</span></h1>
-  <p class="lead"><span data-lang="en">One binary for Windows and Unix: share a PC with a one time code, see / control it from a Qt viewer, a terminal, a browser or the Android app, every connection end to end TLS 1.3 with a post-quantum key exchange.</span><span data-lang="fr">Un seul binaire pour Windows et Unix : partager un PC avec un code à usage unique, le voir / contrôler depuis un viewer Qt, un terminal, un navigateur ou l'application Android, chaque connexion chiffrée de bout en bout en TLS 1.3 avec un échange de clés post-quantique.</span></p>
-</header>
-
-<!-- 1 -->
-<section id="overview">
-  <h2><span data-lang="en">1. Overview</span><span data-lang="fr">1. Vue d'ensemble</span></h2>
-  <p><span data-lang="en"><code>xdesk</code> is <strong>one binary</strong> that shares a PC (host) or connects to one (client). The host serves, on a single TLS port, the web client, the Android application and the websocket used by every client; the clients see the screen, send the keyboard / mouse and open terminals, with the rights the host gives them.</span><span data-lang="fr"><code>xdesk</code> est <strong>un seul binaire</strong> qui partage un PC (hôte) ou s'y connecte (client). L'hôte sert, sur un seul port TLS, le client web, l'application Android et le websocket utilisé par tous les clients ; les clients voient l'écran, envoient clavier / souris et ouvrent des terminaux, selon les droits donnés par l'hôte.</span></p>
-  <figure>
-    <svg viewBox="0 0 760 300" role="img" aria-label="Host and clients of xdesk">
-      <defs>
-        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrow" d="M0 0L10 5L0 10z"/></marker>
-        <marker id="arr-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrow-accent" d="M0 0L10 5L0 10z"/></marker>
-      </defs>
-      <rect class="group" x="20" y="20" width="330" height="260" rx="12"/>
-      <text class="title" x="40" y="48">xdesk host</text>
-      <rect id="cap" class="box" x="40" y="66" width="135" height="50" rx="8"/><text class="lbl" x="107" y="96" text-anchor="middle">Stream</text>
-      <rect id="inj" class="box" x="195" y="66" width="135" height="50" rx="8"/><text class="lbl" x="262" y="96" text-anchor="middle">Input</text>
-      <rect id="pty" class="box" x="40" y="136" width="135" height="50" rx="8"/><text class="lbl" x="107" y="166" text-anchor="middle">Terminals</text>
-      <rect id="guard" class="box" x="195" y="136" width="135" height="50" rx="8"/><text class="lbl" x="262" y="166" text-anchor="middle">Guard</text>
-      <rect id="srv" class="box-alt" x="40" y="210" width="290" height="50" rx="8"/><text class="lbl" x="185" y="240" text-anchor="middle">Server (HTTPS + WSS)</text>
-      <rect id="qt" class="box" x="530" y="30" width="200" height="50" rx="8"/><text class="lbl" x="630" y="60" text-anchor="middle">Qt viewer</text>
-      <rect id="tty" class="box" x="530" y="95" width="200" height="50" rx="8"/><text class="lbl" x="630" y="125" text-anchor="middle">Terminal client</text>
-      <rect id="web" class="box" x="530" y="160" width="200" height="50" rx="8"/><text class="lbl" x="630" y="190" text-anchor="middle">Browser</text>
-      <rect id="apk" class="box" x="530" y="225" width="200" height="50" rx="8"/><text class="lbl" x="630" y="255" text-anchor="middle">Android app</text>
-      <path id="e1" class="edge-accent" data-from="srv" data-to="qt" marker-end="url(#arr-acc)"/>
-      <path id="e2" class="edge-accent" data-from="srv" data-to="tty" marker-end="url(#arr-acc)"/>
-      <path id="e3" class="edge" data-from="srv" data-to="web" marker-end="url(#arr)"/>
-      <path id="e4" class="edge" data-from="srv" data-to="apk" marker-end="url(#arr)"/>
-    </svg>
-    <figcaption><span data-lang="en">Figure 1: one host, four kinds of clients on the same TLS 1.3 port (accent: post-quantum only).</span><span data-lang="fr">Figure 1 : un hôte, quatre types de clients sur le même port TLS 1.3 (accent : post-quantique seulement).</span></figcaption>
-  </figure>
-  <div class="table-wrap"><table>
-    <thead><tr><th scope="col"><span data-lang="en">Module</span><span data-lang="fr">Module</span></th><th scope="col"><span data-lang="en">Role</span><span data-lang="fr">Rôle</span></th></tr></thead>
-    <tbody>
-<tr><td><code>core</code></td><td><span data-lang="en"><code>Config</code> (settings, folders), <code>AuditLog</code> (jsonl per day, live feed)</span><span data-lang="fr"><code>Config</code> (réglages, dossiers), <code>AuditLog</code> (jsonl par jour, flux en direct)</span></td></tr>
-<tr><td><code>security</code></td><td><span data-lang="en"><code>Crypto</code>, <code>Certificate</code>, <code>PairingCode</code>, <code>DeviceRegistry</code>, <code>IntegrityGuard</code></span><span data-lang="fr"><code>Crypto</code>, <code>Certificate</code>, <code>PairingCode</code>, <code>DeviceRegistry</code>, <code>IntegrityGuard</code></span></td></tr>
-<tr><td><code>net</code></td><td><span data-lang="en"><code>Protocol</code>, <code>WebSocket</code> (RFC 6455 over TLS), <code>Server</code>, <code>Exposure</code></span><span data-lang="fr"><code>Protocol</code>, <code>WebSocket</code> (RFC 6455 sur TLS), <code>Server</code>, <code>Exposure</code></span></td></tr>
-<tr><td><code>host</code></td><td><span data-lang="en"><code>Host</code> (auth, rights, bans, terminals, tamper reaction), <code>Session</code>, <code>Stream</code> (capture thread)</span><span data-lang="fr"><code>Host</code> (auth, droits, bans, terminaux, réaction aux modifications), <code>Session</code>, <code>Stream</code> (thread de capture)</span></td></tr>
-<tr><td><code>client</code></td><td><span data-lang="en"><code>Client</code>: pinning, proof, tile decoding, inputs, terminals</span><span data-lang="fr"><code>Client</code> : épinglage, preuve, décodage des tuiles, entrées, terminaux</span></td></tr>
-<tr><td><code>platform</code></td><td><span data-lang="en">Capture, input injection, pseudo terminals, <code>FrameEncoder</code>, <code>Keymap</code></span><span data-lang="fr">Capture, injection d'entrées, pseudo-terminaux, <code>FrameEncoder</code>, <code>Keymap</code></span></td></tr>
-<tr><td><code>ui</code></td><td><span data-lang="en"><code>gui/</code> (Qt Widgets: panel, viewer, VT emulator), <code>tty/</code> (panel and client in the terminal)</span><span data-lang="fr"><code>gui/</code> (Qt Widgets : panneau, viewer, émulateur VT), <code>tty/</code> (panneau et client dans le terminal)</span></td></tr>
-<tr><td><code>web/</code>, <code>android/</code></td><td><span data-lang="en">Web client (embedded with <code>qrc</code>), WebView application</span><span data-lang="fr">Client web (embarqué via <code>qrc</code>), application WebView</span></td></tr>
-    </tbody>
-  </table></div>
-</section>
-
-<!-- 2 -->
-<section id="install">
-  <h2><span data-lang="en">2. Install & build</span><span data-lang="fr">2. Installation & build</span></h2>
-  <div class="ctabs" data-tabs="install">
-    <button type="button" data-tab="linux">Linux / macOS</button>
-    <button type="button" data-tab="win">Windows</button>
-    <button type="button" data-tab="apk">Android</button>
-    <button type="button" data-tab="src"><span data-lang="en">From the sources</span><span data-lang="fr">Depuis les sources</span></button>
-  </div>
-  <div class="ctab-panel" data-tabs="install" data-tab="linux">
-<pre data-title="install.sh"><code>git clone https://github.com/TsukiNi22/xdesk.git && cd xdesk
-scripts/install.sh --deps --apk --uinput   # dependencies, libutils, android app, remote control on Wayland
-scripts/install.sh --autostart             # host panel at login</code></pre>
-  </div>
-  <div class="ctab-panel" data-tabs="install" data-tab="win">
-<pre data-title="PowerShell"><code>scripts/bundle_windows.sh                                  # on Fedora: dist/xdesk-windows-x64.zip
-powershell -ExecutionPolicy Bypass -File install.ps1      # on Windows, from the extracted zip</code></pre>
-  </div>
-  <div class="ctab-panel" data-tabs="install" data-tab="apk">
-<pre data-title="APK"><code>scripts/build_apk.sh   # android/build/xdesk.apk, embedded in the binary at the next build
-# phones download it from https://&lt;host&gt;:47800/app/xdesk.apk (the web page proposes it)</code></pre>
-  </div>
-  <div class="ctab-panel" data-tabs="install" data-tab="src">
-<pre data-title="CMake"><code>cmake -S . -B build -DCMAKE_BUILD_TYPE=Optimized
-cmake --build build --parallel $(nproc)          # ./xdesk
-cmake -S . -B build -DBUILD_TESTS=ON && cmake --build build && ./unit_tests</code></pre>
-  </div>
-  <div class="table-wrap"><table>
-    <thead><tr><th scope="col"><span data-lang="en">Dependency</span><span data-lang="fr">Dépendance</span></th><th scope="col"><span data-lang="en">Why</span><span data-lang="fr">Pourquoi</span></th></tr></thead>
-    <tbody>
-<tr><td>Qt 6 (Core Gui Widgets Network, DBus)</td><td><span data-lang="en">interfaces, sockets, TLS backend, portal</span><span data-lang="fr">interfaces, sockets, backend TLS, portail</span></td></tr>
-<tr><td>OpenSSL &gt;= 3.5</td><td><span data-lang="en">ML-KEM hybrid groups, Argon2id, certificate generation</span><span data-lang="fr">groupes hybrides ML-KEM, Argon2id, génération du certificat</span></td></tr>
-<tr><td>libjpeg-turbo</td><td><span data-lang="en">tile encoding / decoding</span><span data-lang="fr">encodage / décodage des tuiles</span></td></tr>
-<tr><td>openh264</td><td><span data-lang="en">H.264 video of the large moves (optional, loaded at run time, headers vendored)</span><span data-lang="fr">vidéo H.264 des grands mouvements (facultatif, chargé à l'exécution, en-têtes embarqués)</span></td></tr>
-<tr><td>libutils</td><td><span data-lang="en">exceptions, arguments, attributes</span><span data-lang="fr">exceptions, arguments, attributs</span></td></tr>
-<tr><td>PipeWire, XTest</td><td><span data-lang="en">Wayland real time capture (headers vendored in <code>third_party/pipewire</code>, <code>libpipewire-0.3.so.0</code> loaded at run time), optional X11 input</span><span data-lang="fr">capture temps réel Wayland (en-têtes embarqués dans <code>third_party/pipewire</code>, <code>libpipewire-0.3.so.0</code> chargée à l'exécution), entrées X11 optionnelles</span></td></tr>
-    </tbody>
-  </table></div>
-</section>
-
-<!-- 3 -->
-<section id="usage">
-  <h2><span data-lang="en">3. Usage</span><span data-lang="fr">3. Utilisation</span></h2>
-  <div class="table-wrap"><table>
-    <thead><tr><th scope="col"><span data-lang="en">Command</span><span data-lang="fr">Commande</span></th><th scope="col"><span data-lang="en">Effect</span><span data-lang="fr">Effet</span></th></tr></thead>
-    <tbody>
-<tr><td><code>xdesk</code></td><td><span data-lang="en">share this PC (Qt panel, terminal panel without display)</span><span data-lang="fr">partager ce PC (panneau Qt, panneau terminal sans affichage)</span></td></tr>
-<tr><td><code>xdesk host --tty</code></td><td><span data-lang="en">terminal panel: the 5 pages of the Qt one (overview, QR code, sessions and their terminals, devices, logs, settings), keys and mouse, <code>?</code> lists the keys</span><span data-lang="fr">panneau terminal : les 5 pages du panneau Qt (vue d'ensemble, QR code, sessions et leurs terminaux, appareils, journaux, réglages), clavier et souris, <code>?</code> liste les touches</span></td></tr>
-<tr><td><code>xdesk connect [address] -c &lt;code&gt;</code></td><td><span data-lang="en">Qt viewer (<code>--tty</code>: terminals and the screen in half blocks in tabs, <code>ctrl+]</code> then <code>?</code> for the keys; no address: connect page with the known hosts and a LAN scan)</span><span data-lang="fr">viewer Qt (<code>--tty</code> : terminaux et écran en demi-blocs dans des onglets, <code>ctrl+]</code> puis <code>?</code> pour les touches ; sans adresse : page de connexion avec les hôtes connus et un scan du LAN)</span></td></tr>
-<tr><td><code>xdesk viewer</code></td><td><span data-lang="en">viewer with its connect page, LAN scan, known hosts</span><span data-lang="fr">viewer avec sa page de connexion, scan LAN, hôtes connus</span></td></tr>
-<tr><td><code>xdesk scan</code> / <code>devices</code> / <code>paths</code></td><td><span data-lang="en">LAN hosts / devices and bans / folders</span><span data-lang="fr">hôtes du LAN / appareils et bans / dossiers</span></td></tr>
-<tr><td><code>xdesk unban &lt;id|address&gt;</code></td><td><span data-lang="en">local unban: host stopped, a person typing the word <code>unban</code></span><span data-lang="fr">débannissement local : hôte arrêté, une personne tape le mot <code>unban</code></span></td></tr>
-<tr><td><code>-p</code>, <code>-e</code>, <code>-v</code>, <code>--view-only</code>, <code>--regen-cert</code></td><td><span data-lang="en">port, exposure, verbose, never send inputs, new host identity</span><span data-lang="fr">port, exposition, verbosité, ne jamais envoyer d'entrées, nouvelle identité de l'hôte</span></td></tr>
-    </tbody>
-  </table></div>
-  <div class="callout"><p><span data-lang="en">The TTY client keys: <code>ctrl+]</code> then <code>q</code> quit, <code>s</code> screen / terminal, <code>c</code> control on / off.</span><span data-lang="fr">Touches du client TTY : <code>ctrl+]</code> puis <code>q</code> quitter, <code>s</code> écran / terminal, <code>c</code> contrôle on / off.</span></p></div>
-</section>
-
-<!-- 4 -->
-<section id="security">
-  <h2><span data-lang="en">4. Security</span><span data-lang="fr">4. Sécurité</span></h2>
-  <h3><span data-lang="en">4.1 Layers</span><span data-lang="fr">4.1 Couches</span></h3>
-  <div class="table-wrap"><table>
-    <thead><tr><th scope="col"><span data-lang="en">Layer</span><span data-lang="fr">Couche</span></th><th scope="col"><span data-lang="en">Mechanism</span><span data-lang="fr">Mécanisme</span></th></tr></thead>
-    <tbody>
-<tr><td><span data-lang="en">Transport</span><span data-lang="fr">Transport</span></td><td><span data-lang="en">TLS 1.3 only, <code>X25519MLKEM768</code> first; native clients only accept post-quantum groups</span><span data-lang="fr">TLS 1.3 seulement, <code>X25519MLKEM768</code> en premier ; les clients natifs n'acceptent que les groupes post-quantiques</span></td></tr>
-<tr><td><span data-lang="en">Identity</span><span data-lang="fr">Identité</span></td><td><span data-lang="en">self-signed ECDSA P-256 certificate, sha256 fingerprint pinned on first use (<code>known_hosts.json</code>)</span><span data-lang="fr">certificat ECDSA P-256 auto-signé, empreinte sha256 épinglée à la première connexion (<code>known_hosts.json</code>)</span></td></tr>
-<tr><td><span data-lang="en">Code</span><span data-lang="fr">Code</span></td><td><span data-lang="en">9 characters of Crockford base32 (45 bits), one time, rotated, Argon2id (64 MiB, 3 passes) salted per code</span><span data-lang="fr">9 caractères base32 Crockford (45 bits), à usage unique, renouvelé, Argon2id (64 Mio, 3 passes) salé par code</span></td></tr>
-<tr><td><span data-lang="en">Proof</span><span data-lang="fr">Preuve</span></td><td><span data-lang="en"><code>HMAC-SHA256(key, "xdesk-auth-v1|client" + nonces + sha256(cert))</code>, the host answers with the role <code>server</code></span><span data-lang="fr"><code>HMAC-SHA256(clé, "xdesk-auth-v1|client" + nonces + sha256(cert))</code>, l'hôte répond avec le rôle <code>server</code></span></td></tr>
-<tr><td><span data-lang="en">Devices</span><span data-lang="fr">Appareils</span></td><td><span data-lang="en">256 bits secret per trusted device, <code>devices.json</code> signed by <code>registry.key</code></span><span data-lang="fr">secret 256 bits par appareil de confiance, <code>devices.json</code> signé par <code>registry.key</code></span></td></tr>
-<tr><td><span data-lang="en">Brute force</span><span data-lang="fr">Force brute</span></td><td><span data-lang="en"><code>maxAuthFailures</code> per address -> 1 h ban + new code</span><span data-lang="fr"><code>maxAuthFailures</code> par adresse -> ban 1 h + nouveau code</span></td></tr>
-    </tbody>
-  </table></div>
-  <div class="callout ok"><p><span data-lang="en">A man in the middle with its own certificate cannot relay the proof (the transcript holds the certificate the client sees) nor brute force it offline (Argon2id per guess, 45 bits).</span><span data-lang="fr">Un intermédiaire avec son propre certificat ne peut ni relayer la preuve (le transcript contient le certificat vu par le client) ni la casser hors ligne (Argon2id par essai, 45 bits).</span></p></div>
-  <h3><span data-lang="en">4.2 Tamper protection</span><span data-lang="fr">4.2 Protection contre la modification</span></h3>
-  <div class="table-wrap"><table>
-    <thead><tr><th scope="col"><span data-lang="en">Watch</span><span data-lang="fr">Surveillance</span></th><th scope="col"><span data-lang="en">Reaction</span><span data-lang="fr">Réaction</span></th></tr></thead>
-    <tbody>
-<tr><td><span data-lang="en">binary, <code>config.json</code>, <code>devices.json</code>, <code>registry.key</code>, certificate: hashed every 3 s + file watcher</span><span data-lang="fr">binaire, <code>config.json</code>, <code>devices.json</code>, <code>registry.key</code>, certificat : hachés toutes les 3 s + surveillance des fichiers</span></td><td><span data-lang="en">changed while sessions control the PC / have a terminal -> those sessions banned</span><span data-lang="fr">modifiés pendant que des sessions contrôlent le PC / ont un terminal -> ces sessions bannies</span></td></tr>
-<tr><td><span data-lang="en">each line typed in a remote terminal (paths, <code>xdesk</code>, host pid with <code>kill</code>...)</span><span data-lang="fr">chaque ligne tapée dans un terminal distant (chemins, <code>xdesk</code>, pid de l'hôte avec <code>kill</code>...)</span></td><td><span data-lang="en">checked before its Enter reaches the shell: dropped, session banned</span><span data-lang="fr">vérifiée avant que son Entrée n'atteigne le shell : ignorée, session bannie</span></td></tr>
-<tr><td><span data-lang="en">processes started from the terminals (Linux: cmdline, open files)</span><span data-lang="fr">processus lancés depuis les terminaux (Linux : cmdline, fichiers ouverts)</span></td><td><span data-lang="en">session banned</span><span data-lang="fr">session bannie</span></td></tr>
-<tr><td><span data-lang="en">host killed during a session (<code>running.json</code>)</span><span data-lang="fr">hôte tué pendant une session (<code>running.json</code>)</span></td><td><span data-lang="en">devices and addresses banned at the next start</span><span data-lang="fr">appareils et adresses bannis au démarrage suivant</span></td></tr>
-<tr><td><span data-lang="en">host process</span><span data-lang="fr">processus hôte</span></td><td><span data-lang="en">Linux <code>PR_SET_DUMPABLE 0</code>, Windows DACL without terminate / memory / thread rights</span><span data-lang="fr">Linux <code>PR_SET_DUMPABLE 0</code>, Windows DACL sans droits terminate / mémoire / thread</span></td></tr>
-<tr><td><span data-lang="en">local panel focused</span><span data-lang="fr">panneau local au premier plan</span></td><td><span data-lang="en">remote input ignored; Windows: panel excluded from the capture</span><span data-lang="fr">entrées distantes ignorées ; Windows : panneau exclu de la capture</span></td></tr>
-    </tbody>
-  </table></div>
-  <div class="callout warn"><p><span data-lang="en">Unban, trust, forget and settings: refused while a session has control or a terminal; lifting a ban asks the word <code>unban</code> typed, trust and forget a yes / no. A protected file changed while no session acts (a rebuild, an update) is only logged. A remote shell runs with the rights of the user: these checks block the usual ways, not every way.</span><span data-lang="fr">Débannir, faire confiance, oublier, réglages : refusés tant qu'une session a le contrôle ou un terminal ; lever un ban demande de taper le mot <code>unban</code>, faire confiance et oublier un oui / non. Un fichier protégé modifié alors qu'aucune session n'agit (une recompilation, une mise à jour) est seulement journalisé. Un shell distant a les droits de l'utilisateur : ces vérifications bloquent les moyens habituels, pas tous.</span></p></div>
-</section>
-
-<!-- 5 -->
-<section id="protocol">
-  <h2><span data-lang="en">5. Protocol</span><span data-lang="fr">5. Protocole</span></h2>
-  <p><span data-lang="en">Port <code>47800</code>: HTTPS (<code>/</code>, <code>/api/info</code>, <code>/app/xdesk.apk</code>, <code>/app/version</code>) and the websocket <code>/ws</code>. Text frames are JSON <code>{"t": type}</code>, binary frames are <code>[u8 type][payload]</code> big endian.</span><span data-lang="fr">Port <code>47800</code> : HTTPS (<code>/</code>, <code>/api/info</code>, <code>/app/xdesk.apk</code>, <code>/app/version</code>) et le websocket <code>/ws</code>. Les trames texte sont du JSON <code>{"t": type}</code>, les trames binaires <code>[u8 type][payload]</code> en big endian.</span></p>
-  <figure>
-    <svg viewBox="0 0 760 250" role="img" aria-label="Handshake">
-      <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrow" d="M0 0L10 5L0 10z"/></marker></defs>
-      <rect id="hc1" class="box" x="30" y="20" width="230" height="40" rx="8"/><text class="lbl" x="145" y="45" text-anchor="middle">hello (nonce, device)</text>
-      <rect id="hs1" class="box-alt" x="500" y="20" width="230" height="40" rx="8"/><text class="lbl" x="615" y="45" text-anchor="middle">challenge (nonce, salt)</text>
-      <rect id="hc2" class="box" x="30" y="105" width="230" height="40" rx="8"/><text class="lbl" x="145" y="130" text-anchor="middle">auth (proof)</text>
-      <rect id="hs2" class="box-alt" x="500" y="105" width="230" height="40" rx="8"/><text class="lbl" x="615" y="130" text-anchor="middle">pending (approval)</text>
-      <rect id="hs3" class="box-alt" x="500" y="190" width="230" height="40" rx="8"/><text class="lbl" x="615" y="215" text-anchor="middle">welcome (perms, proof)</text>
-      <rect id="hc3" class="box" x="30" y="190" width="230" height="40" rx="8"/><text class="lbl" x="145" y="215" text-anchor="middle">frames / inputs / terminals</text>
-      <path id="h1" class="edge" data-from="hc1" data-to="hs1" marker-end="url(#arr2)"/>
-      <path id="h2" class="edge" data-from="hs1" data-to="hc2" marker-end="url(#arr2)"/>
-      <path id="h3" class="edge" data-from="hc2" data-to="hs2" marker-end="url(#arr2)"/>
-      <path id="h4" class="edge dash" data-from="hs2" data-to="hs3" marker-end="url(#arr2)"/>
-      <path id="h5" class="edge" data-from="hs3" data-to="hc3" marker-end="url(#arr2)"/>
-    </svg>
-    <figcaption><span data-lang="en">Figure 2: handshake (client left, host right); pending only when a local approval is needed.</span><span data-lang="fr">Figure 2 : handshake (client à gauche, hôte à droite) ; pending seulement si une approbation locale est nécessaire.</span></figcaption>
-  </figure>
-  <h3><span data-lang="en">5.1 JSON messages</span><span data-lang="fr">5.1 Messages JSON</span></h3>
-  <div class="table-wrap"><table>
-    <thead><tr><th scope="col"><code>t</code></th><th scope="col"><span data-lang="en">Direction</span><span data-lang="fr">Sens</span></th><th scope="col"><span data-lang="en">Fields</span><span data-lang="fr">Champs</span></th></tr></thead>
-    <tbody>
-<tr><td><code>hello</code></td><td>C → S</td><td><code>v kind name os device nonce udp</code> <span data-lang="en">(<code>udp</code>: the Android app has its own UDP socket)</span><span data-lang="fr">(<code>udp</code> : l'application Android a sa propre socket UDP)</span></td></tr>
-<tr><td><code>challenge</code></td><td>S → C</td><td><code>host version nonce salt kdf known</code></td></tr>
-<tr><td><code>auth</code></td><td>C → S</td><td><span data-lang="en"><code>method</code> = <code>code</code> (web) | <code>proof</code> | <code>device</code>, <code>remember</code></span><span data-lang="fr"><code>method</code> = <code>code</code> (web) | <code>proof</code> | <code>device</code>, <code>remember</code></span></td></tr>
-<tr><td><code>pending</code> / <code>welcome</code> / <code>denied</code></td><td>S → C</td><td><code>session perms screen capture device proof</code> / <code>reason</code></td></tr>
-<tr><td><code>ping</code> / <code>pong</code></td><td>↔</td><td><code>ts</code></td></tr>
-<tr><td><code>welcome.udp</code> / <code>udp_off</code></td><td>S → C / C → S</td><td><span data-lang="en"><code>port connection down up</code> (native viewers and the Android app: keys of the UDP video) / the viewer could not reach it</span><span data-lang="fr"><code>port connection down up</code> (clients natifs et application Android : clés de la vidéo UDP) / le client n'a pas pu l'atteindre</span></td></tr>
-<tr><td><code>welcome.lanes</code> / <code>lanes</code></td><td>S → C</td><td><span data-lang="en"><code>token max</code> (web viewers: token of the extra sockets) / <code>n</code> sockets to keep for the video (the main one included)</span><span data-lang="fr"><code>token max</code> (clients web : jeton des sockets en plus) / <code>n</code> sockets à garder pour la vidéo (la principale comprise)</span></td></tr>
-<tr><td><code>lane</code></td><td><span data-lang="en">C → S (first message of <code>/lane</code>)</span><span data-lang="fr">C → S (premier message de <code>/lane</code>)</span></td><td><code>session token index</code></td></tr>
-<tr><td><code>quality</code> / <code>mode</code> / <code>refresh</code></td><td>C → S</td><td><code>quality scale fps</code> / <code>view|control</code></td></tr>
-<tr><td><code>term_open</code> / <code>term_resize</code> / <code>term_close</code> / <code>term_exit</code></td><td>↔</td><td><code>id cols rows code</code></td></tr>
-<tr><td><code>perms</code> / <code>screen</code> / <code>info</code> / <code>bye</code> / <code>clip</code></td><td>S → C (<code>clip</code> ↔)</td><td><code>perms</code>, <code>w h</code>, <code>text</code> <span data-lang="en">(ex: why the remote control is unavailable)</span><span data-lang="fr">(ex : pourquoi le contrôle à distance est indisponible)</span>, <code>reason banned</code></td></tr>
-<tr><td><code>focus_request</code></td><td>C → S</td><td><span data-lang="en">control paused by the focus of the host panel: given back to this viewer after 1 min unless refused or the panel is used locally; dropped if the viewer leaves</span><span data-lang="fr">contrôle en pause à cause du focus du panneau de l'hôte : rendu à ce client après 1 min sauf refus ou usage local du panneau ; abandonné si le client part</span></td></tr>
-<tr><td><code>input</code></td><td>S → C</td><td><code>state</code> (<code>loading</code> / <code>ready</code> / <code>paused</code> <span data-lang="en">(the host panel has the focus)</span><span data-lang="fr">(le panneau de l'hôte a le focus)</span> / <code>none</code>), <code>error</code>, <code>wait</code> <span data-lang="en">(ms left of its request)</span><span data-lang="fr">(ms restantes de sa demande)</span>, <code>asked</code> <span data-lang="en">(after the welcome, when the capture starts or fails, when the panel takes / loses the focus, at each switch to control: the web client shows "Getting the controls ready" / the reason over the screen)</span><span data-lang="fr">(après le welcome, au démarrage ou à l'échec de la capture, quand le panneau prend / perd le focus, à chaque passage en contrôle : le client web affiche « Contrôles en préparation » / la raison sur l'écran)</span></td></tr>
-    </tbody>
-  </table></div>
-  <h3><span data-lang="en">5.2 Binary messages</span><span data-lang="fr">5.2 Messages binaires</span></h3>
-  <div class="table-wrap"><table>
-    <thead><tr><th scope="col"><span data-lang="en">Type</span><span data-lang="fr">Type</span></th><th scope="col"><span data-lang="en">Direction</span><span data-lang="fr">Sens</span></th><th scope="col"><span data-lang="en">Payload</span><span data-lang="fr">Contenu</span></th></tr></thead>
-    <tbody>
-<tr><td><code>0x10</code> Frame</td><td>S → C</td><td><span data-lang="en"><code>u32 id, u16 w, u16 h, u16 n</code>, n × <code>u16 x y w h, u8 enc</code> (1 jpeg <code>u32 len</code> + data, 2 solid <code>u8 r g b</code>, 3 palette <code>u8 n</code>, n × <code>u8 r g b</code>, <code>u32 len</code> + zlib indices, 4 copy <code>u16 sx sy</code>: the rectangle at <code>sx, sy</code> of the frame as it was before this message, first tiles of a frame)</span><span data-lang="fr"><code>u32 id, u16 w, u16 h, u16 n</code>, n × <code>u16 x y w h, u8 enc</code> (1 jpeg <code>u32 len</code> + données, 2 uni <code>u8 r g b</code>, 3 palette <code>u8 n</code>, n × <code>u8 r g b</code>, <code>u32 len</code> + indices zlib, 4 copie <code>u16 sx sy</code> : le rectangle en <code>sx, sy</code> de l'image telle qu'elle était avant ce message, premières tuiles d'une image)</span></td></tr>
-<tr><td><code>0x11</code> FrameAck</td><td>C → S</td><td><code>u32 id</code></td></tr>
-<tr><td><code>0x12</code> Cursor</td><td>S → C</td><td><code>i16 x, i16 y, u8 visible</code></td></tr>
-<tr><td><code>0x13</code> Video</td><td>S → C</td><td><span data-lang="en"><code>u32 id, u16 w, u16 h, u8 flags</code> (1 = key frame), H.264 annex B access unit of the whole frame (constrained baseline, BT.709 limited range, size rounded up to even, drawn cropped); acked like a frame, only to the clients listing <code>h264</code> in <code>enc</code> while their frames keep their order</span><span data-lang="fr"><code>u32 id, u16 w, u16 h, u8 flags</code> (1 = image clé), unité d'accès H.264 annexe B de toute l'image (constrained baseline, BT.709 plage limitée, taille arrondie au pair, dessinée rognée) ; acquittée comme une image, seulement aux clients qui annoncent <code>h264</code> dans <code>enc</code> tant que leurs images gardent leur ordre</span></td></tr>
-<tr><td><code>0x20</code> / <code>0x21</code> / <code>0x22</code></td><td>C → S</td><td><span data-lang="en">mouse move <code>u16 x y</code>, button <code>u8 b, u8 down</code>, wheel <code>i16 dx dy</code> (120 / notch)</span><span data-lang="fr">souris <code>u16 x y</code>, bouton <code>u8 b, u8 down</code>, molette <code>i16 dx dy</code> (120 / cran)</span></td></tr>
-<tr><td><code>0x23</code> Key / <code>0x24</code> Text</td><td>C → S</td><td><span data-lang="en"><code>u8 down, u8 len</code> + <code>KeyboardEvent.code</code> / utf8; a soft keyboard sends only what changed in its input (<code>Backspace</code> keys + the new letters), so a suggestion or an autocorrection never types the word twice</span><span data-lang="fr"><code>u8 down, u8 len</code> + <code>KeyboardEvent.code</code> / utf8 ; un clavier virtuel n'envoie que ce qui a changé dans son champ (touches <code>Backspace</code> + les nouvelles lettres), une suggestion ou une correction ne tape donc jamais le mot deux fois</span></td></tr>
-<tr><td><code>0x31</code> TermData</td><td>↔</td><td><code>u8 id</code> + bytes</td></tr>
-    </tbody>
-  </table></div>
-  <h3><span data-lang="en">5.3 Encrypted UDP video (native viewers, Android app)</span><span data-lang="fr">5.3 Vidéo UDP chiffrée (clients natifs, application Android)</span></h3>
-  <p><span data-lang="en">The Qt viewer, the terminal client and the Android app get their frames over UDP on the port of the server when they reach it; everything else (control, inputs, terminals) stays on the TLS websocket, and the video goes back to it when UDP is blocked (2.5 s of unanswered hellos) or silent (4 s). The app does it in Java (<code>UdpVideo</code>, same datagrams, keys and checks) and hands the frames to the page through a message port given only to the pinned host's origin; the UDP target is the pinned host, never an address given by the page. Browsers have no raw UDP: they use extra websockets (5.4).</span><span data-lang="fr">Le client Qt, le client terminal et l'application Android reçoivent leurs trames en UDP sur le port du serveur quand ils l'atteignent ; tout le reste (contrôle, entrées, terminaux) reste sur la websocket TLS, et la vidéo y revient quand l'UDP est bloqué (2,5 s de hello sans réponse) ou muet (4 s). L'application le fait en Java (<code>UdpVideo</code>, mêmes datagrammes, clés et vérifications) et passe les trames à la page par un port de messages donné seulement à l'origine de l'hôte épinglé ; la cible UDP est l'hôte épinglé, jamais une adresse donnée par la page. Les navigateurs n'ont pas d'UDP brut : ils utilisent des websockets en plus (5.4).</span></p>
-  <div class="table-wrap"><table>
-    <thead><tr><th scope="col"><span data-lang="en">Point</span><span data-lang="fr">Point</span></th><th scope="col"><span data-lang="en">How</span><span data-lang="fr">Comment</span></th></tr></thead>
-    <tbody>
-<tr><td><span data-lang="en">Datagram</span><span data-lang="fr">Datagramme</span></td><td><code>u8 type, u32 connection, u64 sequence</code> <span data-lang="en">(authenticated) + AES-256-GCM(payload) + tag; types Hello, HelloAck, Data, Ack, Nack, Ping, Pong</span><span data-lang="fr">(authentifiés) + AES-256-GCM(données) + tag ; types Hello, HelloAck, Data, Ack, Nack, Ping, Pong</span></td></tr>
-<tr><td><span data-lang="en">Keys</span><span data-lang="fr">Clés</span></td><td><span data-lang="en">two random 256-bit keys per session (one per direction), sent in the <code>welcome</code> inside the authenticated TLS 1.3 session, never in clear; nonce = direction + sequence (never reused)</span><span data-lang="fr">deux clés aléatoires de 256 bits par session (une par sens), envoyées dans le <code>welcome</code> à l'intérieur de la session TLS 1.3 authentifiée, jamais en clair ; nonce = sens + séquence (jamais réutilisé)</span></td></tr>
-<tr><td><span data-lang="en">Abuse</span><span data-lang="fr">Abus</span></td><td><span data-lang="en">replay window of 2048 sequences; a forged, damaged or replayed datagram is dropped without an answer; the host only sends to an address that sent an authentic datagram (no reflection or amplification); piece sizes checked against the frame they claim</span><span data-lang="fr">fenêtre anti-rejeu de 2048 séquences ; un datagramme forgé, abîmé ou rejoué est jeté sans réponse ; l'hôte n'envoie qu'à une adresse qui a envoyé un datagramme authentique (ni réflexion ni amplification) ; tailles des morceaux vérifiées contre la trame annoncée</span></td></tr>
-<tr><td><span data-lang="en">Losses</span><span data-lang="fr">Pertes</span></td><td><span data-lang="en">pieces of 1150 bytes; one xor parity per 8 pieces while more than 0.5 % are asked again (off after 10 s under 0.1 %), so one lost piece per group is rebuilt without a round trip; nacks after the reordering delay, then every ping; the last piece sent again when a frame waits for its ack; a frame given up after 3 s asks a complete one</span><span data-lang="fr">morceaux de 1150 octets ; une parité xor pour 8 morceaux tant que plus de 0,5 % sont redemandés (coupée après 10 s sous 0,1 %), donc un morceau perdu par groupe est reconstruit sans aller-retour ; nack après le délai de réordonnancement, puis à chaque ping ; le dernier morceau renvoyé quand une trame attend son ack ; une trame abandonnée après 3 s demande une image complète</span></td></tr>
-<tr><td><span data-lang="en">Order</span><span data-lang="fr">Ordre</span></td><td><span data-lang="en">frames complete in any order (a late one never holds the next ones): the viewer keeps the frame id of each 64×64 tile and never lets an older frame cover a newer tile</span><span data-lang="fr">les trames se complètent dans n'importe quel ordre (une en retard ne bloque jamais les suivantes) : le client garde l'id de trame de chaque tuile 64×64 et ne laisse jamais une trame plus ancienne recouvrir une tuile plus récente</span></td></tr>
-    </tbody>
-  </table></div>
-  <p><span data-lang="en">Measured on emulated links (netem, same frames and flow control, 25 s each, one-way latency of the frames):</span><span data-lang="fr">Mesuré sur des liens émulés (netem, mêmes trames et même contrôle de flux, 25 s chacun, latence aller des trames) :</span></p>
-  <div class="table-wrap"><table>
-    <thead><tr><th scope="col"><span data-lang="en">Link</span><span data-lang="fr">Lien</span></th><th scope="col">TCP + TLS</th><th scope="col">UDP + GCM + parity</th></tr></thead>
-    <tbody>
-<tr><td><span data-lang="en">LAN cable</span><span data-lang="fr">LAN câble</span></td><td>30 fps, p95 4.9 ms</td><td>30 fps, p95 13 ms <span data-lang="en">(prototype in Python)</span><span data-lang="fr">(prototype en Python)</span></td></tr>
-<tr><td><span data-lang="en">Fiber, 40 ms</span><span data-lang="fr">Fibre, 40 ms</span></td><td>30 fps, p99 69 ms</td><td>30 fps, p99 50 ms</td></tr>
-<tr><td><span data-lang="en">4G, 80 ms, 1 % loss</span><span data-lang="fr">4G, 80 ms, 1 % de perte</span></td><td>27 fps, p95 163 ms</td><td>27 fps, p95 160 ms</td></tr>
-<tr><td><span data-lang="en">160 ms, 3 % loss, 6 Mbit/s</span><span data-lang="fr">160 ms, 3 % de perte, 6 Mbit/s</span></td><td>17 fps, 15 stalls</td><td>23 fps, 4 stalls</td></tr>
-<tr><td><span data-lang="en">300 ms, 8 % loss, 2 Mbit/s</span><span data-lang="fr">300 ms, 8 % de perte, 2 Mbit/s</span></td><td>5.4 fps, p50 506 ms, p95 2.7 s</td><td>7.8 fps, p50 243 ms, p95 1.1 s</td></tr>
-    </tbody>
-  </table></div>
-  <h3 id="lanes"><span data-lang="en">5.4 Extra sockets of the web viewers</span><span data-lang="fr">5.4 Sockets en plus des clients web</span></h3>
-  <p><span data-lang="en">One TCP connection on a far path that loses packets stays far under the link: its window shrinks at each loss. Several connections each keep their own window, so the host may ask a web viewer (browser, or the app when UDP does not get through) for up to 4 sockets: the extra ones open <code>/lane</code> and join with the session token of the <code>welcome</code> (32 random bytes, compared in constant time; a socket that names no active session with its token within 5 s is closed). A lane only carries frames and their acks: no input, control or terminal. Each frame goes to the least loaded socket (bytes still in its buffers), equal ones in turn, and the viewer acks it on that socket; a lane that drops frames in flight asks a complete frame.</span><span data-lang="fr">Une connexion TCP sur un chemin lointain qui perd des paquets reste loin sous le débit du lien : sa fenêtre rétrécit à chaque perte. Plusieurs connexions gardent chacune leur fenêtre, donc l'hôte peut demander à un client web (navigateur, ou l'application quand l'UDP ne passe pas) jusqu'à 4 sockets : les sockets en plus ouvrent <code>/lane</code> et rejoignent la session avec le jeton du <code>welcome</code> (32 octets aléatoires, comparés en temps constant ; une socket qui ne nomme pas une session active avec son jeton en 5 s est fermée). Une voie ne porte que les trames et leurs acks : ni entrée, ni contrôle, ni terminal. Chaque trame part sur la socket la moins chargée (octets encore dans ses tampons), à égalité chacune son tour, et le client l'acquitte sur cette socket ; une voie qui perd des trames en vol demande une image complète.</span></p>
-  <p><span data-lang="en"><code>LanePolicy</code> decides from the pressure the stream reports every second (share of the frame slots held back by a full window or a lowered quality): held back two windows of 2 s in a row, one socket more is tried for 5 s and kept only if it delivers 10 % more or holds back 0.15 less (else back to fewer, tried again after 15 s, doubled up to 2 min: the link itself is full); kept up for 10 s, one socket is given back (put back if it was needed). A LAN stays on one socket. <code>XDESK_LANES=1..4</code> forces the count, the <code>lanes</code> setting turns it off.</span><span data-lang="fr"><code>LanePolicy</code> décide d'après la pression que le flux remonte chaque seconde (part des créneaux d'image retenus par une fenêtre pleine ou une qualité baissée) : retenu deux fenêtres de 2 s de suite, une socket de plus est essayée 5 s et gardée seulement si elle livre 10 % de plus ou retient 0,15 de moins (sinon retour à moins, nouvel essai après 15 s, doublé jusqu'à 2 min : le lien lui-même est plein) ; 10 s sans retard, une socket est rendue (remise si elle manquait). Un LAN reste sur une socket. <code>XDESK_LANES=1..4</code> force le nombre, le réglage <code>lanes</code> le coupe.</span></p>
-  <p><span data-lang="en">Goodput of 1 to 4 parallel TCP connections (Linux CUBIC, netem on both directions, MTU 1500, 12 s each), in Mbit/s:</span><span data-lang="fr">Débit utile de 1 à 4 connexions TCP en parallèle (CUBIC de Linux, netem dans les deux sens, MTU 1500, 12 s chacune), en Mbit/s :</span></p>
-  <div class="table-wrap"><table>
-    <thead><tr><th scope="col"><span data-lang="en">Path (ping, loss, link)</span><span data-lang="fr">Chemin (ping, perte, lien)</span></th><th scope="col">1</th><th scope="col">2</th><th scope="col">3</th><th scope="col">4</th></tr></thead>
-    <tbody>
-<tr><td><span data-lang="en">LAN, 2 ms, 300 Mbit/s</span><span data-lang="fr">LAN, 2 ms, 300 Mbit/s</span></td><td>286</td><td>290</td><td>293</td><td>292</td></tr>
-<tr><td><span data-lang="en">40 ms, 0.1 %, 100 Mbit/s</span><span data-lang="fr">40 ms, 0,1 %, 100 Mbit/s</span></td><td>45</td><td>44</td><td>53</td><td>82</td></tr>
-<tr><td><span data-lang="en">80 ms, 1 %, 30 Mbit/s</span><span data-lang="fr">80 ms, 1 %, 30 Mbit/s</span></td><td>2.5</td><td>5.8</td><td>7.1</td><td>10.1</td></tr>
-<tr><td><span data-lang="en">160 ms, 2 %, 50 Mbit/s</span><span data-lang="fr">160 ms, 2 %, 50 Mbit/s</span></td><td>1.1</td><td>2.6</td><td>5.3</td><td>4.2</td></tr>
-<tr><td><span data-lang="en">160 ms, 3 %, 6 Mbit/s</span><span data-lang="fr">160 ms, 3 %, 6 Mbit/s</span></td><td>0.9</td><td>1.4</td><td>2.0</td><td>3.2</td></tr>
-<tr><td><span data-lang="en">300 ms, 8 %, 2 Mbit/s</span><span data-lang="fr">300 ms, 8 %, 2 Mbit/s</span></td><td>0.4</td><td>0.6</td><td>1.1</td><td>1.3</td></tr>
-    </tbody>
-  </table></div>
-  <div class="callout warn"><p><span data-lang="en">Browsers cannot send raw UDP; WebRTC data channels (UDP for the browsers) need a WebRTC stack on the host (libdatachannel) and are not implemented. A lane cannot lower the ping: it only gives back the throughput a lossy path takes from one connection.</span><span data-lang="fr">Les navigateurs ne peuvent pas envoyer d'UDP brut ; les canaux de données WebRTC (l'UDP des navigateurs) demandent une pile WebRTC sur l'hôte (libdatachannel) et ne sont pas implémentés. Une voie ne baisse pas le ping : elle rend seulement le débit qu'un chemin à pertes prend à une connexion.</span></p></div>
-</section>
-
-<!-- 6 -->
-<section id="host">
-  <h2><span data-lang="en">6. Host internals</span><span data-lang="fr">6. Fonctionnement de l'hôte</span></h2>
-  <div class="table-wrap"><table>
-    <thead><tr><th scope="col"><span data-lang="en">Part</span><span data-lang="fr">Partie</span></th><th scope="col"><span data-lang="en">How</span><span data-lang="fr">Comment</span></th></tr></thead>
-    <tbody>
-<tr><td><span data-lang="en">Stream</span><span data-lang="fr">Flux</span></td><td><span data-lang="en">capture thread, 4 ms tick; a session gets a frame when its FPS allows it and its window is open: without a queue, the frames its rate needs during one ping (2 on a LAN, up to 8 far away); with a queue, only what the path holds (bandwidth x ping) and a lower JPEG quality until the queue is gone, so no lag builds up</span><span data-lang="fr">thread de capture, tick de 4 ms ; une session reçoit une trame quand son FPS le permet et que sa fenêtre est ouverte : sans file, les trames que son débit demande pendant un ping (2 en LAN, jusqu'à 8 de loin) ; avec une file, seulement ce que le chemin contient (bande passante x ping) et une qualité JPEG plus basse jusqu'à ce que la file disparaisse, donc pas de retard accumulé</span></td></tr>
-<tr><td><span data-lang="en">Encoder</span><span data-lang="fr">Encodeur</span></td><td><span data-lang="en">per session: 64×64 tiles hashed, only the changed ones sent, solid tiles as 3 bytes, a dirty row merged in one JPEG (libjpeg-turbo), rows hashed and encoded on every core; more than a quarter of the known tiles changed = motion: lighter JPEG, then the same tiles sent again sharp once the screen is still; scroll: the changed tiles found a few rows higher or lower in the previous frame (line hashes of each tile column, vote of the offsets, then an exact check of the pixels) are sent as copy tiles of what the client already has, only to the clients listing <code>copy</code> and while their frames keep their order (one TCP socket: no UDP, no extra lane); while the link of a viewer is the bottleneck (ping over 20 ms, a queue, a lowered quality) and it decodes H.264, a large move with no scroll found goes as one H.264 frame of the whole screen (openh264 loaded at run time, screen content real time mode, constant quantizer from the quality, no B frame, frames up to 1920×1200), then the screen is sent again sharp in tiles once still; a capture frame already encoded with nothing new is skipped; no frame while the client shows a terminal</span><span data-lang="fr">par session : tuiles 64×64 hachées, seules les modifiées envoyées, tuiles unies en 3 octets, une ligne modifiée fusionnée en un JPEG (libjpeg-turbo), lignes hachées et encodées sur tous les cœurs ; plus d'un quart des tuiles connues modifiées = mouvement : JPEG plus léger, puis les mêmes tuiles renvoyées nettes une fois l'écran immobile ; défilement : les tuiles modifiées retrouvées quelques lignes plus haut ou plus bas dans l'image précédente (hachage des lignes de chaque colonne de tuiles, vote des décalages, puis vérification exacte des pixels) partent en tuiles copie de ce que le client a déjà, seulement aux clients qui annoncent <code>copy</code> et tant que leurs images gardent leur ordre (une seule socket TCP : ni UDP, ni voie en plus) ; tant que le lien d'un spectateur est le goulot (ping au-dessus de 20 ms, une file, une qualité abaissée) et qu'il décode le H.264, un grand mouvement sans défilement trouvé part en une image H.264 de tout l'écran (openh264 chargé à l'exécution, mode contenu d'écran temps réel, quantificateur constant tiré de la qualité, sans image B, images jusqu'à 1920×1200), puis l'écran est renvoyé net en tuiles une fois immobile ; une image de capture déjà encodée sans rien de nouveau est ignorée ; aucune image tant que le client affiche un terminal</span></td></tr>
-<tr><td><span data-lang="en">Inputs</span><span data-lang="fr">Entrées</span></td><td><span data-lang="en"><code>TCP_NODELAY</code>, coordinates in frame pixels rescaled by the host, physical key codes</span><span data-lang="fr"><code>TCP_NODELAY</code>, coordonnées en pixels de trame remises à l'échelle par l'hôte, codes de touches physiques</span></td></tr>
-<tr><td><span data-lang="en">Rights</span><span data-lang="fr">Droits</span></td><td><span data-lang="en">view, control (also the <code>mode</code> asked by the client), terminal (max 4), clipboard; changed live from the panels</span><span data-lang="fr">voir, contrôle (et le <code>mode</code> demandé par le client), terminal (4 max), presse-papiers ; modifiables en direct</span></td></tr>
-<tr><td><span data-lang="en">Logs</span><span data-lang="fr">Journaux</span></td><td><span data-lang="en"><code>logs/audit-&lt;day&gt;.jsonl</code>: <code>ts level cat session msg</code> + data; terminal transcripts with the typed bytes</span><span data-lang="fr"><code>logs/audit-&lt;jour&gt;.jsonl</code> : <code>ts level cat session msg</code> + données ; transcripts des terminaux avec les octets tapés</span></td></tr>
-    </tbody>
-  </table></div>
-</section>
-
-<!-- 7 -->
-<section id="exposure">
-  <h2><span data-lang="en">7. Exposure</span><span data-lang="fr">7. Exposition</span></h2>
-  <p><span data-lang="en">The LAN (and <code>localhost</code>) is always open while the host shares; the mode only adds one path. <code>Exposure::refusal()</code> classifies the peer address of every new socket (loopback, tailnet <code>100.64.0.0/10</code> / <code>fd7a:115c:a1e0::/48</code>, private ranges, public) and the server drops the peers of a path the mode does not open, before TLS; a mode change drops the sessions of the closed path.</span><span data-lang="fr">Le LAN (et <code>localhost</code>) reste ouvert tant que l'hôte partage ; le mode ajoute seulement un chemin. <code>Exposure::refusal()</code> classe l'adresse de chaque nouvelle connexion (loopback, tailnet <code>100.64.0.0/10</code> / <code>fd7a:115c:a1e0::/48</code>, plages privées, publique) et le serveur coupe, avant TLS, celles d'un chemin que le mode n'ouvre pas ; changer de mode coupe les sessions du chemin fermé.</span></p>
-  <div class="table-wrap"><table>
-    <thead><tr><th scope="col"><span data-lang="en">Mode</span><span data-lang="fr">Mode</span></th><th scope="col"><span data-lang="en">Tool</span><span data-lang="fr">Outil</span></th><th scope="col"><span data-lang="en">End to end</span><span data-lang="fr">De bout en bout</span></th></tr></thead>
-    <tbody>
-<tr><td><code>lan</code></td><td><span data-lang="en">interfaces + UDP discovery <code>47801</code></span><span data-lang="fr">interfaces + découverte UDP <code>47801</code></span></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
-<tr><td><code>tailscale</code></td><td><span data-lang="en">MagicDNS name for the browsers with a <code>tailscale cert</code> certificate, picked by the server from the SNI (every <code>*.ts.net</code> name is HSTS preloaded: a self-signed certificate is refused there); the tailnet IP when HTTPS is off on the tailnet and for the app links; the native clients send no SNI and keep the pinned certificate</span><span data-lang="fr">nom MagicDNS pour les navigateurs avec un certificat <code>tailscale cert</code>, choisi par le serveur d'après le SNI (chaque nom <code>*.ts.net</code> est en HSTS préchargé : un certificat auto-signé y est refusé) ; l'IP du tailnet quand HTTPS est désactivé sur le tailnet et pour les liens de l'application ; les clients natifs n'envoient pas de SNI et gardent le certificat épinglé</span></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
-<tr><td><code>upnp</code></td><td><code>upnpc -r</code></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
-<tr><td><code>bore</code> / <code>ngrok</code></td><td><span data-lang="en">TCP tunnel</span><span data-lang="fr">tunnel TCP</span></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
-<tr><td><code>cloudflared</code></td><td><span data-lang="en">HTTPS tunnel (browsers)</span><span data-lang="fr">tunnel HTTPS (navigateurs)</span></td><td><span data-lang="en">no: the relay terminates TLS</span><span data-lang="fr">non : le relais termine TLS</span></td></tr>
-<tr><td><code>manual</code></td><td><span data-lang="en">port forward + <code>publicHost</code></span><span data-lang="fr">redirection de port + <code>publicHost</code></span></td><td><span data-lang="en">yes</span><span data-lang="fr">oui</span></td></tr>
-    </tbody>
-  </table></div>
-  <h3 id="sharing-switch"><span data-lang="en">7.1 Sharing switch and QR code</span><span data-lang="fr">7.1 Interrupteur de partage et QR code</span></h3>
-  <p><span data-lang="en"><code>Host::start(false)</code> loads the identity, the registry and the tamper guard without listening; <code>Host::setSharing()</code> starts / stops the server, the exposure and the capture thread (a new <code>Stream</code> each time) and gives a new code at each start. The panel starts with the sharing off (Start sharing in green, Stop sharing in red, also in the tray and with <code>s</code> in the terminal panel). The QR code holds <code>xdesk://host:port?fp=&lt;sha256&gt;&amp;code=&lt;code&gt;</code> (the Android app pins the certificate from it) or <code>https://host:port/?code=&lt;code&gt;</code> (web client); the app scans it with <code>assets/scan.html</code> served on a local https origin, the web client with <code>BarcodeDetector</code> or <code>jsQR</code>.</span><span data-lang="fr"><code>Host::start(false)</code> charge l'identité, le registre et la protection sans écouter ; <code>Host::setSharing()</code> démarre / arrête le serveur, l'exposition et le thread de capture (un nouveau <code>Stream</code> à chaque fois) et donne un nouveau code à chaque démarrage. Le panneau démarre partage coupé (Start sharing en vert, Stop sharing en rouge, aussi dans la zone de notification et avec <code>s</code> dans le panneau terminal). Le QR code contient <code>xdesk://hôte:port?fp=&lt;sha256&gt;&amp;code=&lt;code&gt;</code> (l'application Android épingle le certificat à partir de lui) ou <code>https://hôte:port/?code=&lt;code&gt;</code> (client web) ; l'application le scanne avec <code>assets/scan.html</code> servie sur une origine https locale, le client web avec <code>BarcodeDetector</code> ou <code>jsQR</code>.</span></p>
-</section>
-
-<!-- 8 -->
-<section id="platforms">
-  <h2><span data-lang="en">8. Platforms & limits</span><span data-lang="fr">8. Plateformes & limites</span></h2>
-  <div class="table-wrap"><table>
-    <thead><tr><th scope="col"><span data-lang="en">Platform</span><span data-lang="fr">Plateforme</span></th><th scope="col"><span data-lang="en">Capture</span><span data-lang="fr">Capture</span></th><th scope="col"><span data-lang="en">Input</span><span data-lang="fr">Entrées</span></th><th scope="col"><span data-lang="en">Terminal</span><span data-lang="fr">Terminal</span></th></tr></thead>
-    <tbody>
-<tr><td>Windows 10+</td><td>DXGI Desktop Duplication</td><td><code>SendInput</code></td><td>ConPTY</td></tr>
-<tr><td>Linux X11</td><td>Qt (<code>QScreen</code>)</td><td><span data-lang="en">XTest or <code>uinput</code></span><span data-lang="fr">XTest ou <code>uinput</code></span></td><td><code>forkpty</code></td></tr>
-<tr><td>Linux Wayland</td><td><span data-lang="en">portal ScreenCast + PipeWire video stream (screenshot portal only when <code>libpipewire</code> is missing)</span><span data-lang="fr">portail ScreenCast + flux vidéo PipeWire (portail screenshot seulement sans <code>libpipewire</code>)</span></td><td><code>uinput</code></td><td><code>forkpty</code></td></tr>
-<tr><td>macOS</td><td>Qt</td><td><span data-lang="en">planned</span><span data-lang="fr">prévu</span></td><td><code>forkpty</code></td></tr>
-    </tbody>
-  </table></div>
-  <div class="callout warn"><p><span data-lang="en">Implemented and tested on Linux (Fedora, GNOME Wayland): TLS / auth / terminals / bans / web / APK. Windows: code checked with MinGW, not yet run on Windows. macOS input injection is planned.</span><span data-lang="fr">Implémenté et testé sous Linux (Fedora, GNOME Wayland) : TLS / auth / terminaux / bans / web / APK. Windows : code vérifié avec MinGW, pas encore lancé sous Windows. L'injection d'entrées macOS est prévue.</span></p></div>
-</section>
-
-<nav class="pager" aria-label="Pages">
-  <a class="next" href="graph.html"><span data-i18n>Next</span><b data-i18n>Graph</b></a>
-</nav>
-</main>
+<div class="layout wide" id="top">
+<main id="main" tabindex="-1"><header class="hero"><div class="page-eyebrow">xdesk <span class="badge">v1.0.0 · e88b66e</span></div><h1><span data-lang="en">xdesk documentation</span><span data-lang="fr">Documentation de xdesk</span></h1><p class="lead"><span data-lang="en">Remote desktop and remote terminal in one binary for Windows and Unix: a one time code, end to end TLS 1.3 with a post-quantum key exchange, and the person in front of the PC decides who stays.</span><span data-lang="fr">Bureau et terminal à distance en un seul binaire pour Windows et Unix : un code à usage unique, TLS 1.3 de bout en bout avec un échange de clés post-quantique, et la personne devant le PC décide qui reste.</span></p><div class="sbox"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" autocomplete="off" aria-label="Search" data-i18n-aria-label placeholder="Search the documentation…  ( / )" data-ph-fr="Rechercher dans la documentation…  ( / )"><ul class="results" hidden></ul></div></header><div class="grid"><a class="tile" href="getting-started.html"><span class="count">4 <span data-i18n>pages</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 19h14"/></svg><h2><span data-lang="en">User guide</span><span data-lang="fr">Guide utilisateur</span></h2><p><span data-lang="en">Install, share a PC, connect to one, reach it from outside.</span><span data-lang="fr">Installer, partager un PC, s&#x27;y connecter, l&#x27;atteindre de l&#x27;extérieur.</span></p></a><a class="tile" href="how-pairing-works.html"><span class="count">2 <span data-i18n>pages</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v5M12 12l-6 5M12 12l6 5"/></svg><h2><span data-lang="en">Concepts</span><span data-lang="fr">Concepts</span></h2><p><span data-lang="en">How the pairing and the screen stream work, explained.</span><span data-lang="fr">Comment marchent l&#x27;appairage et le flux de l&#x27;écran, expliqué.</span></p></a><a class="tile" href="commands.html"><span class="count">4 <span data-i18n>pages</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6l-5 6 5 6M16 6l5 6-5 6"/></svg><h2><span data-lang="en">Reference</span><span data-lang="fr">Référence</span></h2><p><span data-lang="en">Commands, settings, files and the wire protocol.</span><span data-lang="fr">Commandes, réglages, fichiers et protocole réseau.</span></p></a><a class="tile" href="packages.html"><span class="count">4 <span data-i18n>pages</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h14v16H5zM9 8h6M9 12h6M9 16h4"/></svg><h2><span data-lang="en">Resources</span><span data-lang="fr">Ressources</span></h2><p><span data-lang="en">Packages, Windows and Android builds, development, limits, FAQ.</span><span data-lang="fr">Paquets, builds Windows et Android, développement, limites, FAQ.</span></p></a><a class="tile" href="security-model.html"><span class="count">2 <span data-i18n>pages</span></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg><h2><span data-lang="en">Security</span><span data-lang="fr">Sécurité</span></h2><p><span data-lang="en">The layers of protection, the tamper protection and what they do not stop.</span><span data-lang="fr">Les couches de protection, la protection contre l&#x27;altération et ce qu&#x27;elles n&#x27;arrêtent pas.</span></p></a></div><section id="changelog"><h2 data-i18n>Changelog</h2><ul class="cl"><li><b>pre-release</b><span>Documentation site in the better-html-doc style (tsukini22.github.io/xdesk/docs): user guide, concepts (pairing, screen stream), commands and settings generate…</span></li><li><b>1.0.0</b><span>First version of xdesk (binary), set up from cpp_project_template</span></li></ul></section><div class="links"><a href="getting-started.html"><span data-lang="en">Getting started</span><span data-lang="fr">Premiers pas</span></a><a href="protocol.html"><span data-lang="en">Protocol</span><span data-lang="fr">Protocole</span></a><a href="security-model.html"><span data-lang="en">Security</span><span data-lang="fr">Sécurité</span></a><a href="graph.html"><span data-lang="en">Project graph</span><span data-lang="fr">Graphe du projet</span></a><a href="https://github.com/TsukiNi22/xdesk"><span data-lang="en">GitHub</span><span data-lang="fr">GitHub</span></a><a href="https://tsukini22.github.io/my-universe/"><span data-lang="en">my-universe</span><span data-lang="fr">my-universe</span></a></div></main>
 </div>
-<footer class="site"><span data-lang="en"><span class="repo-name">xdesk</span> documentation · generated from the <a class="repo-link" href="https://github.com/TsukiNi22/xdesk">repository</a> (<span class="repo-version">v1.0.0</span>, <span class="repo-license">MIT</span>)</span><span data-lang="fr">Documentation de <span class="repo-name">xdesk</span> · générée depuis le <a class="repo-link" href="https://github.com/TsukiNi22/xdesk">dépôt</a> (<span class="repo-version">v1.0.0</span>, <span class="repo-license">MIT</span>)</span></footer>
+<footer class="site">xdesk v1.0.0 · e88b66e · docs</footer>
 <script>
-// French texts of the page (English text -> French text), extend it with the page content
-window.DOC_FR = {
-  "Guide": "Guide",
-  "Technical": "Technique",
-  "Graph": "Graphe",
-  "GitHub repository": "Dépôt GitHub",
-  "Toggle theme": "Changer de thème",
-  "Contents": "Sommaire",
-  "Language": "Langue",
-  "Pages": "Pages",
-  "Copy": "Copier",
-  "Copied": "Copié",
-  "Select & copy": "Sélectionner et copier",
-  "Link to this section": "Lien vers cette section",
-  "Navigation": "Navigation",
-  "Open the navigation": "Ouvrir la navigation",
-  "User guide": "Guide utilisateur",
-  "Developer guide": "Guide développeur",
-  "Technical documentation": "Documentation technique",
-  "Previous": "Précédent",
-  "Next": "Suivant",
-  "Skip to the content": "Aller au contenu"
-};
+window.DOC_FR = { "Toggle theme": "Changer de thème", "Contents": "Sommaire", "Language": "Langue", "Copy": "Copier", "Copied": "Copié", "Select & copy": "Sélectionner et copier", "Link to this section": "Lien vers cette section", "Open the navigation": "Ouvrir la navigation", "Guide": "Guide", "Technical": "Technique", "Graph": "Graphe", "Pages": "Pages", "Previous": "Précédent", "Next": "Suivant", "GitHub repository": "Dépôt GitHub", "Skip to the content": "Aller au contenu" };
 </script>
 <script>
 // Behaviour shared by the user's HTML pages (from html-doc): theme switch, optional EN / FR switch, copy buttons
@@ -1170,77 +987,205 @@ window.docTables = (function () {
     document.querySelectorAll('.anchor').forEach(function (a) { a.setAttribute('aria-label', tr('Link to this section')); });
   });
 })();
-</script>
-<script>
-</script>
-<script>
-// Project data from the linked GitHub repository (<html data-repo="owner/repo">): name, latest version, license and
-// URL are fetched (cached 1 h) and replace the written values in .repo-name / .repo-version / .repo-license /
-// .repo-link and in the page title. Offline, private repository or API limit: the written values stay.
+
+/* better-html-style - search (the site index, a server endpoint, or the sections of the page itself), its keys, the phone layout
+   of the search box, embed mode (?embed=1), ?theme= / ?lang= / ?q= in the address */
 (function () {
-  var root = document.documentElement, repo = root.getAttribute('data-repo') || '';
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return;
-  var key = (root.getAttribute('data-storage-key') || 'doc') + '-repo', TTL = 3600 * 1000;
-  function apply(info) {
-    if (!info) return;
-    var oldName = (document.querySelector('.repo-name') || {}).textContent;
-    if (info.name) document.querySelectorAll('.repo-name').forEach(function (e) { e.textContent = info.name; });
-    if (info.version) document.querySelectorAll('.repo-version').forEach(function (e) { e.textContent = info.version; });
-    if (info.license) document.querySelectorAll('.repo-license').forEach(function (e) { e.textContent = info.license; });
-    if (info.url) document.querySelectorAll('a.repo-link').forEach(function (e) { e.href = info.url; });
-    if (info.name && oldName && document.title.indexOf(oldName) === 0) document.title = info.name + document.title.slice(oldName.length);
+  'use strict';
+  var Q = new URLSearchParams(location.search);
+  var EMBED = Q.get('embed') === '1';
+  var root = document.documentElement;
+  if (window.DOC_FR) { // the words of the site in the French table of base.js (the same object), applied again
+    var words = { 'Search': 'Rechercher', 'Home': 'Accueil', 'Edit this page': 'Modifier cette page', 'Updated': 'Mis à jour', 'pages': 'pages',
+      'Changelog': 'Historique', 'Full changelog': 'Historique complet', 'Sections': 'Sections', 'On this page': 'Sur cette page',
+      'Shortcut / for the search': 'Raccourci / pour la recherche' };
+    for (var w in words) if (!Object.prototype.hasOwnProperty.call(window.DOC_FR, w)) window.DOC_FR[w] = words[w];
+    if (window.docI18n && root.lang === 'fr') window.docI18n.apply();
   }
-  var cached = null;
-  try { cached = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { /* storage unavailable */ }
-  if (cached && cached.repo === repo) apply(cached);
-  // A language change rewrites the translated texts from their original: apply the fetched data again
-  if (window.docI18n) window.docI18n.onChange(function () { var c = null; try { c = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { /* storage unavailable */ } apply(window.docRepoInfo || c); });
-  if (cached && cached.repo === repo && Date.now() - cached.time < TTL) return;
-  var api = 'https://api.github.com/repos/' + repo;
-  var get = function (u) { return fetch(u, { headers: { Accept: 'application/vnd.github+json' } }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }); };
-  get(api).then(function (r) {
-    var info = { repo: repo, time: Date.now(), name: r.name, url: r.html_url, license: r.license && r.license.spdx_id && r.license.spdx_id !== 'NOASSERTION' ? r.license.spdx_id : '' };
-    return get(api + '/releases/latest').then(function (rel) { info.version = rel.tag_name; return info; })
-      .catch(function () { return get(api + '/tags?per_page=1').then(function (tags) { if (tags[0]) info.version = tags[0].name; return info; }); })
-      .catch(function () { return info; });
-  }).then(function (info) {
-    window.docRepoInfo = info;
-    apply(info);
-    try { localStorage.setItem(key, JSON.stringify(info)); } catch (e) { /* storage unavailable */ }
-  }).catch(function () { /* keep the written values */ });
-})();
-</script>
-<script>
-// Hide the tabs of the pages that don't exist, and the whole bar when a single page remains
-// (online: HEAD request; file://: the page is loaded as a hidden script, a missing file fails to load)
-(function () {
-  var nav = document.querySelector('nav.tabs');
-  if (!nav) return;
-  function showCurrent() { // a narrow bar scrolls its tabs: the current one in sight
-    var current = nav.querySelector('a.current');
-    if (current) nav.scrollLeft = current.offsetLeft - nav.offsetLeft;
+  if (EMBED) {
+    root.classList.add('embed');
+    var levels = document.querySelector('.topbar .level-switch'), pageHead = document.querySelector('main > header');
+    if (levels && pageHead) pageHead.appendChild(levels); // no top bar: the level switch of an explanation page stays reachable, in the header of the page
+    document.querySelectorAll('a[href]').forEach(function (a) {
+      var h = a.getAttribute('href');
+      if (h && !/^(#|https?:|mailto:|[\w.-]+\.(pdf|rpm|deb|apk|zip|gz|sh|json)(\?|#|$))/.test(h) && h.indexOf('embed=') < 0) a.setAttribute('href', h + (h.indexOf('?') < 0 ? '?' : '&') + 'embed=1');
+    });
   }
-  function done(a, ok) {
-    if (!ok) a.remove();
-    if (nav.querySelectorAll('a').length < 2) nav.hidden = true;
-    showCurrent();
-  }
-  nav.querySelectorAll('a:not(.current)').forEach(function (a) {
-    if (/^https?:$/.test(location.protocol)) {
-      fetch(a.href, { method: 'HEAD' }).then(function (r) { done(a, r.ok); }).catch(function () {});
-      return;
+  if (Q.get('theme') === 'dark' || Q.get('theme') === 'light') root.setAttribute('data-theme', Q.get('theme'));
+  if (Q.get('lang') === 'fr' || Q.get('lang') === 'en') { try { window.docI18n.set(Q.get('lang')); } catch (e) { root.lang = Q.get('lang'); } }
+  var meta = document.querySelector('meta[name="docs-search"]');
+  var ENDPOINT = meta ? meta.content : '';
+  function lang() { return root.lang === 'fr' ? 'fr' : 'en'; }
+
+  // the index: the site's (search-index.js, deferred: read when searching), else the sections of this page, by language
+  var own = {};
+  function pageIndex() {
+    var l = lang();
+    if (own[l]) return own[l];
+    var out = [], title = document.querySelector('main h1');
+    function text(el) {
+      var c = el.cloneNode(true);
+      c.querySelectorAll('[data-lang]:not([data-lang="' + l + '"]), script, style, svg, .copy, .anchor').forEach(function (x) { x.remove(); });
+      c.querySelectorAll('th, td, li, p, div, pre, dt, dd, summary, caption, figcaption, h3, h4, h5, h6').forEach(function (x) { x.append(' '); }); // two cells or blocks never glued in a result
+      return c.textContent.replace(/\s+/g, ' ').trim();
     }
-    var s = document.createElement('script');
-    var mute = function (e) { if (e.filename === s.src) { e.preventDefault(); e.stopImmediatePropagation(); } }; // an HTML page is not JS
-    window.addEventListener('error', mute, true);
-    s.src = a.href;
-    s.onload = function () { window.removeEventListener('error', mute, true); s.remove(); done(a, true); };
-    s.onerror = function () { window.removeEventListener('error', mute, true); s.remove(); done(a, false); };
-    document.head.appendChild(s);
+    document.querySelectorAll('main section[id]').forEach(function (s) {
+      var h = s.querySelector('h2'), body = text(s), head = h ? text(h) : s.id;
+      out.push({ k: 'page', t: (title ? text(title) + ' › ' : '') + head, d: body.slice(head.length, head.length + 110), u: '#' + s.id, x: body.slice(0, 600) });
+      s.querySelectorAll('h3[id]').forEach(function (h3) { out.push({ k: 'page', t: head + ' › ' + text(h3), d: '', u: '#' + h3.id, x: '' }); });
+    });
+    own[l] = out;
+    return out;
+  }
+  function index() { return (window.DOCS_INDEX && window.DOCS_INDEX.entries) || pageIndex(); }
+
+  // a query is words: each one must be found (prefix 3000 > start of a word 2600 > inside 2000 > a typo 900 / 800 > letters in order);
+  // the title counts fully, the description a little less, the body text least
+  function dist(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    var prev2 = null, prev = [], cur, i, j;
+    for (j = 0; j <= b.length; j++) prev[j] = j;
+    for (i = 1; i <= a.length; i++) {
+      cur = [i];
+      for (j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        if (prev2 && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) cur[j] = Math.min(cur[j], prev2[j - 2] + 1);
+      }
+      prev2 = prev; prev = cur;
+    }
+    return prev[b.length];
+  }
+  // typo tolerance: a missing, doubled, wrong or swapped letter still finds it (a swap counts as one)
+  function typo(q, s) {
+    if (q.length < 4) return -1;
+    var max = q.length >= 8 ? 2 : 1, words = s.split(/[^a-z0-9à-ÿ]+/), best = max + 1;
+    for (var k = 0; k < words.length; k++) {
+      var w = words[k];
+      if (w.length < 3) continue;
+      var d = Math.min(dist(q, w, max), dist(q, w.slice(0, q.length + 1), max) + 1);
+      if (d < best) best = d;
+    }
+    return best <= max ? 900 - best * 100 : -1;
+  }
+  function wscore(w, s) {
+    s = (s || '').toLowerCase();
+    var i = s.indexOf(w);
+    if (i === 0) return 3000 - s.length / 10;
+    if (i > 0) return (/[^a-z0-9à-ÿ]/.test(s[i - 1]) ? 2600 : 2000) - i / 10;
+    var t = typo(w, s);
+    if (t >= 0) return t;
+    if (w.length >= 4) { // letters in order, tight (sesend -> session_send)
+      var p = 0, first = -1, last = 0;
+      for (var j = 0; j < s.length && p < w.length; j++) if (s[j] === w[p]) { if (first < 0) first = j; last = j; p++; }
+      if (p === w.length && last - first <= w.length * 2) return 600 - (last - first);
+    }
+    return -1;
+  }
+  function entryScore(words, e) {
+    var total = 0;
+    if ((e.t || '').toLowerCase().replace(/\s+/g, ' ').trim() === words.join(' ')) return 1e6; // its whole title: that page first, not a section of it
+    for (var n = 0; n < words.length; n++) {
+      var w = words[n], best = Math.max(wscore(w, e.t), wscore(w, e.d) - 400, wscore(w, e.x) - 800);
+      if (best < 0) return -1;
+      total += best;
+    }
+    return total / words.length;
+  }
+  function queryWords(q) { return q.toLowerCase().split(/\s+/).filter(Boolean); }
+  function esc(x) { return String(x).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function mark(q, s) { // one pass on the raw text: a word of the query never matches inside a <mark> or an &amp; written before it
+    var words = queryWords(q).map(function (w) { return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).sort(function (a, b) { return b.length - a.length; });
+    if (!words.length) return esc(s);
+    return String(s).split(new RegExp('(' + words.join('|') + ')', 'ig')).map(function (part, n) { return n % 2 ? '<mark>' + esc(part) + '</mark>' : esc(part); }).join('');
+  }
+  function localSearch(q) {
+    var l = lang(), words = queryWords(q);
+    return index().filter(function (e) { return !e.l || e.l === l; }).map(function (e) {
+      return { e: e, s: entryScore(words, e) };
+    }).filter(function (x) { return x.s >= 0; }).sort(function (a, b) { return b.s - a.s; }).slice(0, 8).map(function (x) { return x.e; });
+  }
+  function remoteSearch(q, done) {
+    fetch(ENDPOINT + '?q=' + encodeURIComponent(q) + '&lang=' + lang()).then(function (r) { return r.json(); })
+      .then(function (j) { done(j.results || []); }, function () { done(localSearch(q)); });
+  }
+  window.docsSearch = function (q, done) { if (ENDPOINT) remoteSearch(q, done); else done(localSearch(q)); };
+
+  function bind(input) {
+    var box = input.parentNode, ul = box.querySelector('.results'), sel = 0, cur = [], seq = 0;
+    function show(q, list) {
+      cur = list; sel = 0;
+      ul.innerHTML = cur.length ? cur.map(function (e, n) {
+        var u = e.u;
+        if (EMBED && u.charAt(0) !== '#') u = u.indexOf('#') >= 0 ? u.replace('#', (u.indexOf('?') < 0 ? '?' : '&') + 'embed=1#') : u + (u.indexOf('?') < 0 ? '?' : '&') + 'embed=1';
+        return '<li class="' + (n ? '' : 'sel') + '"><a href="' + esc(u) + '"><span class="t">' + mark(q, e.t) + '<span class="d">' + esc(e.d || '') + '</span></span>' + (e.k ? '<span class="kind ' + esc(e.k) + '">' + esc(e.k) + '</span>' : '') + '</a></li>';
+      }).join('') : '<li class="none">' + (lang() === 'fr' ? 'Aucun résultat' : 'No result') + '</li>';
+      ul.hidden = false;
+    }
+    function render() {
+      var q = input.value.trim(), n = ++seq;
+      if (!q) { ul.hidden = true; return; }
+      window.docsSearch(q, function (list) { if (n === seq) show(q, list); });
+    }
+    function move(d) {
+      var li = ul.querySelectorAll('li'); if (!cur.length) return;
+      li[sel].classList.remove('sel'); sel = (sel + d + cur.length) % cur.length; li[sel].classList.add('sel');
+      li[sel].scrollIntoView({ block: 'nearest' });
+    }
+    input.addEventListener('input', render);
+    input.addEventListener('focus', render);
+    input.addEventListener('keydown', function (ev) {
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); move(1); }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); move(-1); }
+      else if (ev.key === 'Enter' && cur[sel]) { ev.preventDefault(); ul.querySelectorAll('a')[sel].click(); ul.hidden = true; }
+      else if (ev.key === 'Escape') { ul.hidden = true; input.blur(); }
+    });
+    ul.addEventListener('click', function (ev) { if (ev.target.closest('a')) ul.hidden = true; });
+    document.addEventListener('click', function (ev) { if (!box.contains(ev.target)) ul.hidden = true; });
+  }
+  document.querySelectorAll('.sbox input').forEach(bind);
+  if (Q.get('q')) window.addEventListener('load', function () { var qi = document.querySelector('.sbox input'); if (qi) { qi.value = Q.get('q'); qi.dispatchEvent(new Event('input')); } }); // ?q=text opens the results
+
+  var menuBtn = document.querySelector('#menuBtn');
+  if (menuBtn && !document.querySelector('#sidebar')) menuBtn.style.display = 'none'; // a page without sidebar: nothing for the menu to open
+  (function () { // phone: the small search moves under the top bar (sticky), else it lives in the top bar
+    var sb = document.querySelector('.topbar .sbox.small'), bar = document.querySelector('.topbar'); if (!sb || !bar) return;
+    // a bar that also holds a level switch (explanation pages) has no room for it sooner
+    var home = sb.parentNode, mq = window.matchMedia(bar.querySelector('.level-switch') ? '(max-width: 640px)' : '(max-width: 480px)');
+    function place() {
+      if (mq.matches) { sb.classList.add('mob'); bar.after(sb); }
+      else { sb.classList.remove('mob'); home.insertBefore(sb, home.firstChild); }
+    }
+    place(); mq.addEventListener('change', place);
+  })();
+  // RGAA 12.10: "/" is a one-character shortcut, so the reader can turn it off (the choice is kept); Ctrl+K is a combination and stays
+  var skey = (root.getAttribute('data-storage-key') || 'page') + '-shortcut';
+  function slash() { try { return localStorage.getItem(skey) !== 'off'; } catch (e) { return true; } }
+  (function () {
+    var foot = document.querySelector('footer.site'); if (!foot || !document.querySelector('.sbox input') || EMBED) return;
+    var lab = document.createElement('label'), box = document.createElement('input'), txt = document.createElement('span');
+    lab.className = 'keys-toggle'; box.type = 'checkbox'; box.checked = slash(); txt.setAttribute('data-i18n', ''); txt.textContent = 'Shortcut / for the search';
+    lab.appendChild(box); lab.appendChild(txt); foot.appendChild(lab);
+    function hints() { document.querySelectorAll('.sbox kbd.hint').forEach(function (k) { k.hidden = !box.checked; }); }
+    box.addEventListener('change', function () { try { localStorage.setItem(skey, box.checked ? 'on' : 'off'); } catch (e) { /* storage unavailable */ } hints(); });
+    hints();
+    if (window.docI18n && root.lang === 'fr') window.docI18n.apply();
+  })();
+  document.addEventListener('keydown', function (ev) { // / (unless turned off) or Ctrl+K: the search
+    if (((ev.key === '/' && slash()) || ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k')) && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && !document.activeElement.isContentEditable) {
+      var big = document.querySelector('.hero .sbox input'), i = big && big.offsetParent ? big : document.querySelector('.sbox.small input') || big; // the big one when it is shown
+      if (i) { ev.preventDefault(); i.focus(); i.select(); }
+    }
   });
-  if (nav.querySelectorAll('a').length < 2) nav.hidden = true;
-  showCurrent();
+  function ph() { var fr = lang() === 'fr'; document.querySelectorAll('input[data-ph-fr]').forEach(function (i) { if (!i.dataset.ph) i.dataset.ph = i.placeholder; i.placeholder = fr ? i.dataset.phFr : i.dataset.ph; }); own = {}; }
+  ph(); new MutationObserver(ph).observe(root, { attributes: true, attributeFilter: ['lang'] });
+  // a host page (an app panel showing the docs in a frame) can switch the language / theme of an embedded copy
+  window.addEventListener('message', function (ev) {
+    var d = ev.data || {};
+    if (d.docsLang && window.docI18n) window.docI18n.set(d.docsLang);
+    if (d.docsTheme) root.setAttribute('data-theme', d.docsTheme);
+  });
 })();
 </script>
+<script src="search-index.js" defer></script>
 </body>
 </html>

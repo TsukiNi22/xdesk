@@ -1,0 +1,54 @@
+# xdesk documentation site (better-html-doc) - build: python3 ~/.claude/skills/better-html-doc/scripts/build_site.py --site docs/site --out docs
+# The built pages are committed in docs/ (published on gh-pages by docs.yml); gen/*.py read the commands and settings from the sources
+
+[site]
+name = "xdesk"
+langs = ["en", "fr"]
+repo = "https://github.com/TsukiNi22/xdesk"
+edit_url = ""
+pages_url = "https://tsukini22.github.io/xdesk/docs/"
+storage_key = "xdesk-docs"
+logo = "../logo.svg"
+
+[home]
+title = { en = "xdesk documentation", fr = "Documentation de xdesk" }
+tagline = { en = "Remote desktop and remote terminal in one binary for Windows and Unix: a one time code, end to end TLS 1.3 with a post-quantum key exchange, and the person in front of the PC decides who stays.", fr = "Bureau et terminal à distance en un seul binaire pour Windows et Unix : un code à usage unique, TLS 1.3 de bout en bout avec un échange de clés post-quantique, et la personne devant le PC décide qui reste." }
+changelog = "../../CHANGELOG.md"
+links = [
+    { href = "getting-started.html", text = { en = "Getting started", fr = "Premiers pas" } },
+    { href = "protocol.html", text = { en = "Protocol", fr = "Protocole" } },
+    { href = "security-model.html", text = { en = "Security", fr = "Sécurité" } },
+    { href = "graph.html", text = { en = "Project graph", fr = "Graphe du projet" } },
+    { href = "https://github.com/TsukiNi22/xdesk", text = "GitHub" },
+    { href = "https://tsukini22.github.io/my-universe/", text = "my-universe" },
+]
+
+[[sections]]
+id = "guide"
+title = { en = "User guide", fr = "Guide utilisateur" }
+desc = { en = "Install, share a PC, connect to one, reach it from outside.", fr = "Installer, partager un PC, s'y connecter, l'atteindre de l'extérieur." }
+icon = '<path d="M12 3v12m0 0l-4-4m4 4l4-4M5 19h14"/>'
+
+[[sections]]
+id = "concepts"
+title = { en = "Concepts", fr = "Concepts" }
+desc = { en = "How the pairing and the screen stream work, explained.", fr = "Comment marchent l'appairage et le flux de l'écran, expliqué." }
+icon = '<circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v5M12 12l-6 5M12 12l6 5"/>'
+
+[[sections]]
+id = "reference"
+title = { en = "Reference", fr = "Référence" }
+desc = { en = "Commands, settings, files and the wire protocol.", fr = "Commandes, réglages, fichiers et protocole réseau." }
+icon = '<path d="M8 6l-5 6 5 6M16 6l5 6-5 6"/>'
+
+[[sections]]
+id = "resources"
+title = { en = "Resources", fr = "Ressources" }
+desc = { en = "Packages, Windows and Android builds, development, limits, FAQ.", fr = "Paquets, builds Windows et Android, développement, limites, FAQ." }
+icon = '<path d="M5 4h14v16H5zM9 8h6M9 12h6M9 16h4"/>'
+
+[[sections]]
+id = "security"
+title = { en = "Security", fr = "Sécurité" }
+desc = { en = "The layers of protection, the tamper protection and what they do not stop.", fr = "Les couches de protection, la protection contre l'altération et ce qu'elles n'arrêtent pas." }
+icon = '<path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/>'
