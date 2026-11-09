@@ -66,11 +66,17 @@ set(SRC
     ## Platform (sub-part: platform)
     xdesk/platform/FrameEncoder.cpp
     xdesk/platform/H264.cpp
-    xdesk/platform/XkbLayout.cpp
 
     ## User interface (sub-part: ui)
     xdesk/ui/tty/Ansi.cpp
 )
+# Linux only, like SRC_LINUX of the project (never wrapped in an #ifdef)
+if(UNIX AND NOT APPLE)
+    list(APPEND SRC
+        ## Platform (sub-part: platform)
+        xdesk/platform/XkbLayout.cpp
+    )
+endif()
 add_executable(${TARGET} ${SRC} ${SRC_PROJECT})
 
 # =========================
