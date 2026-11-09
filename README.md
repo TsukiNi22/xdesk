@@ -1,7 +1,7 @@
 # xdesk
 
 > [!TIP]
-> Documentation [TsukiNi22/xdesk](https://tsukini22.github.io/xdesk/docs/) (v1.0.0): technical documentation, protocol and the interactive project graph.
+> Documentation [TsukiNi22/xdesk](https://tsukini22.github.io/xdesk/docs/) (v1.0.0): user guide, concepts, commands, settings, protocol, security (searchable, EN / FR) and the interactive project graph.
 
 Remote desktop and remote terminal in **one binary** for Windows and Unix: run `xdesk` on a PC, give its one time code, and someone can see / control its screen or open terminals on it, from the native viewer (Qt or terminal), a browser or the Android app.
 Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange (X25519 + ML-KEM-768)**, the code is proven with **Argon2id** bound to the host certificate, and the person in front of the PC sees everything each session does, live, and decides who stays (trust, kick, ban).
@@ -300,7 +300,7 @@ cmake --build $BUILD_DIR --target get_unregistered_files  # .cpp files missing f
 | `cmake/scripts/` | Exception header generator (`generate_exception_header.py`, `const.py`), `check_files.sh` |
 | `cmake/toolchain/mingw-w64.cmake` | Windows cross compilation toolchain |
 | `cmake/package/` | CMake package config (`find_package(xdesk)`) and the CPack prefix of the Windows packages |
-| `docs/` | HTML documentation (technical page, project graph) |
+| `docs/` | Documentation site (`docs/site/`: Markdown sources + generators, built pages in `docs/`) and the project graph |
 | `include/exception/generated_external_exception_header.hpp` | Generated at build time from the JSON files (not committed) |
 
 > [!NOTE]
@@ -381,7 +381,7 @@ cmake --build build --parallel $(nproc)                       # ./unit_tests at 
 
 ## Pre-commit hook
 
-A shared [xstyle](https://github.com/TsukiNi22/ai-utils) hook (`.githooks/pre-commit`) checks the staged lines at each `git commit` and refuses a `major` (or worse) issue. `setup.sh` already enabled it in this clone.
+A shared [xstyle](https://github.com/TsukiNi22/xstyle) hook (`.githooks/pre-commit`) checks the staged lines at each `git commit` and refuses a `major` (or worse) issue. `setup.sh` already enabled it in this clone.
 
 ```bash
 git config core.hooksPath .githooks   # once per new clone
