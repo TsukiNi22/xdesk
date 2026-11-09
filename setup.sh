@@ -3,7 +3,7 @@
 # mirror (RPM / DEB / Arch, signed) in the system package manager (--install also installs the package).
 set -euo pipefail
 
-BASE_URL="https://tsukini22.github.io/external-desktop"
+BASE_URL="https://tsukini22.github.io/xdesk"
 KEY_NAME="RPM-GPG-KEY-tsukini"
 PACKAGE="xdesk"
 SUDO="sudo"

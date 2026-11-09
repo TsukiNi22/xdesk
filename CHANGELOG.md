@@ -86,4 +86,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A device trusted again after a ban still asked the code at each connection without saying why (the ban erases its key): its state shows `trusted · code once`, that one code needs no approval and gives it a new key
 - `scripts/install.sh --uinput`: the remote control works at once for the user at the screen (`uaccess`), no new login needed
 
-[v1.0.0]: https://github.com/TsukiNi22/external-desktop/releases/tag/v1.0.0
+[v1.0.0]: https://github.com/TsukiNi22/xdesk/releases/tag/v1.0.0

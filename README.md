@@ -1,7 +1,7 @@
 # xdesk
 
 > [!TIP]
-> Documentation [TsukiNi22/external-desktop](https://tsukini22.github.io/external-desktop/docs/) (v1.0.0): technical documentation, protocol and the interactive project graph.
+> Documentation [TsukiNi22/xdesk](https://tsukini22.github.io/xdesk/docs/) (v1.0.0): technical documentation, protocol and the interactive project graph.
 
 Remote desktop and remote terminal in **one binary** for Windows and Unix: run `xdesk` on a PC, give its one time code, and someone can see / control its screen or open terminals on it, from the native viewer (Qt or terminal), a browser or the Android app.
 Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange (X25519 + ML-KEM-768)**, the code is proven with **Argon2id** bound to the host certificate, and the person in front of the PC sees everything each session does, live, and decides who stays (trust, kick, ban).
@@ -102,7 +102,7 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 
 ```bash
 # Linux / macOS: dependencies + libutils + build + ~/.local/bin/xdesk + menu entries
-git clone https://github.com/TsukiNi22/external-desktop.git && cd external-desktop
+git clone https://github.com/TsukiNi22/xdesk.git && cd xdesk
 scripts/install.sh --deps --apk --uinput   # --apk: embed the android app, --uinput: remote control on Wayland
 scripts/install.sh --autostart             # host panel at login (tray)
 scripts/install.sh --uninstall
@@ -151,8 +151,8 @@ powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
 
 ### Clone the repository
 ```bash
-git clone https://github.com/TsukiNi22/external-desktop.git
-cd external-desktop
+git clone https://github.com/TsukiNi22/xdesk.git
+cd xdesk
 ```
 
 ### Build & install
@@ -185,13 +185,13 @@ Run the setup script directly, without cloning the repository. It registers the 
 5. With `--install` only: install the package `xdesk` (`--pre` for the unstable one, `--windows` for `mingw64-xdesk`, rpm / deb only).
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/TsukiNi22/external-desktop/main/setup.sh | bash -s
+wget -qO- https://raw.githubusercontent.com/TsukiNi22/xdesk/main/setup.sh | bash -s
 ```
 
 or with `curl`:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/TsukiNi22/external-desktop/main/setup.sh | bash -s
+curl -fsSL https://raw.githubusercontent.com/TsukiNi22/xdesk/main/setup.sh | bash -s
 ```
 
 | Argument | Effect |
@@ -390,7 +390,7 @@ xstyle --fix --staged                 # fix what can be, then git add -u
 - `Build (CI)`: only builds the project (Linux in the `ci` image, Windows in the `mingw64-ci` image) and checks the outputs, without producing packages
 - `Build - Packages (CI/CD)`: builds the packages (RPM/DEB/Arch: Linux in the `ci` image, Windows `mingw64-*` in the `mingw64-ci` image), signs them and publishes them on the `gh-pages` repository
 - `Release - GitHub (CD)`: creates the GitHub release of a tag from its section of the `CHANGELOG.md`, once the packages are published
-- `Docs - Pages (CD)`: copies `docs/` on the `gh-pages` branch on every push changing it (https://tsukini22.github.io/external-desktop/docs/)
+- `Docs - Pages (CD)`: copies `docs/` on the `gh-pages` branch on every push changing it (https://tsukini22.github.io/xdesk/docs/)
 - `Sync Packages (CD)` (on `gh-pages`): rebuilds the metadata and signatures of the package repository after a manual push on the branch
 
 > [!NOTE]

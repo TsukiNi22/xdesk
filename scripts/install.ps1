@@ -11,7 +11,7 @@ File Description:
 [CmdletBinding()]
 param(
     [string]$Zip = "",                  # local xdesk-windows-x64.zip (default: the folder of this script, else the latest release)
-    [string]$Repo = "TsukiNi22/external-desktop",
+    [string]$Repo = "TsukiNi22/xdesk",
     [string]$Prefix = "$env:LOCALAPPDATA\Programs\xdesk",
     [int]$Port = 47800,
     [switch]$Autostart,                 # host panel at login (tray)

@@ -902,7 +902,7 @@ endif()
 # Arch (same names, channels and dependencies as the RPM / DEB, read by cmake/package/CPackArch.cmake)
 set(CPACK_ARCH_PACKAGE_NAME ${CPACK_PACKAGE_NAME})
 set(CPACK_ARCH_PACKAGE_DESCRIPTION "${CPACK_PACKAGE_DESCRIPTION_SUMMARY}")
-set(CPACK_ARCH_PACKAGE_URL "https://github.com/TsukiNi22/external-desktop")
+set(CPACK_ARCH_PACKAGE_URL "https://github.com/TsukiNi22/xdesk")
 set(CPACK_ARCH_PACKAGE_PACKAGER "${CPACK_PACKAGE_VENDOR} <${CPACK_PACKAGE_CONTACT}>")
 set(CPACK_ARCH_PACKAGE_LICENSE "MIT")
 set(CPACK_ARCH_PACKAGE_ARCHITECTURE "any") # global package & headers
@@ -914,6 +914,6 @@ set(CPACK_RPM_PACKAGE_LICENSE "MIT")
 
 # Debian
 set(CPACK_DEBIAN_PACKAGE_MAINTAINER "TsukiNi22")
-set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/TsukiNi22/external-desktop")
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/TsukiNi22/xdesk")
 
 include(CPack)
