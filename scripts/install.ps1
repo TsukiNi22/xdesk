@@ -49,7 +49,7 @@ if (-not $Zip -and (Test-Path (Join-Path $here "xdesk.exe"))) {
         } else {
             $release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest"
             $asset = $release.assets | Where-Object { $_.name -eq "xdesk-windows-x64.zip" } | Select-Object -First 1
-            if (-not $asset) { throw "No xdesk-windows-x64.zip in the latest release (private repository: install gh and run gh auth login)" }
+            if (-not $asset) { throw "No xdesk-windows-x64.zip in the latest release" }
             Invoke-WebRequest $asset.browser_download_url -OutFile $Zip
         }
     }

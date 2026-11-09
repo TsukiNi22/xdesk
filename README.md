@@ -118,7 +118,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1 -Uninstall
 | Script | Effect |
 | ------ | ------ |
 | `scripts/install.sh` | `--deps` (dnf / apt / pacman / brew + libutils), `--apk`, `--uinput` (udev rule: the user at the screen at once, the group `xdesk` after a new login), `--autostart`, `--prefix DIR`, `--uninstall` |
-| `scripts/install.ps1` | `-Zip <file>`, `-Prefix`, `-Port`, `-Autostart`, `-NoFirewall`, `-Uninstall` (private repository: needs `gh auth login` to download the release) |
+| `scripts/install.ps1` | `-Zip <file>`, `-Prefix`, `-Port`, `-Autostart`, `-NoFirewall`, `-Uninstall` |
 | `scripts/bundle_windows.sh` | Fedora: cross compiles `xdesk.exe` and packs every dll (Qt, plugins, OpenSSL) in `dist/xdesk-windows-x64.zip` |
 | `scripts/build_apk.sh` | Builds `android/build/xdesk.apk` without Gradle (aapt2, javac, d8, apksigner), version `x.y.z.<commits>`; embedded in the binary at the next build |
 
@@ -177,7 +177,13 @@ sudo cmake --build $BUILD_DIR --target install --parallel $(nproc) # /usr/local/
 > [!NOTE]
 > The usage of `sudo` in the script can be removed with the `--no-sudo` argument.
 
-Run the setup script directly, without cloning the repository. It registers the package repository (`gh-pages` branch) so the system package manager can install the packages:
+Every package repository of TsukiNi22 at once (xdesk, xstyle, libutils, brain, context-forge...), with [my-universe](https://tsukini22.github.io/my-universe/):
+
+```bash
+curl -fsSL https://tsukini22.github.io/my-universe/install.sh | bash -s   # then: sudo dnf install xdesk (apt / pacman)
+```
+
+Or only the one of xdesk, with its setup script (no clone needed). It registers the package repository (`gh-pages` branch) so the system package manager can install the packages:
 1. Detect the distribution from `/etc/os-release` (`rpm`, `deb` or `arch` based).
 2. `rpm`: add `/etc/yum.repos.d/xdesk.repo` and import the GPG key.
 3. `deb`: add the GPG key in `/etc/apt/keyrings/xdesk.gpg`, the source in `/etc/apt/sources.list.d/xdesk.list`, then `apt-get update`.
