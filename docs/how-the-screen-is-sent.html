@@ -1,0 +1,1824 @@
+<!doctype html>
+<html data-default-level="simple" data-page="explain" lang="en" data-storage-key="xdesk-docs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>How the screen is sent - xdesk</title><link rel="icon" type="image/svg+xml" href="logo.svg">
+<style>
+/* Visual system of the user's HTML pages (source: html-doc/templates/technical.html, R-Type doc colors +
+   context-forge layout). Inlined in each page by scripts/new_page.py: pages stay self-contained. */
+:root {
+  color-scheme: light; /* the fields, the scrollbars and the rest drawn by the browser follow the theme */
+  accent-color: var(--accent);
+  --bg: #efede8;
+  --surface: #f7f5f0;
+  --text: #1d1f23;
+  --muted: #5d636e;
+  --border: #dad6cd;
+  --accent: #2f5bd3;
+  --accent-soft: #e6ecfb;
+  --warn: #a8540a;
+  --warn-soft: #fbefe3;
+  --ok: #1f7a4a;
+  --ok-soft: #e3f4ea;
+  --code-bg: #e9e6df;
+  --node: #f7f5f0;
+  --node-alt: #eef1f8;
+  --line: #868c97;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15171b;
+    --surface: #1d2025;
+    --text: #e6e7ea;
+    --muted: #9aa0ab;
+    --border: #30343b;
+    --accent: #7d9cf0;
+    --accent-soft: #232c45;
+    --warn: #f0a868;
+    --warn-soft: #3a2a1b;
+    --ok: #6fcf97;
+    --ok-soft: #1b3326;
+    --code-bg: #24272d;
+    --node: #23262c;
+    --node-alt: #283043;
+    --line: #747a85;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15171b;
+  --surface: #1d2025;
+  --text: #e6e7ea;
+  --muted: #9aa0ab;
+  --border: #30343b;
+  --accent: #7d9cf0;
+  --accent-soft: #232c45;
+  --warn: #f0a868;
+  --warn-soft: #3a2a1b;
+  --ok: #6fcf97;
+  --ok-soft: #1b3326;
+  --code-bg: #24272d;
+  --node: #23262c;
+  --node-alt: #283043;
+  --line: #747a85;
+}
+/* scrollbars: thin, a transparent track, a rounded thumb in the theme (never the wide grey bar of the browser on hover) */
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--line) 55%, transparent) transparent; }
+*:hover { scrollbar-color: var(--line) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--line) 55%, transparent); background-clip: padding-box; border: 3px solid transparent; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--line); background-clip: padding-box; border-width: 2px; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 40px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+main { min-width: 0; }
+header h1 { font-size: 34px; line-height: 1.2; margin: 0 0 8px; }
+header p { color: var(--muted); margin: 0 0 32px; max-width: 70ch; }
+section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 28px 32px;
+  margin-bottom: 24px;
+  scroll-margin-top: 72px;
+}
+h2 { font-size: 22px; margin: 0 0 16px; }
+h3 { font-size: 17px; margin: 28px 0 10px; }
+/* What a page may hold without a class of its own: never a default of the browser. :where(): any rule of a component wins */
+:where(h4) { font-size: 15.5px; margin: 22px 0 8px; }
+:where(h5) { font-size: 14.5px; margin: 18px 0 6px; }
+:where(h6) { font-size: 13px; margin: 16px 0 6px; color: var(--muted); }
+:where(hr) { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
+:where(blockquote) { margin: 16px 0; padding: 4px 0 4px 16px; border-left: 3px solid var(--border); color: var(--muted); }
+:where(kbd) { font: 0.82em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+:where(mark) { background: color-mix(in srgb, var(--warn) 28%, transparent); color: var(--text); border-radius: 3px; padding: 0 3px; }
+:where(samp) { font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+:where(abbr[title]) { text-decoration: underline dotted var(--muted); cursor: help; }
+:where(small) { font-size: 13px; }
+:where(sub, sup) { line-height: 0; }
+:where(details) { margin: 12px 0; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; }
+:where(summary) { cursor: pointer; font-weight: 600; }
+:where(details[open] > summary) { margin-bottom: 8px; }
+:where(dl) { margin: 12px 0; }
+:where(dt) { font-weight: 600; }
+:where(dd) { margin: 0 0 8px 16px; }
+:where(caption) { caption-side: top; text-align: left; color: var(--muted); font-size: 13px; padding-bottom: 6px; }
+:where(fieldset) { margin: 12px 0; padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; min-width: 0; }
+:where(legend) { padding: 0 6px; color: var(--muted); font-size: 13px; font-weight: 600; }
+:where(input:not([type=checkbox], [type=radio], [type=range], [type=color], [type=file]), select, textarea) { font: inherit; font-size: 14.5px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; max-width: 100%; }
+:where(input, select, textarea)::placeholder { color: var(--muted); opacity: 1; }
+:where(input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+:where(button:not([class])) { font: inherit; font-size: 14px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+:where(button:not([class])):hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+:where(button:not([class])):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:where(button:disabled) { opacity: .55; cursor: not-allowed; }
+:where(progress, meter) { max-width: 100%; }
+p, li { max-width: 75ch; }
+a { color: var(--accent); }
+code {
+  font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--code-bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font: 13.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+pre code { background: none; padding: 0; }
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+td pre { margin: 0; }
+td > :first-child { margin-top: 0; }
+td > :last-child { margin-bottom: 0; }
+th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+.callout {
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  padding: 12px 16px;
+  border-radius: 0 6px 6px 0;
+  margin: 16px 0;
+}
+.callout.warn { background: var(--warn-soft); border-left-color: var(--warn); }
+.callout.ok { background: var(--ok-soft); border-left-color: var(--ok); }
+.callout > :first-child { margin-top: 0; }
+.callout > :last-child { margin-bottom: 0; }
+figure { margin: 20px 0; }
+figure svg { width: 100%; height: auto; display: block; }
+figcaption { color: var(--muted); font-size: 13px; margin-top: 6px; }
+:where(main, figure, .stepper, .diagram) svg text { fill: var(--text); } /* any text of a drawing: the theme's colour, no weight (every class below wins) */
+svg .box { fill: var(--node); stroke: var(--line); stroke-width: 1.2; }
+svg .box-alt { fill: var(--node-alt); stroke: var(--accent); stroke-width: 1.2; }
+svg .group { fill: none; stroke: var(--border); stroke-width: 1.5; stroke-dasharray: 5 4; }
+svg .lbl { fill: var(--text); font: 13px system-ui, sans-serif; }
+svg .small { fill: var(--muted); font: 11.5px system-ui, sans-serif; }
+svg .title { fill: var(--muted); font: 600 12px system-ui, sans-serif; letter-spacing: .05em; }
+svg .mono { fill: var(--text); font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; } /* values, code, file content */
+svg .mono-s { fill: var(--text); font: 11.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+svg .edge { stroke: var(--line); stroke-width: 1.4; fill: none; }
+svg .edge-accent { stroke: var(--accent); stroke-width: 1.6; fill: none; }
+svg .dash { stroke-dasharray: 4 4; }
+svg .arrow { fill: var(--line); }
+svg .arrow-accent { fill: var(--accent); }
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 18px;
+  height: 56px; padding: 0 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.tabs { display: flex; gap: 4px; margin-left: 8px; overflow-x: auto; }
+.tabs[hidden] { display: none; }
+.tabs a {
+  padding: 6px 12px; border-radius: 6px;
+  color: var(--muted); text-decoration: none; font-size: 14px; white-space: nowrap;
+}
+.tabs a:hover { color: var(--text); background: var(--code-bg); }
+.tabs a.current { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.topbar .spacer { flex: 1; }
+.topbar .tabs { scrollbar-width: none; } /* a long name squeezes the tabs: they scroll, no bar in the bar */
+.topbar .tabs::-webkit-scrollbar { display: none; }
+.topbar .top-actions { margin-left: auto; } /* on the right even when no tab or spacer pushes them (small screens) */
+.icon-btn {
+  display: grid; place-items: center;
+  width: 36px; height: 36px; padding: 0;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 50%;
+  cursor: pointer; text-decoration: none;
+  transition: border-color .15s, color .15s;
+}
+.icon-btn:hover { color: var(--accent); border-color: var(--accent); }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.icon-btn svg { width: 18px; height: 18px; }
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; padding: 24px 16px 60px; gap: 16px; }
+  .topbar { gap: 10px; padding: 0 12px; }
+  .brand .ver { display: none; }
+  .menu-btn { display: grid; }
+  .sidebar { position: fixed; top: 56px; left: 0; bottom: 0; z-index: 25; width: min(300px, 85vw); max-height: none; padding: 16px 10px; background: var(--bg); border-right: 1px solid var(--border); transform: translateX(-105%); transition: transform .2s; }
+  .sidebar.open { transform: none; box-shadow: 0 10px 40px rgba(0, 0, 0, .25); }
+  section { padding: 20px 16px; }
+  header h1 { font-size: 27px; }
+}
+/* Language switch (EN / FR pill) */
+.lang-switch {
+  display: inline-flex; align-items: center; gap: 2px; padding: 3px;
+  border: 1.5px solid var(--border); border-radius: 999px; background: var(--surface);
+}
+.lang-switch button {
+  border: 0; background: none; color: var(--text); cursor: pointer;
+  font: 600 12.5px system-ui, sans-serif; letter-spacing: .03em;
+  padding: 4px 11px; border-radius: 999px; transition: background .2s, color .2s;
+}
+.lang-switch button.on { background: var(--accent); color: var(--surface); }
+.lang-switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Theme switch: blue track + sun (light), black track + moon and stars (dark) */
+.theme-switch {
+  position: relative; width: 58px; height: 30px; flex: none; padding: 0; border: 0; border-radius: 999px;
+  background: #2196f3; cursor: pointer; transition: background .3s;
+}
+.theme-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.theme-switch .knob {
+  position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center; transition: transform .3s, background .3s;
+}
+.theme-switch .knob svg { width: 22px; height: 22px; }
+.theme-switch .sun { display: block; }
+.theme-switch .moon, .theme-switch .stars { display: none; }
+.theme-switch .stars { position: absolute; inset: 0; }
+.theme-switch .stars i { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #fff; }
+.theme-switch .stars i:nth-child(1) { left: 9px; top: 9px; }
+.theme-switch .stars i:nth-child(2) { left: 16px; top: 18px; width: 1.5px; height: 1.5px; }
+.theme-switch .stars i:nth-child(3) { left: 21px; top: 8px; width: 1.5px; height: 1.5px; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-switch { background: #0b0b0d; box-shadow: inset 0 0 0 1px #2a2c31; }
+  :root:not([data-theme="light"]) .theme-switch .knob { transform: translateX(28px); background: #ffffff; }
+  :root:not([data-theme="light"]) .theme-switch .sun { display: none; }
+  :root:not([data-theme="light"]) .theme-switch .moon, :root:not([data-theme="light"]) .theme-switch .stars { display: block; }
+}
+:root[data-theme="dark"] .theme-switch { background: #0b0b0d; box-shadow: inset 0 0 0 1px #2a2c31; }
+:root[data-theme="dark"] .theme-switch .knob { transform: translateX(28px); background: #ffffff; }
+:root[data-theme="dark"] .theme-switch .sun { display: none; }
+:root[data-theme="dark"] .theme-switch .moon, :root[data-theme="dark"] .theme-switch .stars { display: block; }
+/* Bilingual content: only the active language is shown */
+:root[lang="en"] [data-lang="fr"], :root[lang="fr"] [data-lang="en"] { display: none !important; }
+/* ---------- Header: logo + version badge, mobile menu ---------- */
+.brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; font-weight: 700; white-space: nowrap; }
+.brand .logo { width: 26px; height: 26px; flex: none; color: var(--accent); object-fit: contain; }
+.brand { min-width: 0; }
+.brand .repo-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.brand .ver { font-size: 12px; color: var(--muted); font-weight: 500; padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px; }
+.brand .ver:empty { display: none; } /* no version: the name alone */
+.menu-btn { display: none; }
+/* ---------- Sidebar tree (pages > sections of the current page) ---------- */
+.sidebar { position: sticky; top: 80px; align-self: start; max-height: calc(100vh - 100px); overflow-y: auto; font-size: 14px; }
+@media (max-width: 860px) { .sidebar { position: fixed; top: 56px; max-height: none; } } /* off-canvas menu: out of the flow */
+.sidebar p { margin: 0 0 8px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-size: 12px; }
+.sidebar a { display: block; padding: 5px 10px; color: var(--muted); text-decoration: none; border-left: 2px solid var(--border); }
+.sidebar a:hover, .sidebar a.active { color: var(--accent); border-left-color: var(--accent); }
+/* ---------- Page header: eyebrow + title + lead ---------- */
+.page-eyebrow { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--accent); margin-bottom: 6px; }
+header .lead { font-size: 17px; color: var(--muted); margin: 0 0 32px; max-width: 70ch; }
+/* ---------- Heading anchors ---------- */
+h2 .anchor, h3 .anchor { margin-left: 8px; color: var(--muted); font-weight: 400; text-decoration: none; opacity: 0; transition: opacity .15s; }
+h2:hover .anchor, h3:hover .anchor, .anchor:focus { opacity: 1; }
+/* ---------- Code blocks: title bar + copy button ---------- */
+pre { position: relative; }
+pre[data-title]::before {
+  content: attr(data-title); display: block; margin: -14px -16px 12px; padding: 6px 16px;
+  font: 12px system-ui, sans-serif; color: var(--muted); border-bottom: 1px solid var(--border);
+  background: var(--surface); border-radius: 7px 7px 0 0;
+}
+pre .copy {
+  position: absolute; top: 8px; right: 8px; font: 12px system-ui, sans-serif; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+  border-radius: 6px; padding: 3px 8px; opacity: 0; transition: opacity .15s;
+}
+pre[data-title] .copy { top: 5px; }
+pre[data-title]::before { white-space: normal; overflow-wrap: anywhere; padding-right: 72px; } /* a long title wraps: never under the Copy button, never past the block */
+.figure-scroll { overflow-x: auto; } /* a drawing on a small screen scrolls in its box (base.js), its labels stay readable */
+.figure-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+pre:hover .copy, pre .copy:focus { opacity: 1; }
+pre .copy:hover { color: var(--text); }
+/* ---------- Content tabs ---------- */
+.ctabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--border); margin: 12px 0; }
+.ctabs button { background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 8px 12px; cursor: pointer; color: var(--muted); font: 500 14px system-ui, sans-serif; }
+.ctabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+.ctab-panel { display: none; }
+.ctab-panel.active { display: block; }
+/* ---------- Previous / next page ---------- */
+.pager { display: flex; justify-content: space-between; gap: 16px; margin-top: 32px; }
+.pager a { flex: 1; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); text-decoration: none; }
+.pager a:hover { border-color: var(--accent); }
+.pager a span { display: block; font-size: 12px; color: var(--muted); }
+.pager a.next { text-align: right; }
+.pager:empty { display: none; }
+/* ---------- Footer ---------- */
+/* RGAA 12.7: skip link, first focusable element of the page (visible only when focused); the target is the main region */
+.skip-link { position: absolute; left: 8px; top: -64px; z-index: 1000; padding: 10px 14px; border-radius: 8px; background: var(--accent); color: var(--surface); font-weight: 600; text-decoration: none; }
+.skip-link:focus, .skip-link:focus-visible { top: 8px; outline: 2px solid var(--text); outline-offset: 2px; }
+.skip-link code { color: var(--surface); }
+main:focus { outline: none; }
+/* RGAA 7.3: a block that scrolls (code, table) is reached and scrolled with the keyboard */
+pre:focus-visible, .table-wrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+footer.site { max-width: 1180px; margin: 0 auto; padding: 22px 24px 30px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+footer.site a { color: var(--accent); }
+@media (max-width: 860px) {
+  .menu-btn { display: grid; }
+  footer.site { padding: 20px 16px; }
+  .topbar .tabs { display: none; } /* the sidebar (menu) gives the navigation on mobile */
+}
+.topbar .icon-btn, .topbar .lang-switch, .topbar .theme-switch { flex: none; }
+.topbar .tabs { min-width: 0; }
+@media (max-width: 860px) {
+  .topbar .spacer { display: none; }
+  .topbar .tabs { flex: 1 1 auto; }
+  .topbar .icon-btn { width: 32px; height: 32px; }
+}
+@media (max-width: 480px) {
+  .topbar { gap: 8px; padding: 0 10px; }
+  .topbar a.icon-btn[href] { display: none; } /* GitHub link: also in the footer / graph panel */
+  .lang-switch button { padding: 4px 9px; }
+}
+@media (min-width: 1340px) {
+  .layout { grid-template-columns: minmax(0, 1fr) minmax(0, 880px) minmax(0, 1fr); max-width: none; }
+  .layout > .sidebar { grid-column: 1; justify-self: end; width: 230px; }
+  .layout > main { grid-column: 2; }
+  footer.site { max-width: 880px; }
+}
+/* ---------- No scroll beyond the page ---------- */
+html, body { overscroll-behavior: none; }
+/* ---------- Top right actions: same height, grouped, divider ---------- */
+.top-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.top-actions .divider { width: 1px; height: 22px; background: var(--border); margin: 0 2px; }
+.top-actions .icon-btn { width: 34px; height: 34px; }
+.top-actions .lang-switch { height: 34px; padding: 3px; background: var(--code-bg); border: 1px solid var(--border); }
+.top-actions .lang-switch button { height: 26px; padding: 0 10px; font-size: 12px; }
+.top-actions .theme-switch { width: 56px; height: 30px; border: 1px solid transparent; }
+.top-actions .theme-switch .knob { top: 2px; left: 2px; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .top-actions .theme-switch { border-color: var(--border); box-shadow: none; }
+  :root:not([data-theme="light"]) .top-actions .theme-switch .knob { transform: translateX(26px); }
+}
+:root[data-theme="dark"] .top-actions .theme-switch { border-color: var(--border); box-shadow: none; }
+:root[data-theme="dark"] .top-actions .theme-switch .knob { transform: translateX(26px); }
+@media (max-width: 480px) { .top-actions .divider { display: none; } }
+/* ---------- Responsive: phones, tablets, touch screens, notches, TVs, print ---------- */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+img, video, canvas, svg { max-width: 100%; }
+img, video { height: auto; }
+main, footer.site, .sidebar { overflow-wrap: break-word; }
+code { overflow-wrap: anywhere; }
+pre, pre code { overflow-wrap: normal; }
+td code, th code { overflow-wrap: inherit; } /* base.js: a cell that keeps its words whole unless one is too long for any column */
+.sidebar { max-height: calc(100vh - 100px); max-height: calc(100dvh - 100px); overscroll-behavior: contain; }
+/* Notches and rounded corners (viewport-fit=cover): the content stays inside the safe area */
+.topbar { padding-left: max(20px, env(safe-area-inset-left)); padding-right: max(20px, env(safe-area-inset-right)); }
+.layout { padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); }
+footer.site { padding-bottom: max(30px, env(safe-area-inset-bottom)); }
+/* Very large screens (TV, 4K): a bigger base so the page stays readable at a distance */
+@media (min-width: 1900px) { body { font-size: 18px; } }
+@media (min-width: 2600px) { body { font-size: 21px; } }
+/* Tablets and small laptops: tighter column gap */
+@media (min-width: 861px) and (max-width: 1100px) { .layout { gap: 24px; grid-template-columns: 210px minmax(0, 1fr); } }
+@media (max-width: 860px) {
+  .topbar { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+  .layout { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  .sidebar { top: 56px; bottom: 0; height: auto; align-self: stretch; max-height: none; padding-bottom: max(16px, env(safe-area-inset-bottom)); overflow-y: auto; } /* the menu down to the bottom of the screen, not the height of its links */
+  input, select, textarea { font-size: 16px; } /* under 16px iOS zooms the page on focus */
+  table { font-size: 13.5px; }
+  th, td { padding: 6px 8px; }
+  pre { font-size: 12.5px; padding: 12px; }
+  pre[data-title]::before { margin: -12px -12px 12px; padding-left: 12px; } /* the padding of the block: else its title bar is wider than it and it scrolls for nothing */
+  .formula { flex-direction: column; align-items: flex-start; gap: 6px; }
+}
+@media (max-width: 600px) {
+  .pager { flex-direction: column; }
+  .pager a.next { text-align: left; }
+  section { border-radius: 8px; }
+  h2 { font-size: 20px; }
+  .ctabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .ctabs button { white-space: nowrap; flex: none; }
+}
+@media (max-width: 480px) {
+  .layout { padding-top: 16px; }
+  header h1 { font-size: 24px; }
+  header .lead { font-size: 16px; }
+  .callout { padding: 10px 12px; }
+}
+/* Phone held sideways: little height, keep the bar slim */
+@media (max-height: 480px) and (orientation: landscape) {
+  .topbar { height: 48px; }
+  .sidebar { top: 48px; }
+  section { scroll-margin-top: 56px; }
+}
+/* Touch (no hover): what only showed on hover is always there, and targets are finger sized */
+@media (hover: none) {
+  pre .copy { opacity: 1; }
+  pre:not([data-title]):not([data-nocopy]) { padding-top: 40px; } /* the Copy button always there: above the code, not over it */
+  h2 .anchor, h3 .anchor { opacity: 1; }
+  dfn[data-def] { cursor: pointer; }
+}
+@media (pointer: coarse) {
+  .icon-btn { width: 44px; height: 44px; }
+  .topbar .icon-btn { width: 40px; height: 40px; } /* over the size of a small screen: a finger first */
+  pre:not([data-title]):not([data-nocopy]) { padding-top: 50px; }
+  .top-actions .icon-btn { width: 40px; height: 40px; }
+  .tabs a, .ctabs button, .sidebar a { min-height: 44px; display: flex; align-items: center; }
+  .sidebar a { padding-top: 0; padding-bottom: 0; }
+  .lang-switch button, .top-actions .lang-switch button { min-height: 32px; min-width: 38px; }
+  pre .copy { padding: 8px 12px; font-size: 13px; }
+  summary { min-height: 44px; padding-block: 10px; } /* still a list item: its marker kept, a long word wraps */
+  .pager a, .btn { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+@media (forced-colors: active) {
+  .theme-switch, .lang-switch, .icon-btn { border: 1px solid ButtonText; }
+  .tabs a.current, .ctabs button.active, .lang-switch button.on { outline: 2px solid Highlight; }
+}
+@media print {
+  :root, :root[data-theme="dark"], :root:not([data-theme="light"]) {
+    color-scheme: light;
+    --bg: #ffffff; --surface: #ffffff; --text: #1d1f23; --muted: #5d636e; --border: #dad6cd; --accent: #2f5bd3; --accent-soft: #e6ecfb;
+    --warn: #a8540a; --warn-soft: #fbefe3; --ok: #1f7a4a; --ok-soft: #e3f4ea; --code-bg: #e9e6df; --node: #f7f5f0; --node-alt: #eef1f8; --line: #868c97;
+  }
+  .table-wrap, .figure-scroll { overflow: visible; }
+  td, th { white-space: normal !important; min-width: 0 !important; } /* base.js fits a table to the screen, not to the paper */
+  .topbar, .sidebar, .pager, .menu-btn, pre .copy, .top-actions, .h-anchor, .anchor { display: none !important; }
+  .layout { display: block; max-width: none; padding: 0; }
+  section { break-inside: avoid-page; border: 0; padding: 0 0 12px; background: none; }
+  pre { white-space: pre-wrap; overflow: visible; }
+  body { background: var(--bg); color: var(--text); }
+  a { color: inherit; }
+}
+
+/* better-html-style - the documentation site style (from the claude-cluster docs), on top of html-style: home hero, search
+   box and results, section tiles, sidebar groups, page meta, changelog list, kinds of results; phone / tablet / print */
+.layout.wide { grid-template-columns: minmax(0, 1fr); max-width: 1040px; margin-left: auto; margin-right: auto; }
+/* a page without sidebar (the home): its column centered at every width (html-style puts main in column 2 from 1340px) */
+@media (min-width: 1340px) { .layout.wide { max-width: 1040px; } .layout.wide > main { grid-column: 1; } }
+.embed .topbar, .embed footer.site { display: none; }
+.embed .sidebar { top: 0; }
+/* what a link reaches (a section, a heading, a message) stays visible under what sticks on top: the bar, the search of a phone */
+main, main [id] { scroll-margin-top: 72px; }
+.embed main, .embed main [id] { scroll-margin-top: 16px; }
+
+/* ----- home ----- */
+.hero { text-align: center; padding: 28px 0 8px; }
+.hero h1 { font-size: 40px; margin: 0 0 6px; }
+.hero .lead { margin: 0 auto 18px; }
+.badge { display: inline-block; max-width: 100%; padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px; font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); background: var(--surface); text-transform: none; letter-spacing: 0; overflow-wrap: anywhere; } /* a version, a commit: never the capitals of the eyebrow */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr)); gap: 16px; margin: 24px 0; }
+.tile { display: block; padding: 20px 22px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; color: var(--text); text-decoration: none; transition: border-color .15s, background .15s; }
+.tile:hover { border-color: var(--accent); background: var(--code-bg); }
+.tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tile h2 { margin: 8px 0 4px; font-size: 17px; } /* a tile is a section of the home: h2 under the h1 (RGAA 9.1) */
+.tile p { margin: 0; color: var(--muted); font-size: 14.5px; }
+.tile svg { width: 26px; height: 26px; color: var(--accent); }
+.tile .count { float: right; font-size: 12.5px; color: var(--muted); }
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; } /* minmax(0): a wide table or code scrolls in its column, never pushes it out of the card */
+.links { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 8px 0 0; }
+.links a { min-width: 0; padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); text-decoration: none; overflow-wrap: anywhere; }
+.links a:hover { border-color: var(--accent); }
+.cl { list-style: none; margin: 0; padding: 0; }
+.cl li { display: flex; gap: 12px; max-width: none; padding: 8px 0; border-top: 1px solid var(--border); }
+.cl li:first-child { border-top: 0; }
+.cl b { flex: none; min-width: 56px; max-width: 38%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 600; overflow-wrap: anywhere; } /* a long version wraps in its column, the text keeps the width of the row */
+.cl li > span { flex: 1; min-width: 0; max-width: 75ch; overflow-wrap: anywhere; }
+
+/* ----- search ----- */
+.sbox { position: relative; max-width: 640px; margin: 0 auto; text-align: left; }
+.sbox input { display: block; width: 100%; box-sizing: border-box; padding: 14px 16px 14px 44px; font: inherit; font-size: 17px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+.sbox input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.sbox > svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; color: var(--muted); pointer-events: none; }
+.sbox.small input { padding: 7px 10px 7px 34px; font-size: 14.5px; }
+.sbox.small > svg { left: 10px; width: 16px; height: 16px; }
+.sbox kbd.hint { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; pointer-events: none; }
+.sbox input:focus ~ kbd.hint, .sbox input:not(:placeholder-shown) ~ kbd.hint { display: none; }
+.results { position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 6px); margin: 0; padding: 6px; list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 40px rgba(0, 0, 0, .2); max-height: 60vh; overflow: auto; }
+.results[hidden] { display: none; }
+.results a { display: flex; gap: 10px; align-items: baseline; padding: 8px 10px; border-radius: 6px; color: var(--text); text-decoration: none; }
+.results li.sel a, .results a:hover { background: var(--code-bg); }
+.results .t { flex: 1 1 60%; min-width: 0; overflow-wrap: anywhere; }
+.results .d { display: block; font-size: 13px; color: var(--muted); }
+.results mark { background: var(--accent-soft); color: var(--accent); border-radius: 3px; padding: 0 1px; }
+.results .none { padding: 10px; color: var(--muted); }
+.kind { font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+.results .kind { flex: 0 1 auto; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* a long kind never takes the room of its title */
+.kind.docs, .kind.page { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.kind.settings, .kind.config { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+.kind.tools, .kind.api, .kind.message, .kind.protocol { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+.kind.keys, .kind.explain { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+/* the bar holds everything on one line at any width: its name gives way first, then the search */
+.topbar .brand { flex-shrink: 100; min-width: 28px; }
+.topbar .top-actions { flex: 0 1 auto; min-width: 0; }
+.top-actions .divider { flex: none; }
+.topbar .sbox.small { flex: 0 1 260px; width: 260px; min-width: 110px; margin: 0 8px; }
+.topbar .sbox.small .results { left: auto; right: 0; width: 440px; max-width: calc(100vw - 24px); }
+/* a narrow bar: the switches after the box leave it far from the right of the screen, the results hold to the screen, never past its left edge */
+@media (max-width: 1100px) { .topbar .sbox.small .results { position: fixed; top: 62px; right: 12px; width: min(440px, calc(100vw - 24px)); } }
+@media (max-width: 1100px) and (max-height: 480px) and (orientation: landscape) { .topbar .sbox.small .results { top: 54px; } }
+.sbox.small.mob { position: sticky; top: 56px; z-index: 19; width: auto; margin: 0; padding: 8px 12px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.embed .sbox.small.mob { top: 0; } /* the embedded copy has no top bar: the very top */
+@media (max-height: 480px) and (orientation: landscape) { .sbox.small.mob { top: 48px; } .embed .sbox.small.mob { top: 0; } }
+.sbox.small.mob > svg { left: 22px; }
+.sbox.small.mob .results, .topbar .sbox.small.mob .results { left: 12px; right: 12px; width: auto; }
+
+/* ----- pages ----- */
+kbd { display: inline-block; max-width: 100%; white-space: normal; overflow-wrap: break-word; padding: 0 6px; font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text); background: var(--code-bg); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; }
+.sidebar .grp { margin: 16px 0 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.sidebar a.cur { color: var(--accent); font-weight: 600; }
+.sidebar hr { border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
+.brand .logo { width: 28px; height: 28px; }
+header p:has(+ .page-meta) { margin-bottom: 12px; }
+.page-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 24px; font-size: 13px; color: var(--muted); } /* close to the lead, not stuck on the first card */
+.page-meta > * { min-width: 0; overflow-wrap: anywhere; }
+.page-meta a { color: var(--muted); }
+.page-meta a:hover { color: var(--accent); }
+main pre { overflow-x: auto; }
+main li > ul, main li > ol { margin-top: 4px; }
+.callout.planned { border-left-color: var(--warn); }
+.pill { display: inline-block; max-width: 100%; padding: 0 8px; overflow-wrap: anywhere; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); color: var(--muted); }
+details.more { margin: 14px 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+details.more > summary { cursor: pointer; padding: 10px 14px; font-weight: 600; }
+details.more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+details.more > div { padding: 0 14px 6px; }
+.feedback { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 24px; padding: 14px 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.feedback > span { min-width: 0; overflow-wrap: anywhere; }
+.feedback button { padding: 5px 14px; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+.feedback button:hover { border-color: var(--accent); }
+.feedback button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ----- responsive ----- */
+@media (max-width: 860px) { .two { grid-template-columns: minmax(0, 1fr); } .hero h1 { font-size: 30px; } .topbar .sbox.small { flex-basis: 200px; width: 200px; } .sbox.small input { font-size: 16px; } .sbox kbd.hint { display: none; } } /* 16px: under it iOS zooms the page on focus; the hint: the box may be too small for it */
+@media (max-width: 480px) { body:has(.sbox.small) .hero .sbox { display: none; } } /* a phone: the search under the top bar only (never two, one in the middle of the home) */
+@media (max-width: 480px) { .tile { padding: 16px; } .hero { padding-top: 12px; } .hero h1 { font-size: 26px; } .sbox input { font-size: 16px; } main, main [id] { scroll-margin-top: 128px; } .embed main, .embed main [id] { scroll-margin-top: 72px; } } /* the bar + the search under it */
+@media (pointer: coarse) { .results a { min-height: 44px; align-items: center; } .links a { min-height: 44px; display: inline-flex; align-items: center; } .topbar .menu-btn { width: 40px; height: 40px; } summary { display: list-item; } } /* a summary keeps its marker: a flex one loses it */
+@media print {
+  .topbar, .sidebar, .pager, .feedback, .sbox, .page-meta a.edit, .keys-toggle { display: none !important; }
+  /* paper does not scroll: the short cells docTables kept on one line wrap there and the table is denser, so that a wide one fits the page */
+  table { font-size: 12px; }
+  th, td { padding: 4px 6px; white-space: normal !important; }
+}
+
+/* RGAA 12.10: the one-character shortcut of the search can be turned off */
+.sbox kbd.hint[hidden] { display: none; }
+.keys-toggle { display: inline-flex; align-items: center; gap: 8px; margin-left: 16px; cursor: pointer; }
+@media (max-width: 480px) { .keys-toggle { display: flex; margin: 6px 0 0; } } /* its own line under the text of the footer, not indented */
+.keys-toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+.keys-toggle input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (pointer: coarse) { .keys-toggle { display: none; } }
+
+/* better-html-doc - what mdlib.py and the generator write and the style skills do not know: on top of better-html-style, tokens only */
+/* a task item: the box where the bullet would be, its text aligned like any item, the state readable in both themes (a disabled box of the browser is pale) */
+main li.task { position: relative; list-style: none; }
+main li.task > input { appearance: none; position: absolute; left: -1.45em; top: .3em; width: 1em; height: 1em; margin: 0; border: 1.5px solid var(--muted); border-radius: 3px; background: var(--surface); }
+main li.task > input:checked { border-color: var(--accent); background: var(--accent); }
+main li.task > input:checked::after { content: ""; position: absolute; left: 30%; top: 8%; width: 28%; height: 56%; border: solid var(--surface); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+/* an item with blocks: its paragraphs without the margin that would push its first line under its bullet */
+main li > p:first-child { margin-top: 0; }
+main li > p:last-child { margin-bottom: 0; }
+main del { color: var(--muted); }
+/* raw HTML of a page: a frame never wider than its card (the other media are in html-style) */
+main iframe, main embed, main object, main audio { max-width: 100%; }
+/* the title of the previous / next page: every language in its span, the same as the bare text of a site of one language (only the label is small) */
+.pager a > span + span { font-size: inherit; color: inherit; }
+/* on paper a table has the width of the page: what its columns keep (a min-width on its first row) is for a screen, where it can scroll */
+@media print { main th, main td { min-width: 0 !important; } }
+</style>
+<style data-kind="explain">
+/* ---------- Explanation pages (explain-doc), on top of html-style (its layout is kept as is) ---------- */
+/* Level switch (Simple | Technical): same pill as the language switch */
+.level-switch { display: inline-flex; align-items: center; gap: 2px; height: 34px; padding: 3px; border: 1px solid var(--border); border-radius: 999px; background: var(--code-bg); }
+.level-switch button { height: 26px; border: 0; background: none; color: var(--text); cursor: pointer; font: 600 12px system-ui, sans-serif; letter-spacing: .03em; padding: 0 10px; border-radius: 999px; white-space: nowrap; transition: background .2s, color .2s; }
+.level-switch button.on { background: var(--accent); color: var(--surface); }
+.level-switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Only the content of the active level is shown (no data-level = both levels) */
+:root[data-level="simple"] [data-level="technical"], :root[data-level="technical"] [data-level="simple"] { display: none !important; }
+.level-badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); vertical-align: middle; }
+/* One-sentence summary: as wide as the cards under it */
+.tldr { font-size: 18px; line-height: 1.5; padding: 16px 20px; border-radius: 10px; background: var(--accent-soft); border-left: 3px solid var(--accent); margin: 0 0 24px; max-width: none; }
+.tldr strong { color: var(--accent); }
+/* Small print under a section (sources) */
+p.small { font-size: 13px; color: var(--muted); }
+/* Stepper: animated diagram, one state per step; controls + caption above the drawing */
+.stepper .view svg { max-height: min(400px, 58vh); margin-inline: auto; }
+.stepper:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.stepper svg [data-show], .stepper svg [data-text], .stepper svg [data-at] { transition: opacity .16s ease, transform .45s ease, fill .3s; }
+.stepper svg .off, .stepper svg .fading { opacity: 0; }
+.stepper svg rect, .stepper svg circle, .stepper svg path { transition: fill .25s, stroke .25s; }
+.stepper svg .hl { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2.4; }
+.stepper svg .hl-warn { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 2.4; }
+.stepper svg :is(.edge, .edge-accent, .curve, .curve-2):is(.hl, .hl-warn) { fill: none; } /* a line stays a line, never a filled area */
+.stepper svg text.hl, .stepper svg text.hl-warn { stroke: none; }
+.stepper svg text.hl, .stepper svg text.changed { fill: var(--accent); font-weight: 700; }
+.stepper svg text.hl-warn { fill: var(--warn); }
+.stepper.init *, .stepper.init *::before, .stepper.init *::after { transition: none !important; }
+/* The head follows the scroll only when the figure is taller than the screen (class set by explain.js) */
+.stepper.tall .step-head { position: sticky; top: 64px; }
+.stepper .step-head { z-index: 5; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.stepper .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.stepper .controls button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; min-width: 32px; padding: 0 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); cursor: pointer; font: 500 13px/1 system-ui, sans-serif; white-space: nowrap; }
+.stepper .controls button svg { width: 14px; height: 14px; flex: none; fill: currentColor; }
+.stepper .controls button.play { min-width: 76px; padding: 0 12px; }
+.stepper .controls button:hover { border-color: var(--accent); color: var(--accent); }
+.stepper .controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stepper .controls .count { color: var(--muted); font-size: 13px; margin-left: 4px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stepper .progress { flex: 1; min-width: 80px; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.stepper .progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+/* Captions stacked in one cell: cross-fade, the height of the longest one (the drawing doesn't jump); the cell never wider than the head */
+.stepper .captions { display: grid; grid-template-columns: minmax(0, 1fr); list-style: none; padding: 0; margin: 10px 0 0; }
+.stepper .captions > li { grid-area: 1 / 1; opacity: 0; visibility: hidden; transition: opacity .2s ease, visibility 0s .2s; font-size: 15px; line-height: 1.5; }
+.stepper .captions > li.on { opacity: 1; visibility: visible; transition: opacity .2s ease .1s, visibility 0s; }
+.stepper .captions > li b:first-child { color: var(--accent); }
+/* Formula: MathML block + its variables. What does not fit scrolls from its start: never centered past the left edge */
+.formula { display: flex; align-items: center; gap: 16px; margin: 16px 0; padding: 14px 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); overflow-x: auto; }
+.formula:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.formula math { flex: 1 0 auto; font-size: 1.25em; }
+.formula .num { flex: none; color: var(--muted); font-size: 13px; }
+/* Playground: inputs -> computed outputs / drawing */
+.playground { margin: 16px 0; padding: 18px 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.playground > :last-child { margin-bottom: 0; }
+.playground .inputs { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: end; margin-bottom: 14px; }
+.playground .inputs > * { min-width: 0; max-width: 100%; }
+/* A label reads as a sentence (text and <output> on one line), its field under it; a box or a radio stays in front of its text */
+.playground label { display: block; font-size: 13px; color: var(--muted); font-weight: 600; }
+.playground label > :is(input:not([type="checkbox"], [type="radio"]), select, textarea) { display: block; margin-top: 4px; max-width: 100%; }
+.playground label > input:is([type="checkbox"], [type="radio"]) { margin: 0 6px 0 0; vertical-align: -2px; }
+.playground :is(input, select, textarea) { font-weight: 400; }
+.playground input[type="range"] { width: min(320px, 70vw); accent-color: var(--accent); }
+.playground input[type="text"], .playground input[type="number"] { font: 15px ui-monospace, Menlo, Consolas, monospace; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+.playground input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The action of a playground; the copy button of a code block and the tabs keep their own look */
+.playground button:not(pre > button, .ctabs > button) { min-height: 32px; padding: 4px 12px; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: var(--surface); cursor: pointer; font: 600 13px system-ui, sans-serif; }
+.playground button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* A box per output, as wide as its longest word: a value never cut in two as long as it fits the playground */
+.playground .outputs { display: flex; flex-wrap: wrap; gap: 10px; }
+.playground .out { flex: 1 1 150px; max-width: 100%; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); }
+.playground .out span { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.playground .out b { font: 600 22px ui-monospace, Menlo, Consolas, monospace; color: var(--text); font-variant-numeric: tabular-nums; }
+.playground output { font-variant-numeric: tabular-nums; color: var(--text); }
+/* Charts drawn in SVG by the page scripts */
+svg .axis { stroke: var(--muted); stroke-width: 1; }
+svg .grid { stroke: var(--border); stroke-width: 1; }
+svg .curve { fill: none; stroke: var(--accent); stroke-width: 2.2; }
+svg .curve-2 { fill: none; stroke: var(--warn); stroke-width: 2.2; stroke-dasharray: 6 4; }
+svg .dot { fill: var(--accent); }
+svg .dot-2 { fill: var(--warn); }
+svg .mark { stroke: var(--text); stroke-width: 1; stroke-dasharray: 3 3; }
+/* Glossary terms: the definition opens in one box of the page, placed on the term inside the screen by explain.js (nothing clips it) */
+dfn[data-def] { font-style: normal; border-bottom: 1px dashed var(--accent); cursor: help; }
+dfn[data-def]:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dfn-pop {
+  position: fixed; z-index: 40; width: max-content; max-width: min(320px, calc(100vw - 16px)); max-height: min(60vh, 420px); overflow-y: auto; overflow-wrap: break-word;
+  padding: 8px 10px; border-radius: 6px; background: var(--text); color: var(--bg); font: 400 13px/1.45 system-ui, sans-serif;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .2); transition: none;
+}
+.dfn-pop:focus { outline: none; }
+.dfn-pop code { background: none; color: inherit; } /* the box is inverted: a chip of a page script keeps its text readable */
+/* Check yourself: the answer's blocks keep their own padding (a code block, a callout) */
+details.quiz { margin: 10px 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+details.quiz summary { padding: 10px 14px; margin: 0; cursor: pointer; font-weight: 600; }
+details.quiz summary::marker { color: var(--accent); }
+details.quiz[open] summary { border-bottom: 1px solid var(--border); }
+details.quiz > :not(summary) { margin-inline: 14px; }
+/* Compare cards (two approaches side by side) */
+.compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 12px; margin: 14px 0; }
+.compare > div { padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.compare > div > :first-child { margin-top: 0; }
+.compare > div > :last-child { margin-bottom: 0; }
+.compare h4 { margin: 0 0 6px; font-size: 15px; }
+@media (max-width: 860px) {
+  /* Drawings keep readable labels: they scroll in their box instead of shrinking (never drawn above their viewBox: --drawn-min, explain.js) */
+  .stepper .view, figure > .view { overflow-x: auto; }
+  .stepper .view:focus-visible, figure > .view:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .stepper .view svg, figure > .view svg { min-width: var(--drawn-min, 0); }
+  .stepper.tall .step-head { top: 56px; }
+  .level-switch button { padding: 0 8px; }
+  .formula { flex-direction: column; }
+  .formula math { flex: none; align-self: flex-start; width: max-content; min-width: 100%; }
+  .playground input[type="text"], .playground input[type="number"] { font-size: 16px; } /* under 16px iOS zooms the page on focus */
+}
+@media (max-width: 480px) {
+  .brand .repo-name { display: none; } /* room for the level and theme switches */
+}
+@media (prefers-reduced-motion: reduce) {
+  .stepper svg *, .stepper .progress i, .stepper .captions > li { transition: none !important; }
+}
+/* Phones and touch screens */
+@media (max-width: 600px) {
+  .tldr { font-size: 16px; padding: 12px 14px; }
+  .playground { padding: 14px 12px; }
+  .playground .inputs { gap: 12px; }
+  .playground input[type="range"] { width: 100%; }
+  .playground label { width: 100%; }
+  .playground label > :is(input:not([type="checkbox"], [type="radio"]), select, textarea) { width: 100%; }
+  .playground .out b { font-size: 19px; }
+  .formula { padding: 10px 12px; }
+  .stepper .controls .progress { flex-basis: 100%; order: 5; }
+}
+@media (pointer: coarse) {
+  .stepper .controls button { height: 44px; min-width: 44px; }
+  .playground button:not(pre > button, .ctabs > button) { min-height: 44px; }
+  .playground input[type="range"] { height: 32px; }
+  .level-switch { height: 40px; }
+  .level-switch button { height: 32px; min-width: 52px; }
+  details.quiz summary { display: list-item; } /* keeps its marker, and a long word wraps */
+}
+/* The smallest phones with the two switches and the theme: the bar holds them, nothing sticks out of the page */
+@media (max-width: 400px) {
+  .topbar:has(.lang-switch) .top-actions { gap: 4px; }
+  .topbar:has(.lang-switch) :is(.level-switch, .lang-switch) button { min-width: 0; padding: 0 6px; font-size: 11.5px; letter-spacing: 0; }
+}
+@media (max-width: 350px) {
+  .topbar:has(.lang-switch) .brand { display: none; }
+}
+@media print {
+  .stepper .controls, .level-switch, .dfn-pop { display: none; }
+  /* The last state of the drawing (explain.js) with every caption under the other, not one state and a blank */
+  .stepper.tall .step-head { position: static; }
+  .stepper .captions { display: block; margin: 0; padding-left: 20px; list-style: decimal; }
+  .stepper .captions > li { opacity: 1; visibility: visible; }
+  .stepper .view, figure > .view, .formula { overflow: visible; }
+  .stepper .view svg { max-height: none; }
+}
+
+/* better-explain-doc - an explanation page inside a better-html-doc site: the level switch next to the search, the level shown on
+   the page header, the stepper / playground cards at the width of the site column; phone layout */
+.topbar .level-switch { flex: none; margin-right: 4px; }
+main > header .level-note { display: inline-block; margin-top: 10px; font-size: 13px; color: var(--muted); }
+:root[data-level="simple"] .level-note .technical, :root[data-level="technical"] .level-note .simple { display: none; }
+main section > div[data-level] > :first-child { margin-top: 0; }
+.results .kind.explain { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.embed .stepper.tall .step-head { top: 8px; } /* no top bar in the embedded copy */
+main > header > .level-switch { margin: 0 0 24px; } /* the level switch of the embedded copy: site.js moves it there */
+/* Phone: on these pages the search takes its row under the bar from 640px (site.js): what sticks, or is reached by a link, stays visible under it */
+@media (max-width: 640px) {
+  .top-actions .divider { display: none; }
+  main, main [id] { scroll-margin-top: 128px; }
+  .stepper.tall .step-head { top: 116px; }
+  .embed main, .embed main [id] { scroll-margin-top: 72px; }
+  .embed .stepper.tall .step-head { top: 60px; }
+}
+@media (max-width: 600px) { .topbar .level-switch button { padding: 4px 8px; font-size: 12.5px; } }
+@media (max-width: 480px) {
+  .topbar .level-switch button { padding: 3px 6px; font-size: 12px; }
+  .topbar .top-actions { margin-left: auto; }
+}
+@media (max-width: 400px) { .topbar .level-switch { margin-right: 0; } }
+@media print { .level-switch { display: none !important; } }
+
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main" data-i18n>Skip to the content</a>
+<header class="topbar">
+  <button class="icon-btn menu-btn" type="button" id="menuBtn" aria-label="Open the navigation" data-i18n-aria-label><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+  <a class="brand" href="index.html"><svg class="logo" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="xdesk">
+  <rect x="2" y="2" width="60" height="60" rx="6" fill="#14181b"/>
+  <rect x="2" y="54" width="60" height="4" fill="#3ddc97"/>
+  <g fill="none" stroke-linecap="square">
+    <rect x="12" y="13" width="40" height="28" stroke="#3ddc97" stroke-width="4"/>
+    <line x1="24" y1="47" x2="40" y2="47" stroke="#3ddc97" stroke-width="4"/>
+    <line x1="26" y1="21" x2="38" y2="33" stroke="#e4e7e9" stroke-width="4"/>
+    <line x1="38" y1="21" x2="26" y2="33" stroke="#e4e7e9" stroke-width="4"/>
+  </g>
+</svg><span class="repo-name">xdesk</span><span class="ver repo-version">v1.0.0</span></a>
+  <nav class="tabs" aria-label="Pages" hidden></nav>
+  <span class="spacer"></span>
+  <div class="top-actions">
+  <div class="lang-switch" role="group" aria-label="Language" data-i18n-aria-label>
+    <button type="button" data-set-lang="en" class="on">EN</button>
+    <button type="button" data-set-lang="fr">FR</button>
+  </div>
+  <span class="divider" aria-hidden="true"></span><div class="level-switch" role="group" aria-label="Level" data-i18n-aria-label>
+    <button type="button" data-set-level="simple" data-i18n>Simple</button>
+    <button type="button" data-set-level="technical" data-i18n>Technical</button>
+  </div>
+  <span class="divider" aria-hidden="true"></span>
+<div class="sbox small"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" autocomplete="off" aria-label="Search" data-i18n-aria-label placeholder="Search…" data-ph-fr="Rechercher…"><kbd class="hint" aria-hidden="true">/</kbd><ul class="results" hidden></ul></div>
+<a class="icon-btn" href="https://github.com/TsukiNi22/xdesk" aria-label="GitHub repository" data-i18n-aria-label title="GitHub repository" data-i18n-title><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6l-5 6 5 6M16 6l5 6-5 6"/></svg></a>
+  <button class="theme-switch" type="button" id="themeToggle" role="switch" aria-checked="false" aria-label="Toggle theme" data-i18n-aria-label title="Toggle theme" data-i18n-title>
+    <span class="stars" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="knob" aria-hidden="true">
+      <svg class="sun" viewBox="0 0 24 24" fill="#ffffff"><circle cx="12" cy="12" r="5.2"/><g stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"><path d="M12 1.8v2.6M12 19.6v2.6M1.8 12h2.6M19.6 12h2.6M4.8 4.8l1.8 1.8M17.4 17.4l1.8 1.8M4.8 19.2l1.8-1.8M17.4 6.6l1.8-1.8"/></g></svg>
+      <svg class="moon" viewBox="0 0 24 24"><path d="M15.6 4.2a8 8 0 1 0 4.2 11.6A7 7 0 0 1 15.6 4.2z" fill="#f6c343"/></svg>
+    </span>
+  </button>
+  </div>
+</header>
+<div class="layout" id="top">
+<aside class="sidebar" id="sidebar"><p data-i18n>On this page</p><a href="#idea">1. <span data-lang="en">The idea</span><span data-lang="fr">L&#x27;idée</span></a><a href="#how">2. <span data-lang="en">How it works</span><span data-lang="fr">Comment ça marche</span></a><a href="#flow">3. <span data-lang="en">How fast</span><span data-lang="fr">À quelle vitesse</span></a><a href="#transports">4. <span data-lang="en">Over UDP and extra sockets</span><span data-lang="fr">En UDP et sockets supplémentaires</span></a><a href="#pitfalls">5. <span data-lang="en">Pitfalls</span><span data-lang="fr">Pièges</span></a><a href="#quiz">6. <span data-lang="en">Check yourself</span><span data-lang="fr">Vérifie-toi</span></a><a href="#glossary">7. <span data-lang="en">Glossary</span><span data-lang="fr">Glossaire</span></a><hr><div class="grp"><span data-lang="en">User guide</span><span data-lang="fr">Guide utilisateur</span></div><a href="getting-started.html"><span data-lang="en">Getting started</span><span data-lang="fr">Premiers pas</span></a><a href="share-a-pc.html"><span data-lang="en">Share a PC</span><span data-lang="fr">Partager un PC</span></a><a href="connect.html"><span data-lang="en">Connect to a PC</span><span data-lang="fr">Se connecter à un PC</span></a><a href="exposure.html"><span data-lang="en">Reach it from outside</span><span data-lang="fr">L&#x27;atteindre de l&#x27;extérieur</span></a><div class="grp"><span data-lang="en">Concepts</span><span data-lang="fr">Concepts</span></div><a href="how-pairing-works.html"><span data-lang="en">How pairing works</span><span data-lang="fr">Comment marche l&#x27;appairage</span></a><a href="how-the-screen-is-sent.html" class="cur" aria-current="page"><span data-lang="en">How the screen is sent</span><span data-lang="fr">Comment l&#x27;écran est envoyé</span></a><div class="grp"><span data-lang="en">Reference</span><span data-lang="fr">Référence</span></div><a href="commands.html"><span data-lang="en">Commands and flags</span><span data-lang="fr">Commandes et flags</span></a><a href="settings.html"><span data-lang="en">Settings</span><span data-lang="fr">Réglages</span></a><a href="protocol.html"><span data-lang="en">Protocol</span><span data-lang="fr">Protocole</span></a><a href="files.html"><span data-lang="en">Files and logs</span><span data-lang="fr">Fichiers et logs</span></a><div class="grp"><span data-lang="en">Resources</span><span data-lang="fr">Ressources</span></div><a href="packages.html"><span data-lang="en">Packages, Windows and Android</span><span data-lang="fr">Paquets, Windows et Android</span></a><a href="development.html"><span data-lang="en">Development</span><span data-lang="fr">Développement</span></a><a href="limits.html"><span data-lang="en">Known limits</span><span data-lang="fr">Limites connues</span></a><a href="faq.html"><span data-lang="en">FAQ</span><span data-lang="fr">FAQ</span></a><div class="grp"><span data-lang="en">Security</span><span data-lang="fr">Sécurité</span></div><a href="security-model.html"><span data-lang="en">Security model</span><span data-lang="fr">Modèle de sécurité</span></a><a href="tamper-protection.html"><span data-lang="en">Tamper protection</span><span data-lang="fr">Protection contre l&#x27;altération</span></a></aside><main id="main" tabindex="-1"><header><div class="page-eyebrow"><span data-lang="en">Concepts</span><span data-lang="fr">Concepts</span></div><h1><span data-lang="en">How the screen is sent</span><span data-lang="fr">Comment l&#x27;écran est envoyé</span></h1><p class="lead"><span data-lang="en">Why a still screen costs nothing, how scrolling and video are handled, and how the stream adapts to a slow or lossy link.</span><span data-lang="fr">Pourquoi un écran immobile ne coûte rien, comment le défilement et la vidéo sont traités, et comment le flux s&#x27;adapte à un lien lent ou avec pertes.</span></p></header><div data-lang="en"><div data-level="simple"><p class="tldr"><strong>In one sentence:</strong> xdesk only sends the parts of the screen that changed, reuses what the viewer already has when you scroll, and sends less or blurrier pictures while the link is slow, then sharp ones again.</p></div><div data-level="technical"><p class="tldr"><strong>Definition:</strong> a per-session dirty-tile encoder (64×64 tiles hashed, JPEG / solid / palette / copy tiles, H.264 for large moves on a bottleneck link) driven by an ack-based flow control (frames in flight sized from the measured ping and bandwidth), over TLS websockets, encrypted UDP for the native viewers, or up to 4 websockets for the web viewers on lossy paths.</p></div></div><div data-lang="fr"><div data-level="simple"><p class="tldr"><strong>En une phrase :</strong> xdesk n'envoie que les parties de l'écran qui ont changé, réutilise ce que le viewer a déjà quand tu fais défiler, et envoie des images plus légères pendant que le lien est lent, puis nettes à nouveau.</p></div><div data-level="technical"><p class="tldr"><strong>Définition :</strong> un encodeur de tuiles modifiées par session (tuiles 64×64 hachées, tuiles JPEG / unies / palette / copy, H.264 pour les grands mouvements sur un lien goulot) piloté par un contrôle de flux à acquittements (images en vol dimensionnées depuis le ping et le débit mesurés), sur des websockets TLS, de l'UDP chiffré pour les viewers natifs, ou jusqu'à 4 websockets pour les viewers web sur les chemins avec pertes.</p></div></div><section id="idea"><h2>1. <span data-lang="en">The idea</span><span data-lang="fr">L'idée</span></h2><div data-lang="en"><div data-level="simple"><p>Think of a whiteboard filmed for someone far away. If only one word changes, you don't send a new photo of the whole board: you send the corner with the word. If the text slides up, you say "move this part up" and only send the new line at the bottom.</p></div><div data-level="technical"><p>The host keeps, per session, the hash of every tile the viewer has. A capture frame only produces tiles whose hash changed; a capture with nothing new produces nothing. The encoding of a tile is chosen from its content (solid, palette, JPEG) and from the history (copy of a previous region), and the pace from the acks of the viewer.</p></div></div><div data-lang="fr"><div data-level="simple"><p>Imagine un tableau blanc filmé pour quelqu'un au loin. Si un seul mot change, tu n'envoies pas une nouvelle photo de tout le tableau : tu envoies le coin avec le mot. Si le texte remonte, tu dis « monte cette partie » et tu n'envoies que la nouvelle ligne en bas.</p></div><div data-level="technical"><p>L'hôte garde, par session, le hash de chaque tuile que le viewer possède. Une capture ne produit que les tuiles dont le hash a changé ; une capture sans nouveauté ne produit rien. L'encodage d'une tuile est choisi selon son contenu (unie, palette, JPEG) et l'historique (copie d'une région précédente), et le rythme selon les acquittements du viewer.</p></div></div></section><section id="how"><h2>2. <span data-lang="en">How it works</span><span data-lang="fr">Comment ça marche</span></h2><div data-lang="en"><figure class="stepper" data-steps="6">
+  <ol class="captions">
+    <li><b>First frame.</b> The viewer has nothing yet: every 64×64 tile is sent.</li>
+    <li><b>Hash.</b> Something moves: the tiles are hashed and 3 of the 32 differ from what the viewer has.</li>
+    <li><b>Encode.</b> Only those 3 go: a one-color tile as 3 bytes, the changed tiles of one row merged in one JPEG (or a lossless palette for text).</li>
+    <li><b>Scroll.</b> The page scrolls by one row: the moved tiles are found higher in the previous frame and sent as <i>copy</i> tiles; only the revealed row is encoded.</li>
+    <li><b>Motion.</b> More than a quarter of the tiles change (a video): a lighter JPEG, or one H.264 frame of the whole screen while the link of the viewer is the bottleneck.</li>
+    <li><b>Still.</b> The screen stops moving: the same tiles are sent again, sharp.</li>
+  </ol>
+  <svg viewBox="0 0 760 210" role="img" aria-label="screen tiles sent at each step">
+    <rect id="en-tl-panel" class="group" x="350" y="35" width="390" height="150" rx="8"/>
+    <rect id="en-tl-t00" class="box" x="30" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t10" class="box" x="68" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t20" class="box" x="106" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t30" class="box" x="144" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t40" class="box" x="182" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t50" class="box" x="220" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t60" class="box" x="258" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t70" class="box" x="296" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t01" class="box" x="30" y="78" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t11" class="box" x="68" y="78" width="34" height="34" rx="3" data-hl="0,2,5" data-warn="4,1"/>
+    <rect id="en-tl-t21" class="box" x="106" y="78" width="34" height="34" rx="3" data-hl="0,2,5" data-warn="4,1"/>
+    <rect id="en-tl-t31" class="box" x="144" y="78" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t41" class="box" x="182" y="78" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t51" class="box" x="220" y="78" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t61" class="box" x="258" y="78" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t71" class="box" x="296" y="78" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t02" class="box" x="30" y="116" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t12" class="box" x="68" y="116" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t22" class="box" x="106" y="116" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t32" class="box" x="144" y="116" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t42" class="box" x="182" y="116" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t52" class="box" x="220" y="116" width="34" height="34" rx="3" data-hl="0,2,5" data-warn="4,1"/>
+    <rect id="en-tl-t62" class="box" x="258" y="116" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t72" class="box" x="296" y="116" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="en-tl-t03" class="box" x="30" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="en-tl-t13" class="box" x="68" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="en-tl-t23" class="box" x="106" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="en-tl-t33" class="box" x="144" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="en-tl-t43" class="box" x="182" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="en-tl-t53" class="box" x="220" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="en-tl-t63" class="box" x="258" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="en-tl-t73" class="box" x="296" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="en-tl-copy" class="group" x="27" y="37" width="306" height="116" rx="6" data-show="3"/>
+    <text class="lbl" x="182" y="102" text-anchor="middle" data-show="3">copy</text>
+    <text class="lbl" x="370" y="70" data-show="0">32 tiles sent</text>
+    <text class="small" x="370" y="96" data-show="0">the whole screen</text>
+    <text class="lbl" x="370" y="70" data-show="1">3 tiles changed</text>
+    <text class="small" x="370" y="96" data-show="1">29 unchanged: nothing sent</text>
+    <text class="lbl" x="370" y="70" data-show="2">3 tiles sent</text>
+    <text class="small" x="370" y="96" data-show="2">1 solid (3 bytes), 2 in one JPEG</text>
+    <text class="lbl" x="370" y="70" data-show="3">24 copy tiles + 8 encoded</text>
+    <text class="small" x="370" y="96" data-show="3">copy = u16 sx, sy (4 bytes)</text>
+    <text class="lbl" x="370" y="70" data-show="4">lighter JPEG / H.264</text>
+    <text class="small" x="370" y="96" data-show="4">quality lowered while it moves</text>
+    <text class="lbl" x="370" y="70" data-show="5">sharp tiles again</text>
+    <text class="small" x="370" y="96" data-show="5">quality back to the setting</text>
+  </svg>
+</figure></div><div data-lang="fr"><figure class="stepper" data-steps="6">
+  <ol class="captions">
+    <li><b>Première image.</b> Le viewer n’a encore rien : toutes les tuiles de 64×64 sont envoyées.</li>
+    <li><b>Hash.</b> Quelque chose bouge : les tuiles sont hachées et 3 sur 32 diffèrent de ce qu’a le viewer.</li>
+    <li><b>Encodage.</b> Seules ces 3 partent : une tuile d’une seule couleur en 3 octets, les tuiles changées d’une rangée fusionnées en un JPEG (ou une palette sans perte pour du texte).</li>
+    <li><b>Défilement.</b> La page défile d’une rangée : les tuiles déplacées sont retrouvées plus haut dans l’image précédente et envoyées comme tuiles <i>copy</i> ; seule la rangée révélée est encodée.</li>
+    <li><b>Mouvement.</b> Plus d’un quart des tuiles changent (une vidéo) : un JPEG plus léger, ou une image H.264 de tout l’écran tant que le lien du viewer est le goulot.</li>
+    <li><b>Immobile.</b> L’écran ne bouge plus : les mêmes tuiles sont renvoyées, nettes.</li>
+  </ol>
+  <svg viewBox="0 0 760 210" role="img" aria-label="tuiles de l'écran envoyées à chaque étape">
+    <rect id="fr-tl-panel" class="group" x="350" y="35" width="390" height="150" rx="8"/>
+    <rect id="fr-tl-t00" class="box" x="30" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t10" class="box" x="68" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t20" class="box" x="106" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t30" class="box" x="144" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t40" class="box" x="182" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t50" class="box" x="220" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t60" class="box" x="258" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t70" class="box" x="296" y="40" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t01" class="box" x="30" y="78" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t11" class="box" x="68" y="78" width="34" height="34" rx="3" data-hl="0,2,5" data-warn="4,1"/>
+    <rect id="fr-tl-t21" class="box" x="106" y="78" width="34" height="34" rx="3" data-hl="0,2,5" data-warn="4,1"/>
+    <rect id="fr-tl-t31" class="box" x="144" y="78" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t41" class="box" x="182" y="78" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t51" class="box" x="220" y="78" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t61" class="box" x="258" y="78" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t71" class="box" x="296" y="78" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t02" class="box" x="30" y="116" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t12" class="box" x="68" y="116" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t22" class="box" x="106" y="116" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t32" class="box" x="144" y="116" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t42" class="box" x="182" y="116" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t52" class="box" x="220" y="116" width="34" height="34" rx="3" data-hl="0,2,5" data-warn="4,1"/>
+    <rect id="fr-tl-t62" class="box" x="258" y="116" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t72" class="box" x="296" y="116" width="34" height="34" rx="3" data-hl="0,5" data-warn="4"/>
+    <rect id="fr-tl-t03" class="box" x="30" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="fr-tl-t13" class="box" x="68" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="fr-tl-t23" class="box" x="106" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="fr-tl-t33" class="box" x="144" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="fr-tl-t43" class="box" x="182" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="fr-tl-t53" class="box" x="220" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="fr-tl-t63" class="box" x="258" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="fr-tl-t73" class="box" x="296" y="154" width="34" height="34" rx="3" data-hl="0,3,5" data-warn="4"/>
+    <rect id="fr-tl-copy" class="group" x="27" y="37" width="306" height="116" rx="6" data-show="3"/>
+    <text class="lbl" x="182" y="102" text-anchor="middle" data-show="3">copy</text>
+    <text class="lbl" x="370" y="70" data-show="0">32 tuiles envoyées</text>
+    <text class="small" x="370" y="96" data-show="0">tout l’écran</text>
+    <text class="lbl" x="370" y="70" data-show="1">3 tuiles changées</text>
+    <text class="small" x="370" y="96" data-show="1">29 identiques : rien envoyé</text>
+    <text class="lbl" x="370" y="70" data-show="2">3 tuiles envoyées</text>
+    <text class="small" x="370" y="96" data-show="2">1 unie (3 octets), 2 en un JPEG</text>
+    <text class="lbl" x="370" y="70" data-show="3">24 tuiles copy + 8 encodées</text>
+    <text class="small" x="370" y="96" data-show="3">copy = u16 sx, sy (4 octets)</text>
+    <text class="lbl" x="370" y="70" data-show="4">JPEG plus léger / H.264</text>
+    <text class="small" x="370" y="96" data-show="4">qualité baissée pendant le mouvement</text>
+    <text class="lbl" x="370" y="70" data-show="5">tuiles nettes à nouveau</text>
+    <text class="small" x="370" y="96" data-show="5">qualité revenue au réglage</text>
+  </svg>
+</figure></div></section><section id="flow"><h2>3. <span data-lang="en">How fast</span><span data-lang="fr">À quelle vitesse</span></h2><div data-lang="en"><div data-level="simple"><p>xdesk does not send faster than the viewer can receive: it waits for the viewer to say "got it" before sending more. On a LAN 2 pictures can be on the way, for a far viewer up to 8. When a queue builds up, the quality goes down until the queue is gone.</p></div><div data-level="technical"><p>The capture thread ticks every 4 ms. A session gets a frame when its FPS cap allows it and its window is open: without a queue, the frames its rate needs during one ping (2 on a LAN, up to 8 far away); with a queue, only what the path holds (bandwidth × ping) and a lower JPEG quality until it drains, so no lag builds up. A viewer whose link can't follow even at the lowest quality gets a lower resolution (<code>autoResolution</code>), raised again once the link is calm. No frame is sent while the viewer shows a terminal.</p></div></div><div data-lang="fr"><div data-level="simple"><p>xdesk n'envoie pas plus vite que le viewer ne peut recevoir : il attend que le viewer dise « reçu » avant d'en envoyer plus. Sur un LAN 2 images peuvent être en route, pour un viewer lointain jusqu'à 8. Quand une file se forme, la qualité baisse jusqu'à ce qu'elle disparaisse.</p></div><div data-level="technical"><p>Le thread de capture tourne toutes les 4 ms. Une session reçoit une image quand son plafond de FPS le permet et que sa fenêtre est ouverte : sans file, les images dont son rythme a besoin pendant un ping (2 sur un LAN, jusqu'à 8 au loin) ; avec une file, seulement ce que le chemin contient (débit × ping) et une qualité JPEG plus basse jusqu'à ce qu'elle se vide, pour qu'aucun retard ne s'accumule. Un viewer dont le lien ne suit pas même à la qualité la plus basse reçoit une résolution plus basse (<code>autoResolution</code>), remontée une fois le lien calme. Aucune image n'est envoyée pendant que le viewer affiche un terminal.</p></div></div></section><section id="transports"><h2>4. <span data-lang="en">Over UDP and extra sockets</span><span data-lang="fr">En UDP et sockets supplémentaires</span></h2><div data-lang="en"><p>The Qt viewer, the terminal client and the Android app receive the video over <strong>UDP</strong> on the port of the server: AES-256-GCM with one key per direction sent inside TLS, pieces of 1150 bytes, one xor parity per 8 pieces while losses are seen, nacks, and frames that complete in any order. Control, inputs and terminals stay on TLS; the video goes back to TLS when UDP is blocked.</p><div class="table-wrap" tabindex="0" role="region" aria-label="Table: Link (emulated, 25 s), TCP + TLS, UDP + GCM + parity"><table><thead><tr><th scope="col" style="min-width:22ch">Link (emulated, 25 s)</th><th scope="col" style="min-width:22ch">TCP + TLS</th><th scope="col" style="min-width:25ch">UDP + GCM + parity</th></tr></thead><tbody><tr><td>LAN cable</td><td>30 fps, p95 4.9 ms</td><td>30 fps, p95 13 ms (Python prototype)</td></tr><tr><td>Fiber, 40 ms</td><td>30 fps, p99 69 ms</td><td>30 fps, p99 50 ms</td></tr><tr><td>4G, 80 ms, 1 % loss</td><td>27 fps, p95 163 ms</td><td>27 fps, p95 160 ms</td></tr><tr><td>160 ms, 3 % loss, 6 Mbit/s</td><td>17 fps, 15 stalls</td><td>23 fps, 4 stalls</td></tr><tr><td>300 ms, 8 % loss, 2 Mbit/s</td><td>5.4 fps, p50 506 ms</td><td>7.8 fps, p50 243 ms</td></tr></tbody></table></div><p>Browsers have no raw UDP: on a far lossy path a web viewer may get <strong>up to 4 websockets</strong> for the video, each with its own TCP window, kept only when they help. Goodput in Mbit/s:</p><div class="table-wrap" tabindex="0" role="region" aria-label="Table: Path (ping, loss, link), 1 socket, 2, 3, 4"><table><thead><tr><th scope="col" style="min-width:18ch">Path (ping, loss, link)</th><th scope="col" style="min-width:13ch">1 socket</th><th scope="col" style="min-width:7ch">2</th><th scope="col" style="min-width:7ch">3</th><th scope="col" style="min-width:7ch">4</th></tr></thead><tbody><tr><td>LAN, 2 ms, 300 Mbit/s</td><td>286</td><td>290</td><td>293</td><td>292</td></tr><tr><td>80 ms, 1 %, 30 Mbit/s</td><td>2.5</td><td>5.8</td><td>7.1</td><td>10.1</td></tr><tr><td>160 ms, 3 %, 6 Mbit/s</td><td>0.9</td><td>1.4</td><td>2.0</td><td>3.2</td></tr><tr><td>300 ms, 8 %, 2 Mbit/s</td><td>0.4</td><td>0.6</td><td>1.1</td><td>1.3</td></tr></tbody></table></div><p><a href="protocol.html#udp">The byte layout of each message</a>.</p></div><div data-lang="fr"><p>Le viewer Qt, le client terminal et l'appli Android reçoivent la vidéo en <strong>UDP</strong> sur le port du serveur : AES-256-GCM avec une clé par sens envoyée dans TLS, morceaux de 1150 octets, une parité xor pour 8 morceaux tant que des pertes sont vues, nacks, et des images qui se complètent dans n'importe quel ordre. Contrôle, entrées et terminaux restent sur TLS ; la vidéo revient sur TLS quand l'UDP est bloqué.</p><div class="table-wrap" tabindex="0" role="region" aria-label="Table: Lien (émulé, 25 s), TCP + TLS, UDP + GCM + parité"><table><thead><tr><th scope="col" style="min-width:25ch">Lien (émulé, 25 s)</th><th scope="col" style="min-width:22ch">TCP + TLS</th><th scope="col" style="min-width:25ch">UDP + GCM + parité</th></tr></thead><tbody><tr><td>LAN câble</td><td>30 fps, p95 4.9 ms</td><td>30 fps, p95 13 ms (prototype Python)</td></tr><tr><td>Fibre, 40 ms</td><td>30 fps, p99 69 ms</td><td>30 fps, p99 50 ms</td></tr><tr><td>4G, 80 ms, 1 % de perte</td><td>27 fps, p95 163 ms</td><td>27 fps, p95 160 ms</td></tr><tr><td>160 ms, 3 % de perte, 6 Mbit/s</td><td>17 fps, 15 blocages</td><td>23 fps, 4 blocages</td></tr><tr><td>300 ms, 8 % de perte, 2 Mbit/s</td><td>5.4 fps, p50 506 ms</td><td>7.8 fps, p50 243 ms</td></tr></tbody></table></div><p>Les navigateurs n'ont pas d'UDP brut : sur un chemin lointain avec pertes, un viewer web peut recevoir <strong>jusqu'à 4 websockets</strong> pour la vidéo, chacune avec sa propre fenêtre TCP, gardées seulement si elles aident. Débit utile en Mbit/s :</p><div class="table-wrap" tabindex="0" role="region" aria-label="Table: Chemin (ping, perte, lien), 1 socket, 2, 3, 4"><table><thead><tr><th scope="col" style="min-width:19ch">Chemin (ping, perte, lien)</th><th scope="col" style="min-width:13ch">1 socket</th><th scope="col" style="min-width:7ch">2</th><th scope="col" style="min-width:7ch">3</th><th scope="col" style="min-width:7ch">4</th></tr></thead><tbody><tr><td>LAN, 2 ms, 300 Mbit/s</td><td>286</td><td>290</td><td>293</td><td>292</td></tr><tr><td>80 ms, 1 %, 30 Mbit/s</td><td>2.5</td><td>5.8</td><td>7.1</td><td>10.1</td></tr><tr><td>160 ms, 3 %, 6 Mbit/s</td><td>0.9</td><td>1.4</td><td>2.0</td><td>3.2</td></tr><tr><td>300 ms, 8 %, 2 Mbit/s</td><td>0.4</td><td>0.6</td><td>1.1</td><td>1.3</td></tr></tbody></table></div><p><a href="protocol.html#udp">Le format octet par octet de chaque message</a>.</p></div></section><section id="pitfalls"><h2>5. <span data-lang="en">Pitfalls</span><span data-lang="fr">Pièges</span></h2><div data-lang="en"><ul><li><strong>Wayland</strong> without the PipeWire library falls back to portal screenshots: about 1 frame per second.</li><li><strong>H.264</strong> needs <code>openh264</code> at run time (<code>libopenh264.so.8</code>, or the Cisco dll next to <code>xdesk.exe</code> on Windows); without it, large moves stay JPEG.</li><li><strong>Extra sockets</strong> cannot lower the ping: they only give back the throughput a lossy path takes from one connection.</li></ul></div><div data-lang="fr"><ul><li><strong>Wayland</strong> sans la bibliothèque PipeWire retombe sur les captures du portail : environ 1 image par seconde.</li><li><strong>H.264</strong> demande <code>openh264</code> à l'exécution (<code>libopenh264.so.8</code>, ou la dll de Cisco à côté de <code>xdesk.exe</code> sous Windows) ; sans elle, les grands mouvements restent en JPEG.</li><li>Les <strong>sockets supplémentaires</strong> ne baissent pas le ping : elles rendent seulement le débit qu'un chemin avec pertes prend à une connexion.</li></ul></div></section><section id="quiz"><h2>6. <span data-lang="en">Check yourself</span><span data-lang="fr">Vérifie-toi</span></h2><div data-lang="en"><details class="quiz"><summary>Nothing moves on the host screen. How much is sent?</summary><p>Nothing: a capture with no new frame is skipped, and unchanged tiles are never sent.</p></details>
+<details class="quiz"><summary>Why are copy tiles only used while frames keep their order?</summary><p>A copy reads the frame as it was before the message: if an older frame arrived after a newer one, the copied pixels would be wrong.</p></details></div><div data-lang="fr"><details class="quiz"><summary>Rien ne bouge sur l'écran de l'hôte. Combien est envoyé ?</summary><p>Rien : une capture sans nouvelle image est sautée, et les tuiles inchangées ne sont jamais envoyées.</p></details>
+<details class="quiz"><summary>Pourquoi les tuiles copy ne servent-elles que tant que les images gardent leur ordre ?</summary><p>Une copie lit l'image telle qu'elle était avant le message : si une image plus ancienne arrivait après une plus récente, les pixels copiés seraient faux.</p></details></div></section><section id="glossary"><h2>7. <span data-lang="en">Glossary</span><span data-lang="fr">Glossaire</span></h2><div data-lang="en"><div class="table-wrap" tabindex="0" role="region" aria-label="Table: Term, Meaning"><table><thead><tr><th scope="col" style="min-width:19ch">Term</th><th scope="col" style="min-width:17ch">Meaning</th></tr></thead><tbody><tr><td>Tile</td><td>a 64×64 square of the screen, the unit that is hashed and sent</td></tr><tr><td>Ack</td><td>the viewer telling the host a frame arrived</td></tr><tr><td>Frames in flight</td><td>frames sent but not acked yet</td></tr><tr><td>Parity</td><td>an xor of 8 pieces that rebuilds one lost piece without asking again</td></tr><tr><td>Lane</td><td>an extra websocket that only carries video frames</td></tr></tbody></table></div><p>Sources: <code>src/xdesk/platform/FrameEncoder.cpp</code>, <code>src/xdesk/host/Stream.cpp</code>, <code>include/xdesk/net/Datagram.hpp</code>; the measures come from netem emulated links.</p></div><div data-lang="fr"><div class="table-wrap" tabindex="0" role="region" aria-label="Table: Terme, Sens"><table><thead><tr><th scope="col" style="min-width:16ch">Terme</th><th scope="col" style="min-width:17ch">Sens</th></tr></thead><tbody><tr><td>Tuile</td><td>un carré de 64×64 de l'écran, l'unité hachée et envoyée</td></tr><tr><td>Ack</td><td>le viewer qui dit à l'hôte qu'une image est arrivée</td></tr><tr><td>Images en vol</td><td>images envoyées mais pas encore acquittées</td></tr><tr><td>Parité</td><td>un xor de 8 morceaux qui reconstruit un morceau perdu sans le redemander</td></tr><tr><td>Lane</td><td>une websocket supplémentaire qui ne transporte que des images</td></tr></tbody></table></div><p>Sources : <code>src/xdesk/platform/FrameEncoder.cpp</code>, <code>src/xdesk/host/Stream.cpp</code>, <code>include/xdesk/net/Datagram.hpp</code> ; les mesures viennent de liens émulés avec netem.</p></div></section><nav class="pager"><a href="how-pairing-works.html"><span data-i18n>Previous</span><span data-lang="en">How pairing works</span><span data-lang="fr">Comment marche l&#x27;appairage</span></a><a class="next" href="commands.html"><span data-i18n>Next</span><span data-lang="en">Commands and flags</span><span data-lang="fr">Commandes et flags</span></a></nav></main>
+</div>
+<footer class="site">xdesk v1.0.0 · e88b66e · docs</footer>
+<script>
+window.DOC_FR = { "Toggle theme": "Changer de thème", "Contents": "Sommaire", "Language": "Langue", "Copy": "Copier", "Copied": "Copié", "Select & copy": "Sélectionner et copier", "Link to this section": "Lien vers cette section", "Open the navigation": "Ouvrir la navigation", "Guide": "Guide", "Technical": "Technique", "Graph": "Graphe", "Pages": "Pages", "Previous": "Précédent", "Next": "Suivant", "GitHub repository": "Dépôt GitHub", "Skip to the content": "Aller au contenu" };
+</script>
+<script>
+// Behaviour shared by the user's HTML pages (from html-doc): theme switch, optional EN / FR switch, copy buttons
+// on the code blocks, heading anchors, content tabs, mobile menu. Inlined in each page by scripts/new_page.py.
+
+// Language (only when the page has a .lang-switch): [data-i18n] elements and [data-i18n-<attr>] attributes are
+// translated with window.DOC_FR (English text -> French text), [data-lang] blocks are shown for their language only.
+(function () {
+  var root = document.documentElement;
+  var key = (root.getAttribute('data-storage-key') || 'page') + '-lang';
+  var FR = window.DOC_FR || {};
+  var listeners = [];
+  function tr(s) { return root.lang === 'fr' && Object.prototype.hasOwnProperty.call(FR, s) ? FR[s] : s; }
+  function apply() {
+    document.querySelectorAll('[data-i18n]').forEach(function (el) {
+      if (el.dataset.i18nEn === undefined) el.dataset.i18nEn = el.innerHTML.trim();
+      el.innerHTML = tr(el.dataset.i18nEn);
+    });
+    ['aria-label', 'title', 'placeholder'].forEach(function (attr) {
+      document.querySelectorAll('[data-i18n-' + attr + ']').forEach(function (el) {
+        var store = 'i18nEn' + attr.replace(/-(\w)/g, function (m, c) { return c.toUpperCase(); });
+        if (el.dataset[store] === undefined) el.dataset[store] = el.getAttribute(attr) || '';
+        el.setAttribute(attr, tr(el.dataset[store]));
+      });
+    });
+    document.querySelectorAll('[data-set-lang]').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.setLang === root.lang);
+      b.setAttribute('aria-pressed', b.dataset.setLang === root.lang ? 'true' : 'false');
+    });
+  }
+  function set(lang) {
+    root.lang = lang === 'fr' ? 'fr' : 'en';
+    try { localStorage.setItem(key, root.lang); } catch (e) { /* storage unavailable */ }
+    apply();
+    listeners.forEach(function (f) { f(root.lang); });
+  }
+  var saved = null;
+  if (document.querySelector('.lang-switch')) {
+    try { saved = localStorage.getItem(key); } catch (e) { /* storage unavailable */ }
+  }
+  // Choice carried by a link of the site (?lang=): pages opened from file:// don't share their storage
+  var askedLang = new URLSearchParams(location.search).get('lang');
+  if (askedLang === 'en' || askedLang === 'fr') { saved = askedLang; try { localStorage.setItem(key, askedLang); } catch (e) { /* storage unavailable */ } }
+  root.lang = saved === 'fr' ? 'fr' : (root.lang || 'en');
+  window.docI18n = { tr: tr, set: set, apply: apply, onChange: function (f) { listeners.push(f); }, lang: function () { return root.lang; } };
+  document.querySelectorAll('[data-set-lang]').forEach(function (b) {
+    b.addEventListener('click', function () { set(b.dataset.setLang); });
+  });
+  apply();
+})();
+
+// Links between the pages of the site carry the language, theme and level (?lang=fr&theme=dark&level=technical):
+// the choice applies to every page, also from file:// where each page has its own storage
+(function () {
+  var root = document.documentElement;
+  function carry(e) {
+    var a = e.target.closest && e.target.closest('a[href]');
+    if (!a || a.target === '_blank') return;
+    var href = a.getAttribute('href');
+    if (!/^[^:?#\/]+\.html(#.*)?$/.test(href) && !/^\.\/[^:?#\/]+\.html(#.*)?$/.test(href)) return; // pages of the same folder only
+    var u = new URL(a.href);
+    u.searchParams.set('lang', root.lang || 'en');
+    if (root.getAttribute('data-theme')) u.searchParams.set('theme', root.getAttribute('data-theme'));
+    if (root.getAttribute('data-level')) u.searchParams.set('level', root.getAttribute('data-level'));
+    a.href = u.href;
+  }
+  document.addEventListener('click', carry, true);
+  document.addEventListener('auxclick', carry, true);
+})();
+
+// Theme: sun / moon switch, choice saved, default = system preference
+(function () {
+  var root = document.documentElement;
+  var key = (root.getAttribute('data-storage-key') || 'page') + '-theme';
+  var btn = document.getElementById('themeToggle');
+  try { var saved = localStorage.getItem(key); if (saved) root.setAttribute('data-theme', saved); } catch (e) { /* storage unavailable */ }
+  var askedTheme = new URLSearchParams(location.search).get('theme'); // carried by a link of the site
+  if (askedTheme === 'dark' || askedTheme === 'light') { root.setAttribute('data-theme', askedTheme); try { localStorage.setItem(key, askedTheme); } catch (e) { /* storage unavailable */ } }
+  function isDark() {
+    return root.getAttribute('data-theme') === 'dark' ||
+      (!root.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  }
+  if (!btn) return;
+  btn.setAttribute('aria-checked', isDark() ? 'true' : 'false');
+  btn.addEventListener('click', function () {
+    var next = isDark() ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    btn.setAttribute('aria-checked', next === 'dark' ? 'true' : 'false');
+    try { localStorage.setItem(key, next); } catch (e) { /* storage unavailable */ }
+    document.dispatchEvent(new CustomEvent('themechange', { detail: next }));
+  });
+})();
+
+// Figures: an SVG is never drawn larger than its viewBox (its text would grow with the screen)
+document.querySelectorAll('figure svg[viewBox]').forEach(function (svg) {
+  var w = +svg.getAttribute('viewBox').split(/[\s,]+/)[2];
+  if (w && !svg.style.maxWidth) { svg.style.maxWidth = w + 'px'; svg.style.marginInline = 'auto'; }
+});
+
+// A drawing on a small screen: never under 72 % of its size (labels of 13 px stay readable), it scrolls in a box of its own, its caption stays.
+// Pages drawing their figures themselves are left alone (explain-doc: data-page="explain", protocol-doc: a min-width of their own)
+if (document.documentElement.getAttribute('data-page') !== 'explain') document.querySelectorAll('figure > svg[viewBox]').forEach(function (svg) {
+  var width = +svg.getAttribute('viewBox').split(/[\s,]+/)[2];
+  if (!(width > 400) || svg.style.minWidth) return;
+  var box = document.createElement('div');
+  box.className = 'figure-scroll';
+  svg.parentNode.insertBefore(box, svg);
+  box.appendChild(svg);
+  svg.style.minWidth = Math.round(width * 0.72) + 'px';
+  function mark() { // a block that scrolls is reached and scrolled with the keyboard
+    if (box.scrollWidth > box.clientWidth + 1) {
+      box.setAttribute('tabindex', '0');
+      box.setAttribute('role', 'region');
+      box.setAttribute('aria-label', svg.getAttribute('aria-label') || 'Figure');
+    } else ['tabindex', 'role', 'aria-label'].forEach(function (name) { box.removeAttribute(name); });
+  }
+  mark();
+  if ('ResizeObserver' in window) new ResizeObserver(mark).observe(box);
+  else window.addEventListener('resize', mark);
+});
+
+// Diagram links: an arrow is computed from the shapes it joins instead of typed coordinates, so it always touches
+// them. <path class="edge" data-from="a" data-to="b" marker-end="url(#arr)"/>: a / b = id of a rect, circle, ellipse
+// (or a <g> holding one). Options: data-from="a:right" (side: top, bottom, left, right), data-bend="0.2" (curve, +/-
+// fraction of the length), data-gap="2" (space before the shape). A label <text data-label-for="pathId"
+// data-offset="-8"> is placed on the middle of the path. Geometry is read from the attributes (works while hidden).
+window.docDiagram = (function () {
+  function translateOf(el, svg) {
+    var x = 0, y = 0;
+    for (var n = el; n && n !== svg; n = n.parentNode) {
+      var t = n.getAttribute && n.getAttribute('transform');
+      var m = t && t.match(/translate\(\s*(-?[\d.]+)[\s,]*(-?[\d.]+)?\s*\)/);
+      if (m) { x += +m[1]; y += +(m[2] || 0); }
+    }
+    return [x, y];
+  }
+  function shape(svg, id) {
+    var el = svg.querySelector('[id="' + id + '"]');
+    if (el && el.tagName.toLowerCase() === 'g') el = el.querySelector('rect, circle, ellipse');
+    if (!el) return null;
+    var o = translateOf(el, svg), num = function (a) { return +(el.getAttribute(a) || 0); };
+    var tag = el.tagName.toLowerCase();
+    if (tag === 'rect') return { kind: 'rect', x: num('x') + o[0], y: num('y') + o[1], w: num('width'), h: num('height') };
+    if (tag === 'circle') return { kind: 'ellipse', cx: num('cx') + o[0], cy: num('cy') + o[1], rx: num('r'), ry: num('r') };
+    return { kind: 'ellipse', cx: num('cx') + o[0], cy: num('cy') + o[1], rx: num('rx'), ry: num('ry') };
+  }
+  function center(s) { return s.kind === 'rect' ? [s.x + s.w / 2, s.y + s.h / 2] : [s.cx, s.cy]; }
+  function side(s, name) {
+    var c = center(s), hw = s.kind === 'rect' ? s.w / 2 : s.rx, hh = s.kind === 'rect' ? s.h / 2 : s.ry;
+    return { top: [c[0], c[1] - hh], bottom: [c[0], c[1] + hh], left: [c[0] - hw, c[1]], right: [c[0] + hw, c[1]] }[name];
+  }
+  // Point of the border of s in the direction of p, moved back by gap
+  function border(s, p, gap) {
+    var c = center(s), dx = p[0] - c[0], dy = p[1] - c[1], len = Math.hypot(dx, dy) || 1, k;
+    if (s.kind === 'rect') k = Math.min(dx ? (s.w / 2) / Math.abs(dx) : Infinity, dy ? (s.h / 2) / Math.abs(dy) : Infinity);
+    else k = 1 / Math.sqrt((dx * dx) / (s.rx * s.rx) + (dy * dy) / (s.ry * s.ry));
+    return [c[0] + dx * k + dx / len * gap, c[1] + dy * k + dy / len * gap];
+  }
+  // Point of the border of s for an arrow coming from / going to toward; off spreads several arrows of the same
+  // shape along its side (instead of all reaching the same point)
+  function end(s, spec, toward, gap, off) {
+    var name = spec.split(':')[1], p;
+    if (name) p = side(s, name);
+    else if (off && s.kind === 'rect') {
+        var c = center(s), dx = toward[0] - c[0], dy = toward[1] - c[1];
+        if (Math.abs(dy) * s.w >= Math.abs(dx) * s.h) p = [c[0] + off * s.w, c[1] + (dy < 0 ? -1 : 1) * s.h / 2];
+        else p = [c[0] + (dx < 0 ? -1 : 1) * s.w / 2, c[1] + off * s.h];
+    } else p = border(s, toward, 0);
+    var vx = toward[0] - p[0], vy = toward[1] - p[1], len = Math.hypot(vx, vy) || 1;
+    return [p[0] + vx / len * gap, p[1] + vy / len * gap];
+  }
+  // Slot (-0.3 .. 0.3 of the side) of each arrow end sharing a shape, ordered by where the other end is
+  function slots(items) {
+    var groups = {};
+    items.forEach(function (it) { if (!it.spec.split(':')[1]) (groups[it.id] = groups[it.id] || []).push(it); });
+    Object.keys(groups).forEach(function (id) {
+      var g = groups[id], s = g[0].shape, c = center(s);
+      if (g.length < 2) return;
+      g.forEach(function (it) {
+        var dx = it.toward[0] - c[0], dy = it.toward[1] - c[1];
+        it.vertical = s.kind === 'rect' && Math.abs(dy) * s.w >= Math.abs(dx) * s.h;
+        it.key = it.vertical ? dx : dy;
+      });
+      [true, false].forEach(function (v) {
+        var sub = g.filter(function (it) { return it.vertical === v; }).sort(function (a, b) { return a.key - b.key; });
+        if (sub.length > 1) sub.forEach(function (it, i) { it.off = ((i + 1) / (sub.length + 1) - 0.5) * 0.6; });
+      });
+    });
+  }
+  function layout(svg) {
+    var items = [], links = [];
+    svg.querySelectorAll('[data-from][data-to]').forEach(function (path) {
+      var fa = path.dataset.from, ta = path.dataset.to;
+      var a = shape(svg, fa.split(':')[0]), b = shape(svg, ta.split(':')[0]);
+      if (!a || !b) { console.warn('diagram link: unknown shape', fa, ta); return; }
+      var gap = +(path.dataset.gap || 2), bend = +(path.dataset.bend || 0);
+      var ca = fa.indexOf(':') > 0 ? side(a, fa.split(':')[1]) : center(a);
+      var cb = ta.indexOf(':') > 0 ? side(b, ta.split(':')[1]) : center(b);
+      var mx = (ca[0] + cb[0]) / 2, my = (ca[1] + cb[1]) / 2, len = Math.hypot(cb[0] - ca[0], cb[1] - ca[1]) || 1;
+      var ctrl = [mx - (cb[1] - ca[1]) / len * bend * len, my + (cb[0] - ca[0]) / len * bend * len];
+      var ea = { spec: fa, id: fa.split(':')[0], shape: a, toward: bend ? ctrl : cb, off: 0 };
+      var eb = { spec: ta, id: ta.split(':')[0], shape: b, toward: bend ? ctrl : ca, off: 0 };
+      items.push(ea, eb);
+      links.push({ path: path, gap: gap, bend: bend, ctrl: ctrl, ea: ea, eb: eb });
+    });
+    slots(items);
+    links.forEach(function (l) {
+      var path = l.path, gap = l.gap, bend = l.bend, ctrl = l.ctrl;
+      var p1 = end(l.ea.shape, l.ea.spec, l.ea.toward, gap, l.ea.off), p2 = end(l.eb.shape, l.eb.spec, l.eb.toward, gap, l.eb.off);
+      var f = function (p) { return p[0].toFixed(1) + ' ' + p[1].toFixed(1); };
+      path.setAttribute('d', bend ? 'M' + f(p1) + ' Q' + f(ctrl) + ' ' + f(p2) : 'M' + f(p1) + ' L' + f(p2));
+      var mid = bend ? [(p1[0] + 2 * ctrl[0] + p2[0]) / 4, (p1[1] + 2 * ctrl[1] + p2[1]) / 4] : [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+      if (path.id) svg.querySelectorAll('[data-label-for="' + path.id + '"]').forEach(function (t) {
+        var off = +(t.dataset.offset || -8), dx = p2[0] - p1[0], dy = p2[1] - p1[1], l = Math.hypot(dx, dy) || 1;
+        var nx = -dy / l, ny = dx / l;
+        if (ny > 0) { nx = -nx; ny = -ny; } // a negative offset is always above the path
+        t.setAttribute('x', (mid[0] - nx * off).toFixed(1));
+        t.setAttribute('y', (mid[1] - ny * off).toFixed(1));
+        if (!t.getAttribute('text-anchor')) t.setAttribute('text-anchor', 'middle');
+      });
+    });
+  }
+  document.querySelectorAll('svg').forEach(layout);
+  return { layout: layout };
+})();
+
+// Tables: each one in a box of its own (it scrolls there, never the page); a short cell stays on one line next to a long sentence
+// (never a word per line) as long as the table fits, a word too long for any column may break. Measured again when its box changes
+// (the width of the screen, a tab or a <details> opened) and with the language.
+window.docTables = (function () {
+  var LIMITS = [40, 28, 20, 14], WORD_KEPT = 32, CELLS_MAX = 3000;
+  var tables = [];
+  function crushed(item) { // a cell of three words or more, one word per line
+    if (item.size === Infinity) return false;
+    var words = (item.cell.innerText || '').trim().split(/\s+/).length;
+    if (words < 3 || item.cell.offsetWidth >= 150) return false; // wider: long names, one a line, nothing to pair them
+    var range = document.createRange(), lines = 0, last = -1e9;
+    range.selectNodeContents(item.cell);
+    Array.prototype.slice.call(range.getClientRects()).sort(function (a, b) { return a.top - b.top; }).forEach(function (rect) {
+      var middle = (rect.top + rect.bottom) / 2;
+      if (middle - last > Math.max(4, rect.height * 0.6)) { lines++; last = middle; }
+    });
+    return lines >= words || (lines >= 10 && words / lines < 3); // or a sentence squeezed: better a table that scrolls
+  }
+  function fit(table) {
+    var box = table.closest('.table-wrap');
+    if (!box || !box.clientWidth) return; // hidden: done when it is shown
+    var cells = table.querySelectorAll('th, td');
+    if (cells.length > CELLS_MAX) return;
+    var items = [];
+    cells.forEach(function (cell) {
+      var blocks = cell.querySelector('p, ul, ol, pre, table, div, dl, blockquote');
+      var text = (cell.innerText || '').trim();
+      var longest = text.split(/\s+/).reduce(function (most, word) { return Math.max(most, word.length); }, 0);
+      cell.style.overflowWrap = longest > WORD_KEPT ? 'anywhere' : '';
+      cell.style.minWidth = longest > WORD_KEPT ? '18ch' : ''; // broken where it must, not four letters a line
+      items.push({ cell: cell, size: blocks || text.indexOf('\n') >= 0 ? Infinity : text.length });
+    });
+    var keep = function (limit) { items.forEach(function (item) { item.cell.style.whiteSpace = item.size <= limit ? 'nowrap' : ''; }); };
+    var fits = false;
+    for (var at = 0; at < LIMITS.length && !fits; at++) {
+      keep(LIMITS[at]);
+      fits = table.offsetWidth <= box.clientWidth + 1 && !items.some(crushed); // three words on three lines is not fitting
+    }
+    if (!fits) { // it scrolls whatever is done: its short cells on one line, its sentences with some width
+      keep(LIMITS[1]);
+      items.forEach(function (item) { if (item.size > LIMITS[1]) item.cell.style.minWidth = '16em'; });
+    }
+    var scrolls = box.scrollWidth > box.clientWidth + 1;
+    if (scrolls && !box.hasAttribute('tabindex')) { // reached and scrolled with the keyboard
+      box.setAttribute('tabindex', '0');
+      box.setAttribute('role', 'region');
+      if (!box.getAttribute('aria-label')) box.setAttribute('aria-label', (table.caption && table.caption.textContent.trim()) || 'Table');
+    }
+  }
+  function fitAll() { tables.forEach(fit); }
+  function watch(table) {
+    if (table.closest('pre, svg, .no-fit')) return;
+    var box = table.closest('.table-wrap');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'table-wrap';
+      table.parentNode.insertBefore(box, table);
+      box.appendChild(table);
+    }
+    tables.push(table);
+    if ('ResizeObserver' in window) {
+      var width = -1;
+      new ResizeObserver(function () {
+        if (box.clientWidth === width) return;
+        width = box.clientWidth;
+        fit(table);
+      }).observe(box);
+    }
+  }
+  document.querySelectorAll('main table').forEach(watch);
+  fitAll();
+  if (!('ResizeObserver' in window)) window.addEventListener('resize', fitAll);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitAll);
+  if (window.docI18n) window.docI18n.onChange(fitAll);
+  return { fit: fitAll, watch: function (table) { watch(table); fit(table); } };
+})();
+
+// Sidebar (mobile) + visible section, copy buttons, heading anchors, content tabs
+(function () {
+  var tr = function (s) { return window.docI18n ? window.docI18n.tr(s) : s; };
+  var menu = document.getElementById('menuBtn'), side = document.getElementById('sidebar');
+  if (menu && side) {
+    menu.addEventListener('click', function () { side.classList.toggle('open'); });
+    side.addEventListener('click', function (e) { if (e.target.closest('a')) side.classList.remove('open'); }); // a tapped entry closes the menu
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') side.classList.remove('open'); });
+    document.addEventListener('click', function (e) { if (!side.contains(e.target) && !menu.contains(e.target)) side.classList.remove('open'); });
+  }
+  var links = document.querySelectorAll('.sidebar a[href^="#"]');
+  if (links.length && 'IntersectionObserver' in window) {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        links.forEach(function (a) { a.classList.toggle('active', a.getAttribute('href') === '#' + entry.target.id); });
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    document.querySelectorAll('main section[id]').forEach(function (s) { observer.observe(s); });
+  }
+  document.querySelectorAll('main pre').forEach(function (pre) {
+    if (pre.dataset.nocopy !== undefined) return;
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'copy'; b.textContent = tr('Copy');
+    b.addEventListener('click', function () {
+      var code = pre.querySelector('code') || pre;
+      var done = function () { b.textContent = tr('Copied'); setTimeout(function () { b.textContent = tr('Copy'); }, 1400); };
+      if (navigator.clipboard) navigator.clipboard.writeText(code.innerText).then(done, function () { b.textContent = tr('Select & copy'); });
+      else b.textContent = tr('Select & copy');
+    });
+    pre.appendChild(b);
+  });
+  document.querySelectorAll('main h2[id], main h3[id], main section[id] > h2').forEach(function (h) {
+    var id = h.id || h.parentElement.id;
+    if (!id || h.querySelector('.anchor')) return;
+    var a = document.createElement('a');
+    a.className = 'anchor'; a.href = '#' + id; a.textContent = '#';
+    a.setAttribute('aria-label', tr('Link to this section'));
+    h.appendChild(a);
+  });
+  document.querySelectorAll('.ctabs').forEach(function (bar) {
+    var group = bar.dataset.tabs;
+    var buttons = bar.querySelectorAll('button');
+    var panels = document.querySelectorAll('.ctab-panel[data-tabs="' + group + '"]');
+    function show(name) {
+      buttons.forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
+      panels.forEach(function (p) { p.classList.toggle('active', p.dataset.tab === name); });
+    }
+    buttons.forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.tab); }); });
+    if (buttons.length) show(buttons[0].dataset.tab);
+  });
+  if (window.docI18n) window.docI18n.onChange(function () {
+    document.querySelectorAll('main pre .copy').forEach(function (b) { b.textContent = tr('Copy'); });
+    document.querySelectorAll('.anchor').forEach(function (a) { a.setAttribute('aria-label', tr('Link to this section')); });
+  });
+})();
+
+/* better-html-style - search (the site index, a server endpoint, or the sections of the page itself), its keys, the phone layout
+   of the search box, embed mode (?embed=1), ?theme= / ?lang= / ?q= in the address */
+(function () {
+  'use strict';
+  var Q = new URLSearchParams(location.search);
+  var EMBED = Q.get('embed') === '1';
+  var root = document.documentElement;
+  if (window.DOC_FR) { // the words of the site in the French table of base.js (the same object), applied again
+    var words = { 'Search': 'Rechercher', 'Home': 'Accueil', 'Edit this page': 'Modifier cette page', 'Updated': 'Mis à jour', 'pages': 'pages',
+      'Changelog': 'Historique', 'Full changelog': 'Historique complet', 'Sections': 'Sections', 'On this page': 'Sur cette page',
+      'Shortcut / for the search': 'Raccourci / pour la recherche' };
+    for (var w in words) if (!Object.prototype.hasOwnProperty.call(window.DOC_FR, w)) window.DOC_FR[w] = words[w];
+    if (window.docI18n && root.lang === 'fr') window.docI18n.apply();
+  }
+  if (EMBED) {
+    root.classList.add('embed');
+    var levels = document.querySelector('.topbar .level-switch'), pageHead = document.querySelector('main > header');
+    if (levels && pageHead) pageHead.appendChild(levels); // no top bar: the level switch of an explanation page stays reachable, in the header of the page
+    document.querySelectorAll('a[href]').forEach(function (a) {
+      var h = a.getAttribute('href');
+      if (h && !/^(#|https?:|mailto:|[\w.-]+\.(pdf|rpm|deb|apk|zip|gz|sh|json)(\?|#|$))/.test(h) && h.indexOf('embed=') < 0) a.setAttribute('href', h + (h.indexOf('?') < 0 ? '?' : '&') + 'embed=1');
+    });
+  }
+  if (Q.get('theme') === 'dark' || Q.get('theme') === 'light') root.setAttribute('data-theme', Q.get('theme'));
+  if (Q.get('lang') === 'fr' || Q.get('lang') === 'en') { try { window.docI18n.set(Q.get('lang')); } catch (e) { root.lang = Q.get('lang'); } }
+  var meta = document.querySelector('meta[name="docs-search"]');
+  var ENDPOINT = meta ? meta.content : '';
+  function lang() { return root.lang === 'fr' ? 'fr' : 'en'; }
+
+  // the index: the site's (search-index.js, deferred: read when searching), else the sections of this page, by language
+  var own = {};
+  function pageIndex() {
+    var l = lang();
+    if (own[l]) return own[l];
+    var out = [], title = document.querySelector('main h1');
+    function text(el) {
+      var c = el.cloneNode(true);
+      c.querySelectorAll('[data-lang]:not([data-lang="' + l + '"]), script, style, svg, .copy, .anchor').forEach(function (x) { x.remove(); });
+      c.querySelectorAll('th, td, li, p, div, pre, dt, dd, summary, caption, figcaption, h3, h4, h5, h6').forEach(function (x) { x.append(' '); }); // two cells or blocks never glued in a result
+      return c.textContent.replace(/\s+/g, ' ').trim();
+    }
+    document.querySelectorAll('main section[id]').forEach(function (s) {
+      var h = s.querySelector('h2'), body = text(s), head = h ? text(h) : s.id;
+      out.push({ k: 'page', t: (title ? text(title) + ' › ' : '') + head, d: body.slice(head.length, head.length + 110), u: '#' + s.id, x: body.slice(0, 600) });
+      s.querySelectorAll('h3[id]').forEach(function (h3) { out.push({ k: 'page', t: head + ' › ' + text(h3), d: '', u: '#' + h3.id, x: '' }); });
+    });
+    own[l] = out;
+    return out;
+  }
+  function index() { return (window.DOCS_INDEX && window.DOCS_INDEX.entries) || pageIndex(); }
+
+  // a query is words: each one must be found (prefix 3000 > start of a word 2600 > inside 2000 > a typo 900 / 800 > letters in order);
+  // the title counts fully, the description a little less, the body text least
+  function dist(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    var prev2 = null, prev = [], cur, i, j;
+    for (j = 0; j <= b.length; j++) prev[j] = j;
+    for (i = 1; i <= a.length; i++) {
+      cur = [i];
+      for (j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        if (prev2 && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) cur[j] = Math.min(cur[j], prev2[j - 2] + 1);
+      }
+      prev2 = prev; prev = cur;
+    }
+    return prev[b.length];
+  }
+  // typo tolerance: a missing, doubled, wrong or swapped letter still finds it (a swap counts as one)
+  function typo(q, s) {
+    if (q.length < 4) return -1;
+    var max = q.length >= 8 ? 2 : 1, words = s.split(/[^a-z0-9à-ÿ]+/), best = max + 1;
+    for (var k = 0; k < words.length; k++) {
+      var w = words[k];
+      if (w.length < 3) continue;
+      var d = Math.min(dist(q, w, max), dist(q, w.slice(0, q.length + 1), max) + 1);
+      if (d < best) best = d;
+    }
+    return best <= max ? 900 - best * 100 : -1;
+  }
+  function wscore(w, s) {
+    s = (s || '').toLowerCase();
+    var i = s.indexOf(w);
+    if (i === 0) return 3000 - s.length / 10;
+    if (i > 0) return (/[^a-z0-9à-ÿ]/.test(s[i - 1]) ? 2600 : 2000) - i / 10;
+    var t = typo(w, s);
+    if (t >= 0) return t;
+    if (w.length >= 4) { // letters in order, tight (sesend -> session_send)
+      var p = 0, first = -1, last = 0;
+      for (var j = 0; j < s.length && p < w.length; j++) if (s[j] === w[p]) { if (first < 0) first = j; last = j; p++; }
+      if (p === w.length && last - first <= w.length * 2) return 600 - (last - first);
+    }
+    return -1;
+  }
+  function entryScore(words, e) {
+    var total = 0;
+    if ((e.t || '').toLowerCase().replace(/\s+/g, ' ').trim() === words.join(' ')) return 1e6; // its whole title: that page first, not a section of it
+    for (var n = 0; n < words.length; n++) {
+      var w = words[n], best = Math.max(wscore(w, e.t), wscore(w, e.d) - 400, wscore(w, e.x) - 800);
+      if (best < 0) return -1;
+      total += best;
+    }
+    return total / words.length;
+  }
+  function queryWords(q) { return q.toLowerCase().split(/\s+/).filter(Boolean); }
+  function esc(x) { return String(x).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function mark(q, s) { // one pass on the raw text: a word of the query never matches inside a <mark> or an &amp; written before it
+    var words = queryWords(q).map(function (w) { return w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).sort(function (a, b) { return b.length - a.length; });
+    if (!words.length) return esc(s);
+    return String(s).split(new RegExp('(' + words.join('|') + ')', 'ig')).map(function (part, n) { return n % 2 ? '<mark>' + esc(part) + '</mark>' : esc(part); }).join('');
+  }
+  function localSearch(q) {
+    var l = lang(), words = queryWords(q);
+    return index().filter(function (e) { return !e.l || e.l === l; }).map(function (e) {
+      return { e: e, s: entryScore(words, e) };
+    }).filter(function (x) { return x.s >= 0; }).sort(function (a, b) { return b.s - a.s; }).slice(0, 8).map(function (x) { return x.e; });
+  }
+  function remoteSearch(q, done) {
+    fetch(ENDPOINT + '?q=' + encodeURIComponent(q) + '&lang=' + lang()).then(function (r) { return r.json(); })
+      .then(function (j) { done(j.results || []); }, function () { done(localSearch(q)); });
+  }
+  window.docsSearch = function (q, done) { if (ENDPOINT) remoteSearch(q, done); else done(localSearch(q)); };
+
+  function bind(input) {
+    var box = input.parentNode, ul = box.querySelector('.results'), sel = 0, cur = [], seq = 0;
+    function show(q, list) {
+      cur = list; sel = 0;
+      ul.innerHTML = cur.length ? cur.map(function (e, n) {
+        var u = e.u;
+        if (EMBED && u.charAt(0) !== '#') u = u.indexOf('#') >= 0 ? u.replace('#', (u.indexOf('?') < 0 ? '?' : '&') + 'embed=1#') : u + (u.indexOf('?') < 0 ? '?' : '&') + 'embed=1';
+        return '<li class="' + (n ? '' : 'sel') + '"><a href="' + esc(u) + '"><span class="t">' + mark(q, e.t) + '<span class="d">' + esc(e.d || '') + '</span></span>' + (e.k ? '<span class="kind ' + esc(e.k) + '">' + esc(e.k) + '</span>' : '') + '</a></li>';
+      }).join('') : '<li class="none">' + (lang() === 'fr' ? 'Aucun résultat' : 'No result') + '</li>';
+      ul.hidden = false;
+    }
+    function render() {
+      var q = input.value.trim(), n = ++seq;
+      if (!q) { ul.hidden = true; return; }
+      window.docsSearch(q, function (list) { if (n === seq) show(q, list); });
+    }
+    function move(d) {
+      var li = ul.querySelectorAll('li'); if (!cur.length) return;
+      li[sel].classList.remove('sel'); sel = (sel + d + cur.length) % cur.length; li[sel].classList.add('sel');
+      li[sel].scrollIntoView({ block: 'nearest' });
+    }
+    input.addEventListener('input', render);
+    input.addEventListener('focus', render);
+    input.addEventListener('keydown', function (ev) {
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); move(1); }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); move(-1); }
+      else if (ev.key === 'Enter' && cur[sel]) { ev.preventDefault(); ul.querySelectorAll('a')[sel].click(); ul.hidden = true; }
+      else if (ev.key === 'Escape') { ul.hidden = true; input.blur(); }
+    });
+    ul.addEventListener('click', function (ev) { if (ev.target.closest('a')) ul.hidden = true; });
+    document.addEventListener('click', function (ev) { if (!box.contains(ev.target)) ul.hidden = true; });
+  }
+  document.querySelectorAll('.sbox input').forEach(bind);
+  if (Q.get('q')) window.addEventListener('load', function () { var qi = document.querySelector('.sbox input'); if (qi) { qi.value = Q.get('q'); qi.dispatchEvent(new Event('input')); } }); // ?q=text opens the results
+
+  var menuBtn = document.querySelector('#menuBtn');
+  if (menuBtn && !document.querySelector('#sidebar')) menuBtn.style.display = 'none'; // a page without sidebar: nothing for the menu to open
+  (function () { // phone: the small search moves under the top bar (sticky), else it lives in the top bar
+    var sb = document.querySelector('.topbar .sbox.small'), bar = document.querySelector('.topbar'); if (!sb || !bar) return;
+    // a bar that also holds a level switch (explanation pages) has no room for it sooner
+    var home = sb.parentNode, mq = window.matchMedia(bar.querySelector('.level-switch') ? '(max-width: 640px)' : '(max-width: 480px)');
+    function place() {
+      if (mq.matches) { sb.classList.add('mob'); bar.after(sb); }
+      else { sb.classList.remove('mob'); home.insertBefore(sb, home.firstChild); }
+    }
+    place(); mq.addEventListener('change', place);
+  })();
+  // RGAA 12.10: "/" is a one-character shortcut, so the reader can turn it off (the choice is kept); Ctrl+K is a combination and stays
+  var skey = (root.getAttribute('data-storage-key') || 'page') + '-shortcut';
+  function slash() { try { return localStorage.getItem(skey) !== 'off'; } catch (e) { return true; } }
+  (function () {
+    var foot = document.querySelector('footer.site'); if (!foot || !document.querySelector('.sbox input') || EMBED) return;
+    var lab = document.createElement('label'), box = document.createElement('input'), txt = document.createElement('span');
+    lab.className = 'keys-toggle'; box.type = 'checkbox'; box.checked = slash(); txt.setAttribute('data-i18n', ''); txt.textContent = 'Shortcut / for the search';
+    lab.appendChild(box); lab.appendChild(txt); foot.appendChild(lab);
+    function hints() { document.querySelectorAll('.sbox kbd.hint').forEach(function (k) { k.hidden = !box.checked; }); }
+    box.addEventListener('change', function () { try { localStorage.setItem(skey, box.checked ? 'on' : 'off'); } catch (e) { /* storage unavailable */ } hints(); });
+    hints();
+    if (window.docI18n && root.lang === 'fr') window.docI18n.apply();
+  })();
+  document.addEventListener('keydown', function (ev) { // / (unless turned off) or Ctrl+K: the search
+    if (((ev.key === '/' && slash()) || ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'k')) && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && !document.activeElement.isContentEditable) {
+      var big = document.querySelector('.hero .sbox input'), i = big && big.offsetParent ? big : document.querySelector('.sbox.small input') || big; // the big one when it is shown
+      if (i) { ev.preventDefault(); i.focus(); i.select(); }
+    }
+  });
+  function ph() { var fr = lang() === 'fr'; document.querySelectorAll('input[data-ph-fr]').forEach(function (i) { if (!i.dataset.ph) i.dataset.ph = i.placeholder; i.placeholder = fr ? i.dataset.phFr : i.dataset.ph; }); own = {}; }
+  ph(); new MutationObserver(ph).observe(root, { attributes: true, attributeFilter: ['lang'] });
+  // a host page (an app panel showing the docs in a frame) can switch the language / theme of an embedded copy
+  window.addEventListener('message', function (ev) {
+    var d = ev.data || {};
+    if (d.docsLang && window.docI18n) window.docI18n.set(d.docsLang);
+    if (d.docsTheme) root.setAttribute('data-theme', d.docsTheme);
+  });
+})();
+</script>
+<script data-kind="explain">
+// Explanation pages (explain-doc): level switch, steppers, playgrounds, glossary terms.
+// API for the page scripts: window.explain.play(name, fn), explain.level(), explain.onLevel(fn), explain.fmt(x, d).
+(function () {
+  var root = document.documentElement;
+  var key = (root.getAttribute('data-storage-key') || 'page') + '-level';
+  var levelListeners = [];
+
+  // ---------- Level: ?level= in the address > saved choice > data-default-level > simple ----------
+  function setLevel(level, save) {
+    level = level === 'technical' ? 'technical' : 'simple';
+    root.setAttribute('data-level', level);
+    document.querySelectorAll('[data-set-level]').forEach(function (b) {
+      b.classList.toggle('on', b.dataset.setLevel === level);
+      b.setAttribute('aria-pressed', b.dataset.setLevel === level ? 'true' : 'false');
+    });
+    if (save) { try { localStorage.setItem(key, level); } catch (e) { /* storage unavailable */ } }
+    levelListeners.forEach(function (f) { f(level); });
+  }
+  var asked = new URLSearchParams(location.search).get('level'), saved = null;
+  try { saved = localStorage.getItem(key); } catch (e) { /* storage unavailable */ }
+  setLevel(asked || saved || root.getAttribute('data-default-level') || 'simple', false);
+  document.querySelectorAll('[data-set-level]').forEach(function (b) {
+    b.addEventListener('click', function () { setLevel(b.dataset.setLevel, true); });
+  });
+
+  // ---------- Blocks that scroll: drawings and formulas ----------
+  // Under 860px a drawing scrolls in a box of its own instead of shrinking until its labels cannot be read: its smallest size is
+  // 560px, never above its viewBox (a small drawing is not blown up).
+  var DRAWN_MIN = 560;
+  function drawingBox(svg) {
+    var view = document.createElement('div');
+    view.className = 'view';
+    svg.replaceWith(view);
+    view.appendChild(svg);
+    var width = svg.viewBox && svg.viewBox.baseVal ? svg.viewBox.baseVal.width : 0;
+    if (width) svg.style.setProperty('--drawn-min', Math.min(DRAWN_MIN, width) + 'px');
+    return view;
+  }
+  // A block that really scrolls is reached and scrolled with the keyboard (RGAA 7.3), one that fits is not a stop of the tab order
+  var SCROLL_BOXES = '.formula, .stepper .view, figure > .view';
+  function reachable() {
+    document.querySelectorAll(SCROLL_BOXES).forEach(function (box) {
+      if (!box.clientWidth) return; // hidden (the other level, a closed tab): done when it is shown
+      var scrolls = box.scrollWidth > box.clientWidth + 1;
+      if (scrolls && !box.hasAttribute('tabindex')) {
+        var label = box.querySelector('svg[aria-label]');
+        box.setAttribute('tabindex', '0');
+        box.setAttribute('role', 'region');
+        box.setAttribute('aria-label', label ? label.getAttribute('aria-label') : tr(box.classList.contains('formula') ? 'Formula' : 'Drawing'));
+      } else if (!scrolls && box.hasAttribute('tabindex')) {
+        box.removeAttribute('tabindex');
+        box.removeAttribute('role');
+        box.removeAttribute('aria-label');
+      }
+    });
+  }
+
+  // ---------- Steppers: <figure class="stepper" data-steps="N"> ----------
+  // In the SVG:
+  // - data-show="2" (only step 2), "2-" (from 2), "1-3", "1,3": visible at those steps (short fade in / out);
+  // - data-hl / data-warn="3,5": class hl / hl-warn (accent / warn highlight) at those steps;
+  // - data-at="0:0,0;3:85,0": offset (x,y in SVG units) from the drawn position, the last entry <= step applies.
+  //   A short move slides; a long one (> 2 times the element size, a wrap-around) fades out and back in at the new
+  //   place instead of crossing the drawing; data-fade forces the fade, data-slide forces the slide;
+  // - data-text="0:19;2:d4": text per step (same rule), a change cross-fades then pulses (class changed).
+  // Captions: <ol class="captions"><li> per step (first = step 0), shown above the drawing with the controls.
+  function inRange(spec, step) {
+    return spec.split(',').some(function (part) {
+      var m = part.trim().match(/^(\d+)(-)?(\d+)?$/);
+      if (!m) return false;
+      var a = +m[1], b = m[2] ? (m[3] !== undefined ? +m[3] : Infinity) : a;
+      return step >= a && step <= b;
+    });
+  }
+  function valueAt(spec, step) {
+    var best = null, at = -1;
+    spec.split(';').forEach(function (part) {
+      var i = part.indexOf(':');
+      if (i < 0) return;
+      var k = +part.slice(0, i).trim();
+      if (k <= step && k > at) { at = k; best = part.slice(i + 1); }
+    });
+    return best;
+  }
+  // French of the UI of the explanation pages (merged into the dictionary of the page)
+  var FR = { "Level": "Niveau", "Simple": "Simple", "Technical": "Technique", "Explanation": "Explication", "Play": "Lecture",
+    "Pause": "Pause", "First step": "Première étape", "Previous step (←)": "Étape précédente (←)", "Next step (→)": "Étape suivante (→)",
+    "Previous step": "Étape précédente", "Next step": "Étape suivante", "Contents": "Sommaire", "Formula": "Formule", "Drawing": "Dessin" };
+  window.DOC_FR = window.DOC_FR || {};
+  Object.keys(FR).forEach(function (k) { if (!(k in window.DOC_FR)) window.DOC_FR[k] = FR[k]; });
+  var tr = function (s) { return window.docI18n ? window.docI18n.tr(s) : s; };
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var FADE = 160; // ms of each half of a fade (out, then in)
+  var TALL = 480; // a drawing higher than that is not fitted in the 400px of a stepper: its labels could not be read
+  var HEAD_MAX = 0.45; // part of the window a head that follows the scroll may hide
+  // Icons of the controls: same 16x16 grid, filled with currentColor
+  var svg16 = function (d) { return '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="' + d + '"/></svg>'; };
+  var ICON = {
+    first: svg16('M3 3h2v10H3zM13 3v10L6 8z'),
+    prev: svg16('M11.5 3v10L4.5 8z'),
+    play: svg16('M4.5 3v10l8-5z'),
+    pause: svg16('M4 3h3v10H4zM9 3h3v10H9z'),
+    next: svg16('M4.5 3v10l7-5z')
+  };
+  function moveTo(el, spec, animate) {
+    var p = (spec || '0,0').split(',').map(Number), dx = p[0] || 0, dy = p[1] || 0;
+    var old = el._at || [0, 0];
+    el._at = [dx, dy];
+    var t = 'translate(' + dx + 'px, ' + dy + 'px)';
+    if (old[0] === dx && old[1] === dy) { el.style.transform = t; return; }
+    var box = { width: 1, height: 1 };
+    try { box = el.getBBox(); } catch (e) { /* not rendered */ }
+    var far = Math.abs(dx - old[0]) > 2 * Math.max(box.width, 1) || Math.abs(dy - old[1]) > 2 * Math.max(box.height, 1);
+    var fade = el.hasAttribute('data-fade') || (far && !el.hasAttribute('data-slide'));
+    if (!animate || reduced) { el.style.transition = 'none'; el.style.transform = t; return; }
+    if (!fade) { el.style.transition = ''; el.style.transform = t; return; }
+    el.classList.add('fading');
+    clearTimeout(el._fadeTimer);
+    el._fadeTimer = setTimeout(function () {
+      el.style.transition = 'none';
+      el.style.transform = t;
+      el.getBoundingClientRect(); // apply the jump before fading back in
+      el.style.transition = '';
+      el.classList.remove('fading');
+    }, FADE);
+  }
+  function textTo(el, value, animate) {
+    if (value === null || el.textContent === value) return;
+    if (!animate || reduced) { el.textContent = value; return; }
+    el.classList.add('fading');
+    clearTimeout(el._textTimer);
+    el._textTimer = setTimeout(function () {
+      el.textContent = value;
+      el.classList.remove('fading');
+      el.classList.add('changed');
+      setTimeout(function () { el.classList.remove('changed'); }, 900);
+    }, FADE);
+  }
+  document.querySelectorAll('.stepper').forEach(function (fig) {
+    var total = +fig.dataset.steps || 1, step = 0, timer = null;
+    var delay = +fig.dataset.delay || 3200;
+    var list = fig.querySelector('.captions');
+    var captions = fig.querySelectorAll('.captions > li');
+    var controls = document.createElement('div');
+    controls.className = 'controls';
+    controls.innerHTML = '<button type="button" data-a="first" aria-label="First step" title="First step" data-i18n-aria-label data-i18n-title>' + ICON.first + '</button>' +
+      '<button type="button" data-a="prev" aria-label="Previous step" title="Previous step (←)" data-i18n-aria-label data-i18n-title>' + ICON.prev + '</button>' +
+      '<button type="button" class="play" data-a="play" aria-label="Play">' + ICON.play + '<span>' + tr('Play') + '</span></button>' +
+      '<button type="button" data-a="next" aria-label="Next step" title="Next step (→)" data-i18n-aria-label data-i18n-title>' + ICON.next + '</button>' +
+      '<span class="progress"><i></i></span><span class="count"></span>';
+    var svg = fig.querySelector('svg');
+    var view = drawingBox(svg);
+    if (svg.viewBox && svg.viewBox.baseVal && svg.viewBox.baseVal.height > TALL) svg.style.maxHeight = 'none'; // drawn at its size: the head follows the scroll
+    // Controls + explanation above the drawing: what happens is read while the drawing changes
+    var head = document.createElement('div');
+    head.className = 'step-head';
+    head.appendChild(controls);
+    if (list) { list.setAttribute('aria-live', 'polite'); head.appendChild(list); }
+    view.insertAdjacentElement('beforebegin', head);
+    var play = controls.querySelector('[data-a="play"]');
+    // Sticky head only for a figure taller than the visible area (under the 56px top bar) and a head that leaves the drawing some
+    // room: a figure that fits the screen keeps its controls in place, a long caption on a phone never covers the drawing
+    function fit() {
+      var high = window.innerHeight;
+      fig.classList.toggle('tall', fig.getBoundingClientRect().height > high - 72 && head.getBoundingClientRect().height < high * HEAD_MAX);
+    }
+    fit();
+    window.addEventListener('resize', fit);
+    if (window.docI18n) window.docI18n.onChange(fit);
+    levelListeners.push(function () { setTimeout(fit, 0); });
+    // A drawing that scrolls (a phone): what this step lights stays in the box
+    function follow() {
+      if (view.scrollWidth <= view.clientWidth + 1) return;
+      var lit = svg.querySelector('.hl, .hl-warn');
+      if (!lit) return;
+      var box = lit.getBoundingClientRect(), frame = view.getBoundingClientRect();
+      if (box.left < frame.left || box.right > frame.right) view.scrollLeft += box.left + box.width / 2 - (frame.left + frame.width / 2);
+    }
+    function render(animate) {
+      svg.querySelectorAll('[data-show]').forEach(function (el) { el.classList.toggle('off', !inRange(el.dataset.show, step)); });
+      svg.querySelectorAll('[data-hl]').forEach(function (el) { el.classList.toggle('hl', inRange(el.dataset.hl, step)); });
+      svg.querySelectorAll('[data-warn]').forEach(function (el) { el.classList.toggle('hl-warn', inRange(el.dataset.warn, step)); });
+      svg.querySelectorAll('[data-at]').forEach(function (el) { moveTo(el, valueAt(el.dataset.at, step), animate); });
+      svg.querySelectorAll('[data-text]').forEach(function (el) { textTo(el, valueAt(el.dataset.text, step), animate); });
+      captions.forEach(function (li, i) { li.classList.toggle('on', i === step); li.setAttribute('aria-hidden', i === step ? 'false' : 'true'); });
+      controls.querySelector('.count').textContent = (step + 1) + ' / ' + total;
+      controls.querySelector('.progress i').style.width = (100 * step / Math.max(1, total - 1)) + '%';
+      follow();
+    }
+    function playLabel() { var k = timer ? 'Pause' : 'Play'; play.innerHTML = (timer ? ICON.pause : ICON.play) + '<span>' + tr(k) + '</span>'; play.setAttribute('aria-label', tr(k)); }
+    if (window.docI18n) window.docI18n.onChange(playLabel);
+    function stop() { clearInterval(timer); timer = null; playLabel(); }
+    // One step at a time animates; a jump (first step, restart) is applied at once
+    function go(s) { var next = Math.max(0, Math.min(total - 1, s)); var near = Math.abs(next - step) === 1; step = next; render(near); }
+    controls.addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      var a = b.dataset.a;
+      if (a !== 'play') stop();
+      if (a === 'first') go(0);
+      else if (a === 'prev') go(step - 1);
+      else if (a === 'next') go(step + 1);
+      else if (timer) stop();
+      else {
+        if (step === total - 1) go(0);
+        timer = setInterval(function () { if (step >= total - 1) stop(); else go(step + 1); }, reduced ? Math.max(delay, 4500) : delay);
+        playLabel();
+      }
+    });
+    fig.tabIndex = 0;
+    fig.addEventListener('keydown', function (e) {
+      if (e.target === view) return; // the box of a drawing that scrolls: the arrows scroll it
+      if (e.key === 'ArrowRight') { stop(); go(step + 1); e.preventDefault(); }
+      if (e.key === 'ArrowLeft') { stop(); go(step - 1); e.preventDefault(); }
+    });
+    // On paper: the whole drawing (its last state), the captions under each other (explain.css)
+    var before = 0;
+    window.addEventListener('beforeprint', function () { before = step; stop(); step = total - 1; render(false); });
+    window.addEventListener('afterprint', function () { step = before; render(false); });
+    // First state drawn without transitions (no flash of every step at load)
+    fig.classList.add('init');
+    render(false);
+    requestAnimationFrame(function () { requestAnimationFrame(function () { fig.classList.remove('init'); }); });
+  });
+  document.querySelectorAll('figure:not(.stepper) svg[viewBox]').forEach(drawingBox);
+  reachable();
+  if ('ResizeObserver' in window) { // the width of the screen, a level or a tab shown
+    var boxWatch = new ResizeObserver(reachable);
+    document.querySelectorAll(SCROLL_BOXES).forEach(function (box) { boxWatch.observe(box); });
+  } else window.addEventListener('resize', reachable);
+
+  if (window.docI18n && window.docI18n.apply) window.docI18n.apply(); // labels of the controls created above
+
+  // ---------- Playgrounds: <div class="playground" data-play="name"> ----------
+  // Inputs [data-in="x"] (range / number / text / checkbox / select), outputs [data-out="y"]; the page registers
+  // explain.play('name', function (values, el) { return { y: 'text' }; }): called at load and on every input.
+  var plays = {};
+  function values(el) {
+    var v = {};
+    el.querySelectorAll('[data-in]').forEach(function (i) {
+      v[i.dataset.in] = i.type === 'checkbox' ? i.checked : (i.type === 'range' || i.type === 'number') ? +i.value : i.value;
+    });
+    return v;
+  }
+  function run(name) {
+    var el = document.querySelector('.playground[data-play="' + name + '"]');
+    if (!el || !plays[name]) return;
+    var out = plays[name](values(el), el) || {};
+    Object.keys(out).forEach(function (k) {
+      el.querySelectorAll('[data-out="' + k + '"]').forEach(function (o) { o.textContent = out[k]; });
+    });
+  }
+  function fmt(x, d) {
+    if (!isFinite(x)) return '∞';
+    return Number(x).toLocaleString(root.lang || 'en', { minimumFractionDigits: d || 0, maximumFractionDigits: d === undefined ? 2 : d });
+  }
+  window.explain = {
+    play: function (name, fn) {
+      plays[name] = fn;
+      var el = document.querySelector('.playground[data-play="' + name + '"]');
+      if (el) el.addEventListener('input', function () { run(name); });
+      run(name);
+    },
+    run: run,
+    fmt: fmt,
+    level: function () { return root.getAttribute('data-level'); },
+    onLevel: function (f) { levelListeners.push(f); }
+  };
+
+  // ---------- Glossary terms: hover, focus or tap opens the definition, Escape closes it ----------
+  // One box in <body>, fixed on the screen: no scrolling block clips it, it is put inside the screen (above the term when there is
+  // no room under it) and a long definition scrolls in it. It stays open while the pointer is on it, or when it was tapped.
+  var pop = null, popTerm = null, popTimer = null;
+  var POP_GAP = 6, POP_EDGE = 8, POP_DELAY = 150;
+  function popHide() {
+    clearTimeout(popTimer);
+    if (pop) pop.hidden = true;
+    popTerm = null;
+  }
+  function popPlace() {
+    if (!popTerm) return;
+    var lines = popTerm.getClientRects();
+    if (!lines.length || lines[0].bottom < 0 || lines[lines.length - 1].top > window.innerHeight) { popHide(); return; }
+    var first = lines[0], last = lines[lines.length - 1], high = pop.offsetHeight, wide = pop.offsetWidth;
+    var below = last.bottom + POP_GAP;
+    pop.style.left = Math.max(POP_EDGE, Math.min(last.left, root.clientWidth - wide - POP_EDGE)) + 'px';
+    pop.style.top = (below + high <= window.innerHeight - POP_EDGE ? below : Math.max(POP_EDGE, first.top - POP_GAP - high)) + 'px';
+  }
+  function popShow(term) {
+    if (!pop) {
+      pop = document.createElement('div');
+      pop.className = 'dfn-pop';
+      pop.setAttribute('role', 'tooltip');
+      pop.tabIndex = -1;
+      document.body.appendChild(pop);
+      pop.addEventListener('pointerenter', function () { clearTimeout(popTimer); });
+      pop.addEventListener('pointerleave', popLater);
+      pop.addEventListener('focusout', function (e) { if (e.relatedTarget !== popTerm) popHide(); });
+    }
+    clearTimeout(popTimer);
+    popTerm = term;
+    pop.textContent = term.dataset.def;
+    pop.scrollTop = 0;
+    pop.hidden = false;
+    popPlace();
+  }
+  function popLater() {
+    clearTimeout(popTimer);
+    popTimer = setTimeout(function () { if (document.activeElement !== popTerm && document.activeElement !== pop) popHide(); }, POP_DELAY);
+  }
+  document.querySelectorAll('dfn[data-def]').forEach(function (d) {
+    d.tabIndex = 0;
+    d.setAttribute('aria-label', d.textContent + ': ' + d.dataset.def);
+    d.addEventListener('pointerenter', function (e) { if (e.pointerType === 'mouse') popShow(d); });
+    d.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') popLater(); });
+    d.addEventListener('focus', function () { popShow(d); });
+    d.addEventListener('click', function () { popShow(d); }); // a tap that gives no focus (iOS)
+    d.addEventListener('blur', function (e) { if (e.relatedTarget !== pop) popHide(); });
+  });
+  document.addEventListener('pointerdown', function (e) { if (popTerm && e.target !== popTerm && !pop.contains(e.target)) popHide(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') popHide(); });
+  window.addEventListener('scroll', function (e) { if (e.target !== pop) popPlace(); }, true);
+  window.addEventListener('resize', popPlace);
+})();
+
+</script>
+<script src="search-index.js" defer></script>
+</body>
+</html>
