@@ -33,6 +33,10 @@ File Description:
 
 #define OPEN_DELAY 400 // ms waited after a new client before the capture starts (its pause message comes first)
 #define AUTO_MIN_HEIGHT 1080.0 // the automatic resolution never goes under 1080p (native first: the quality goes down, then the frame rate, 1080p last), unless the viewer asked less
+#define REFINE_STEP 20 // the still tiles are sent again this much sharper than the asked quality (70 -> 90), 95 at most
+#define REFINE_SHARE 0.5 // share of the measured bandwidth of a frame interval the sharper passes may use
+#define REFINE_MIN_BYTES 8192 // budget of a frame at least (one or two tiles) while the link has room
+#define REFINE_START_BYTES 65536 // budget while the bandwidth is not measured yet
 #define CHOICE_EVERY 2000 // ms between two looks at the video encoder of a client (from the bench, by its bandwidth)
 #define PALETTE_RTT 20.0 // ms of ping from which a viewer is far (its link, not the cpu, is the bottleneck): palette tiles, H.264 for the large moves
 
@@ -180,6 +184,15 @@ void xdesk::host::Stream::setAutoResolution(const bool enabled)
         client.flow.setAutoScale(enabled);
 }
 
+void xdesk::host::Stream::setView(const QString& session, const QRectF& view)
+{
+    QHash<QString, StreamClient>::iterator it = this->_clients.find(session);
+
+    if (it == this->_clients.end()) return;
+    it->encoder.setView(view);
+    it->idle = 0; // the tiles now shown are sent with the next tick
+}
+
 void xdesk::host::Stream::setVideoCodec(const QString& prefer, const bool hardware)
 {
     this->_prefer = prefer;
@@ -249,7 +262,7 @@ void xdesk::host::Stream::tick_(void)
             client.idle = 0;
             emit this->scaled(it.key(), effective);
         }
-        if (client.idle == frame.cacheKey()) continue; // the same capture as the last empty encode: no scaling, no hashing
+        if (client.idle == frame.cacheKey() && !client.encoder.pending()) continue; // the same capture as the last empty encode: no scaling, no hashing (unless tiles wait to be sent sharper)
         if (!scaled.contains(key))
             scaled.insert(key, key >= 1000 ? frame : frame.scaled(std::max(1, static_cast<int>(frame.width() * effective)), std::max(1, static_cast<int>(frame.height() * effective)), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
         client.lastFrame = now - client.lastFrame < interval * 2 ? client.lastFrame + interval : now; // on the slots of the rate (the 4 ms tick would make 30 fps 27)
@@ -273,12 +286,20 @@ void xdesk::host::Stream::tick_(void)
             }
         }
         client.encoder.setVideo(client.codecs != 0 && this->_video && linkBound && client.ordered && !client.settling);
+        // Still tiles sent again sharper, only with the room the link has (no queue): what moves is never held back by them
+        {
+            const bool calm = client.flow.queue() < FLOW_QUEUE_LOW;
+            const double bandwidth = client.flow.bandwidth(); // bytes per ms
+            const int refine = calm && client.flow.ceiling() >= 100 ? std::min(95, std::max(client.quality, client.quality + REFINE_STEP)) : 0;
+            const qsizetype budget = !calm ? 0 : (bandwidth > 0.0 ? std::max<qsizetype>(REFINE_MIN_BYTES, static_cast<qsizetype>(bandwidth * interval * REFINE_SHARE)) : REFINE_START_BYTES);
+            client.encoder.setRefine(refine, budget);
+        }
         message = client.encoder.encode(scaled.value(key), client.flow.quality(client.quality));
         if (client.encoder.videoEncoder() != client.videoName && !client.encoder.videoEncoder().isEmpty()) {
             client.videoName = client.encoder.videoEncoder();
             emit this->encoder(it.key(), client.videoName);
         }
-        client.idle = message.isEmpty() ? frame.cacheKey() : 0;
+        client.idle = message.isEmpty() && !client.encoder.pending() ? frame.cacheKey() : 0;
         if (message.isEmpty()) continue;
         client.flow.sent(client.encoder.lastId(), message.size(), now);
         emit this->frame(it.key(), message);

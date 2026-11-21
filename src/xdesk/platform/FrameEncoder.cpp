@@ -23,6 +23,7 @@ File Description:
 #include "xdesk/platform/FrameEncoder.hpp"
 #include "xdesk/net/Protocol.hpp"
 #include <unordered_map>
+#include <QElapsedTimer>
 #include <QThreadPool>
 #include <QSemaphore>
 #include <functional>
@@ -33,8 +34,10 @@ File Description:
 #include <cstring>
 #include <cstdlib>
 #include <atomic>
+#include <cmath>
 #include <vector>
 #include <cstdio>
+#include <QPair>
 #include <QHash>
 #include <QRect>
 #include <QList>
@@ -53,6 +56,9 @@ File Description:
 #define COPY_MIN_VOTES 12 // lines of a column found at the same offset before it is trusted
 #define VIDEO_RETRIES 3 // encoders that fail in a row before the video stops until a reset
 #define VIDEO_QUALITY 1 // quality the tiles are known with after a video frame (sent again sharp once still)
+#define STILL_MS 300 // ms a tile stays unchanged before its light version is sent again at the quality of the stream
+#define REFINE_MS 1000 // ms a tile stays unchanged before it is sent again sharper (refine quality, 4:4:4)
+#define REFINE_444 85 // jpeg quality from which the chroma is kept whole (4:4:4: sharp colored text, like a lossless color mode)
 
 //----------------------------------------------------------------//
 /* STRUCT */
@@ -85,6 +91,15 @@ static void jpeg_silent(j_common_ptr)
     /* Nothing */
 }
 
+// Monotonic ms (the stillness of the tiles)
+_hot static qint64 now_ms(void)
+{
+    static QElapsedTimer clock;
+
+    if (!clock.isValid()) clock.start();
+    return clock.elapsed();
+}
+
 // Encode a rectangle of a RGB32 image (BGRX in memory), the output is malloc'ed by libjpeg (free() it)
 _hot static bool jpeg_encode_rect(const unsigned char* bits, const int stride, const int x, const int y, const int w, const int h, const int quality, unsigned char** out, unsigned long* outSize)
 {
@@ -108,7 +123,12 @@ _hot static bool jpeg_encode_rect(const unsigned char* bits, const int stride, c
     cinfo.in_color_space = JCS_EXT_BGRX; // QImage::Format_RGB32 on little endian: no conversion
     jpeg_set_defaults(&cinfo);
     jpeg_set_quality(&cinfo, std::clamp(quality, 1, 100), TRUE);
-    cinfo.dct_method = JDCT_IFAST; // latency over the last bit of quality
+    cinfo.dct_method = quality >= REFINE_444 ? JDCT_ISLOW : JDCT_IFAST; // latency over the last bit of quality, except for the sharp passes
+    if (quality >= REFINE_444) {
+        // Whole chroma (4:4:4): no color bleeding around the text of a still screen
+        cinfo.comp_info[0].h_samp_factor = 1;
+        cinfo.comp_info[0].v_samp_factor = 1;
+    }
     jpeg_start_compress(&cinfo, TRUE);
     while (cinfo.next_scanline < cinfo.image_height) {
         JSAMPROW row = const_cast<JSAMPROW>(bits + static_cast<std::size_t>(y + static_cast<int>(cinfo.next_scanline)) * static_cast<std::size_t>(stride) + static_cast<std::size_t>(x) * 4);
@@ -335,6 +355,14 @@ void xdesk::platform::FrameEncoder::setCodecs(const int codecs, const QString& p
     this->_videoFailures = 0;
 }
 
+void xdesk::platform::FrameEncoder::setView(const QRectF& view)
+{
+    const QRectF full(0.0, 0.0, 1.0, 1.0);
+
+    this->_view = view.isValid() ? view.intersected(full) : full;
+    if (this->_view.isEmpty()) this->_view = full;
+}
+
 void xdesk::platform::FrameEncoder::reset(void)
 {
     std::fill(this->_hashes.begin(), this->_hashes.end(), 0);
@@ -500,6 +528,7 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
         this->_rows = (this->_height + XDESK_TILE_SIZE - 1) / XDESK_TILE_SIZE;
         this->_hashes = QVector<std::uint64_t>(static_cast<qsizetype>(this->_cols) * this->_rows, 0);
         this->_quality = QVector<std::uint8_t>(static_cast<qsizetype>(this->_cols) * this->_rows, 0);
+        this->_changedAt = QVector<qint64>(static_cast<qsizetype>(this->_cols) * this->_rows, now_ms());
     }
 
     const unsigned char* bits = image.constBits();
@@ -519,9 +548,29 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
         }
     });
 
-    // Scroll: the tiles found higher / lower in the previous frame are copied by the client from what it has
+    // Zoomed / scrolled viewer: the tiles out of its view (one tile of margin) keep what the client has, sent once shown
+    const bool full = this->fullView();
+    const int viewLeft = std::max(0, static_cast<int>(this->_view.left() * this->_width) / XDESK_TILE_SIZE - 1);
+    const int viewTop = std::max(0, static_cast<int>(this->_view.top() * this->_height) / XDESK_TILE_SIZE - 1);
+    const int viewRight = std::min(this->_cols - 1, static_cast<int>(std::ceil(this->_view.right() * this->_width)) / XDESK_TILE_SIZE + 1);
+    const int viewBottom = std::min(this->_rows - 1, static_cast<int>(std::ceil(this->_view.bottom() * this->_height)) / XDESK_TILE_SIZE + 1);
+    const qint64 now = now_ms();
+    QVector<bool> shown(count, true);
+    if (!full) {
+        for (qsizetype i = 0; i < count; ++i) {
+            const int tx = static_cast<int>(i % this->_cols);
+            const int ty = static_cast<int>(i / this->_cols);
+            shown[i] = tx >= viewLeft && tx <= viewRight && ty >= viewTop && ty <= viewBottom;
+            if (!shown[i]) hashes[i] = this->_hashes[i]; // not sent: changed or not, it waits to be shown
+        }
+    }
+    for (qsizetype i = 0; i < count; ++i)
+        if (hashes[i] != this->_hashes[i]) this->_changedAt[i] = now;
+
+    // Scroll: the tiles found higher / lower in the previous frame are copied by the client from what it has (the whole
+    // screen only: out of a zoomed view the client may not have the source)
     offsets = QVector<int>(count, 0);
-    if (this->_copy && this->_previous.size() == image.size()) {
+    if (this->_copy && full && this->_previous.size() == image.size()) {
         for (qsizetype i = 0; i < count; ++i)
             if (hashes[i] != this->_hashes[i] && this->_hashes[i] != 0) moved++;
         if (moved >= COPY_MIN_MOVED) this->findCopies_(image, hashes, offsets);
@@ -536,19 +585,40 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
         if (this->_hashes[i] != 0) moved++;
     }
     // Video: a large move with no scroll found, while the link is the bottleneck: one H.264 frame of the whole screen
-    if (this->_video && copies.isEmpty() && moved * MOTION_SHARE > count) {
+    if (this->_video && full && copies.isEmpty() && moved * MOTION_SHARE > count) {
         const QByteArray video = this->encodeVideo_(image, hashes, quiet);
         if (!video.isEmpty()) return video;
     }
     const int motion = moved * MOTION_SHARE > count ? std::max(20, quiet * 3 / 5) : quiet;
     const bool still = static_cast<qsizetype>(changed) * STILL_SHARE < count;
+    QList<QPair<int, qsizetype>> sharper; // (priority, tile): the light tiles back to the stream quality first, then the refined ones
+    this->_pending = false;
     for (qsizetype i = 0; i < count; ++i) {
-        if (offsets[i] != 0) continue; // copied
-        if (hashes[i] != this->_hashes[i]) want[i] = this->_hashes[i] != 0 ? motion : quiet; // a new tile (first frame, reset): sharp at once
-        else if (still && this->_quality[i] != 0 && this->_quality[i] < quiet) want[i] = quiet;
+        if (offsets[i] != 0 || !shown[i]) continue; // copied / not shown
+        if (hashes[i] != this->_hashes[i]) {want[i] = this->_hashes[i] != 0 ? motion : quiet; continue;} // a new tile (first frame, reset): sharp at once
+        if (this->_quality[i] == 0) continue; // exact (solid, palette) or never sent
+        const qint64 calm = now - this->_changedAt[i];
+        // Still tiles: the light ones at the stream quality (the whole screen still, or this tile for STILL_MS), then sharper
+        if (this->_quality[i] < quiet) {
+            if (still || calm >= STILL_MS) sharper.append(qMakePair(this->_quality[i], i));
+            else this->_pending = this->_budget != 0;
+        } else if (this->_refine > quiet && this->_quality[i] < this->_refine) {
+            if (calm >= REFINE_MS) sharper.append(qMakePair(100 + this->_quality[i], i));
+            else this->_pending = this->_budget != 0;
+        }
+    }
+    // At most the budget of the link (what the flow control lets spare): the rest at the next frames
+    std::sort(sharper.begin(), sharper.end());
+    const qsizetype fits = this->_budget < 0 ? sharper.size() : std::max<qsizetype>(this->_budget > 0 ? 1 : 0, static_cast<qsizetype>(static_cast<double>(this->_budget) / this->_tileBytes));
+    for (qsizetype n = 0; n < sharper.size(); ++n) {
+        const qsizetype i = sharper[n].second;
+        if (n >= fits) {this->_pending = this->_pending || this->_budget != 0; continue;}
+        want[i] = sharper[n].first >= 100 ? this->_refine : quiet;
     }
 
     // Encode each row (in parallel): solid tiles at once, runs of tiles of the same quality in one jpeg
+    QVector<double> tileBytes(this->_rows, 0.0);
+    QVector<int> tileCount(this->_rows, 0);
     parallel_for(this->_rows, [&](const int ty) {
         QList<QByteArray>& out = rows[ty];
         int tx = 0;
@@ -561,7 +631,7 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
 
             QByteArray palette;
 
-            if (want[index] == 0 || hashes[index] == this->_hashes[index]) continue; // nothing / a sharper copy of an unchanged tile
+            if (want[index] == 0) continue; // nothing to send
             if (!solid_tile(bits, stride, x, y, std::min(XDESK_TILE_SIZE, this->_width - x), std::min(XDESK_TILE_SIZE, this->_height - y), &color)) {
                 // Text / ui: exact and lighter than a jpeg
                 if (!this->_palette || !palette_tile(bits, stride, x, y, std::min(XDESK_TILE_SIZE, this->_width - x), std::min(XDESK_TILE_SIZE, this->_height - y), &palette)) continue;
@@ -595,6 +665,8 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
             const int h = std::min(XDESK_TILE_SIZE, this->_height - y);
             const bool sent = jpeg_encode_rect(bits, stride, x, y, w, h, q, &jpeg, &jpegSize);
             if (sent) {
+                tileBytes[ty] += static_cast<double>(jpegSize);
+                tileCount[ty] += end - tx;
                 net::ByteWriter tile(net::Binary::Frame, jpegSize + 16);
                 tile.u16(static_cast<std::uint16_t>(x)).u16(static_cast<std::uint16_t>(y)).u16(static_cast<std::uint16_t>(w)).u16(static_cast<std::uint16_t>(h));
                 tile.u8(static_cast<std::uint8_t>(net::TileEncoding::Jpeg));
@@ -613,6 +685,16 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
     });
     this->_hashes = hashes;
     if (this->_copy) this->_previous = image;
+    {
+        // Mean bytes of a jpeg tile (the budget of the sharper passes in tiles)
+        double bytes = 0.0;
+        int n = 0;
+        for (int ty = 0; ty < this->_rows; ++ty) {
+            bytes += tileBytes[ty];
+            n += tileCount[ty];
+        }
+        if (n > 0) this->_tileBytes = this->_tileBytes * 0.7 + bytes / n * 0.3;
+    }
     tiles = copies; // first: the client copies from the frame as it was before this message
     for (const QList<QByteArray>& row: rows)
         tiles.append(row);

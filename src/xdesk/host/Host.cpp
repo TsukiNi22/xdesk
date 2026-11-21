@@ -555,6 +555,12 @@ void xdesk::host::Host::onControl_(Session* session, const QJsonObject& message)
         this->requestFocus_(session);
     } else if (type == "pause") {
         if (this->_stream) QMetaObject::invokeMethod(this->_stream, "setPaused", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(bool, message.value("paused").toBool()));
+    } else if (type == "view") {
+        // Part of the screen the viewer shows (zoomed / scrolled, shares of the screen): only its tiles are sent
+        const double x = std::clamp(message.value("x").toDouble(0.0), 0.0, 1.0);
+        const double y = std::clamp(message.value("y").toDouble(0.0), 0.0, 1.0);
+        const QRectF view(x, y, std::clamp(message.value("w").toDouble(1.0), 0.0, 1.0 - x), std::clamp(message.value("h").toDouble(1.0), 0.0, 1.0 - y));
+        if (this->_stream) QMetaObject::invokeMethod(this->_stream, "setView", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(QRectF, view));
     } else if (type == "refresh") {
         if (this->_stream) QMetaObject::invokeMethod(this->_stream, "refresh", Qt::QueuedConnection, Q_ARG(QString, session->id()));
     } else if (type == "udp_off") {

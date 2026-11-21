@@ -30,6 +30,7 @@ File Description:
     #include "../platform/H264.hpp"     // xdesk::platform::H264Decoder
     #include "../platform/AvCodec.hpp"  // xdesk::platform::AvDecoder
     #include <QJsonArray>               // QJsonArray
+    #include <QRectF>                   // QRectF
     #include "../net/Protocol.hpp"      // xdesk::net::ClientKind, xdesk::net::MouseButton
     #include "UdpLink.hpp"              // xdesk::client::UdpLink
     #include <QJsonObject>              // QJsonObject
@@ -128,6 +129,7 @@ class Client: public QObject {
         _hot void text(const QString& text);
         void setQuality(const int quality, const double scale, const int fps);
         void requestMode(const QString& mode); // view | control
+        void setView(const QRectF& view); // part of the host screen shown (shares of it): only its tiles are sent
         void sendClipboard(const QString& text); // the clipboard of the host gets this text (clipboard right)
         void setClipboardSync(const bool on); // every copy made on the host is sent here (clipboard signal)
         void requestClipboard(void); // the text of the host clipboard, once (clipboard signal, asked = true)

@@ -42,7 +42,7 @@
             remember: "Se souvenir de cet appareil (de confiance après accord)", fpLabel: "Empreinte de l'hôte (à comparer avec l'écran de l'hôte)",
             connect: "Se connecter", forget: "Oublier cet appareil", reconnect: "Se reconnecter", back: "Retour", screen: "Écran",
             terminal: "Terminal", newTerminal: "Nouveau terminal", view: "Voir", control: "Contrôler", fit: "Ajuster", actual: "1:1",
-            quality: "Qualité", resNative: "Natif", disconnect: "Déconnecter", noView: "L'hôte n'a pas donné le droit de voir l'écran à cette session.",
+            quality: "Qualité", resNative: "Auto (natif max)", disconnect: "Déconnecter", noView: "L'hôte n'a pas donné le droit de voir l'écran à cette session.",
             waiting: "En attente", pendingTitle: "En attente de l'hôte", pendingText: "La personne devant l'ordinateur doit accepter la connexion.",
             connecting: "Connexion...", closedTitle: "Session terminée", bannedTitle: "Appareil banni", deniedTitle: "Connexion refusée",
             bannedText: "Cet appareil a été banni par l'hôte. Seule une action locale sur l'ordinateur peut le débannir.",
@@ -424,6 +424,9 @@
     }
 
     async function onWelcome(msg) {
+        qualitySent = ""; // a new session: the host knows nothing of the last one
+        viewSent = {x: 0, y: 0, w: 1, h: 1};
+        scheduleView();
         if (state.method === "device" && msg.proof && state.secret && crypto.subtle) {
             const expected = await hmac(state.secret, transcript("server"));
             if (!equalBytes(expected, hexdecode(msg.proof))) {
@@ -1127,6 +1130,7 @@
     }
 
     $("fitSelect").addEventListener("change", () => {save("fit", $("fitSelect").value); layoutCanvas();});
+    $("viewport").addEventListener("scroll", scheduleView, {passive: true}); // 1:1 larger than the window
     window.addEventListener("resize", () => {layoutCanvas(); fitActiveTerm();});
 
     $("fullBtn").addEventListener("click", () => {
@@ -1222,16 +1226,71 @@
     $("modeView").addEventListener("click", () => setMode("view", true));
     $("modeControl").addEventListener("click", () => setMode("control", true));
 
+    /* Resolution asked: the chosen one (never above the host), and in fit mode no more than the pixels the screen of this
+     * device shows of it: a 4K host on a phone gets about the phone resolution, a pinch zoom asks more (the zoomed part,
+     * the only one sent, in more detail); steps of x1.25 so that a pinch does not ask a new resolution at every move
+    */
+    function displayScale(chosen) {
+        if (!$("viewport").classList.contains("fit") || !state.hostW) return chosen;
+        const r = canvas.getBoundingClientRect();
+        const shown = r.width * (window.devicePixelRatio || 1) / state.hostW;
+        if (!(shown > 0)) return chosen;
+        const step = Math.min(1, Math.pow(1.25, Math.ceil(Math.log(shown) / Math.log(1.25))));
+        return Math.min(chosen, Math.max(0.1, step));
+    }
+
+    let qualitySent = "";
+
     function sendQuality() {
         const quality = parseInt($("qualityInput").value, 10);
         const fps = parseInt($("fpsSelect").value, 10);
         const height = parseInt($("resSelect").value, 10) || 0;
         // Scale of the captured screen of the host (never above its own resolution)
-        const scale = height > 0 && state.hostH > 0 ? Math.min(1, height / state.hostH) : 1;
+        const chosen = height > 0 && state.hostH > 0 ? Math.min(1, height / state.hostH) : 1;
+        const scale = Math.round(displayScale(chosen) * 1000) / 1000;
         save("quality", String(quality));
         save("fps", String(fps));
         save("res", String(height));
+        const msg = JSON.stringify({t: "quality", quality: quality, scale: scale, fps: fps});
+        if (msg === qualitySent && state.status === "active") return;
+        qualitySent = msg;
         sendJson({t: "quality", quality: quality, scale: scale, fps: fps});
+    }
+
+    /* Part of the screen shown (pinch zoom, 1:1 larger than the window): only its tiles are sent, the rest once shown;
+     * sent once the view settles (a pinch / pan moves it at every frame)
+    */
+    let viewSent = {x: 0, y: 0, w: 1, h: 1};
+    let viewTimer = 0;
+
+    function visibleView() {
+        const r = canvas.getBoundingClientRect();
+        const vp = $("viewport").getBoundingClientRect();
+        const full = {x: 0, y: 0, w: 1, h: 1};
+        if (!(r.width > 0) || !(r.height > 0)) return full;
+        const left = Math.max(r.left, vp.left);
+        const top = Math.max(r.top, vp.top);
+        const right = Math.min(r.right, vp.right);
+        const bottom = Math.min(r.bottom, vp.bottom);
+        if (right <= left || bottom <= top) return full;
+        return {x: (left - r.left) / r.width, y: (top - r.top) / r.height, w: (right - left) / r.width, h: (bottom - top) / r.height};
+    }
+
+    function sendView() {
+        if (state.status !== "active") return;
+        const v = visibleView();
+        const moved = Math.abs(v.x - viewSent.x) + Math.abs(v.y - viewSent.y) + Math.abs(v.w - viewSent.w) + Math.abs(v.h - viewSent.h);
+        if (moved > 0.01 || (v.w >= 0.999 && v.h >= 0.999) !== (viewSent.w >= 0.999 && viewSent.h >= 0.999)) {
+            viewSent = v;
+            const r = (n) => Math.round(n * 10000) / 10000;
+            sendJson({t: "view", x: r(v.x), y: r(v.y), w: r(v.w), h: r(v.h)});
+        }
+        sendQuality(); // the zoom may ask another resolution
+    }
+
+    function scheduleView() {
+        clearTimeout(viewTimer);
+        viewTimer = setTimeout(sendView, 200);
     }
 
     $("qualityInput").addEventListener("change", sendQuality);
@@ -1477,6 +1536,7 @@
         canvas.style.transformOrigin = "0 0";
         canvas.style.transform = view.zoom > 1 ? "translate(" + view.panX + "px," + view.panY + "px) scale(" + view.zoom + ")" : "";
         placeCursor();
+        scheduleView();
     }
 
     // Zoomed: the screen follows the trackpad pointer

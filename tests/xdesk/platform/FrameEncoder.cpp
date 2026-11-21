@@ -24,6 +24,8 @@ File Description:
 #include "xdesk/platform/H264.hpp"
 #include "xdesk/net/Protocol.hpp"
 #include <gtest/gtest.h>
+#include <QThread>
+#include <QRectF>
 #include <QElapsedTimer>
 #include <functional>
 #include <QPainter>
@@ -457,4 +459,66 @@ TEST(FrameEncoder, LargeMovesGoAsVideoWhenAskedThenTilesSharpOnceStill)
     const QByteArray again = encoder.encode(video_frame(5), 70);
     ASSERT_EQ(type(again), static_cast<std::uint8_t>(xdesk::net::Binary::Video));
     EXPECT_TRUE(key(again));
+}
+
+// Noise (no solid / palette tile): every tile goes as jpeg
+static QImage noise_frame(const int shift)
+{
+    QImage frame(640, 384, QImage::Format_RGB32);
+
+    for (int y = 0; y < frame.height(); ++y)
+        for (int x = 0; x < frame.width(); ++x)
+            frame.setPixel(x, y, qRgb((x * 7 + y + shift) % 256, (x + y * 3 + shift * 5) % 256, (x * y + shift) % 256));
+    return frame;
+}
+
+// A still screen gets sharper (refine quality, 4:4:4) once still for a second, within the budget of the link, until done
+TEST(FrameEncoder, StillTilesAreSentAgainSharperWithinTheBudget)
+{
+    xdesk::platform::FrameEncoder encoder;
+    const QImage frame = noise_frame(0);
+    const long all = 640L * 384L;
+    long refined = 0;
+
+    const QByteArray first = encoder.encode(frame, 50);
+    ASSERT_EQ(std::get<3>(tiles_of(first)), all);
+    encoder.setRefine(90, 1); // one tile per frame
+    EXPECT_TRUE(encoder.encode(frame, 50).isEmpty()); // still for less than a second: nothing yet
+    EXPECT_TRUE(encoder.pending());
+    QThread::msleep(1100);
+    const QByteArray one = encoder.encode(frame, 50);
+    ASSERT_FALSE(one.isEmpty());
+    EXPECT_EQ(std::get<3>(tiles_of(one)), 64L * 64L); // the budget: one tile
+    EXPECT_TRUE(encoder.pending());
+    encoder.setRefine(90, -1); // room on the link: the rest at once
+    const QByteArray rest = encoder.encode(frame, 50);
+    refined = std::get<3>(tiles_of(rest));
+    EXPECT_EQ(refined, all - 64L * 64L);
+    EXPECT_GT(rest.size(), first.size() * 9 / 10); // sharper than the first pass (fewer tiles, more bytes each)
+    EXPECT_FALSE(encoder.pending());
+    EXPECT_TRUE(encoder.encode(frame, 50).isEmpty()); // done: nothing more
+
+    // No room on the link (budget 0): nothing sent again, nothing pending
+    xdesk::platform::FrameEncoder busy;
+    (void)busy.encode(frame, 50);
+    busy.setRefine(90, 0);
+    QThread::msleep(1100);
+    EXPECT_TRUE(busy.encode(frame, 50).isEmpty());
+    EXPECT_FALSE(busy.pending());
+}
+
+// A zoomed viewer gets only the tiles it shows; the others once shown
+TEST(FrameEncoder, OnlyTheViewIsSent)
+{
+    xdesk::platform::FrameEncoder encoder;
+    const long all = 640L * 384L;
+
+    ASSERT_EQ(std::get<3>(tiles_of(encoder.encode(noise_frame(0), 70))), all);
+    encoder.setView(QRectF(0.0, 0.0, 0.25, 0.25)); // the top left corner (2.5 x 1.5 tiles)
+    const long shown = std::get<3>(tiles_of(encoder.encode(noise_frame(1), 70)));
+    EXPECT_GT(shown, 0);
+    EXPECT_LE(shown, 5L * 4L * 64L * 64L); // the view + one tile of margin, never the whole screen
+    EXPECT_TRUE(encoder.encode(noise_frame(1), 70).isEmpty()); // the rest waits
+    encoder.setView(QRectF(0.0, 0.0, 1.0, 1.0));
+    EXPECT_EQ(std::get<3>(tiles_of(encoder.encode(noise_frame(1), 70))), all - shown); // shown again: the tiles it missed
 }

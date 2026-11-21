@@ -39,6 +39,8 @@ File Description:
 #include <QPointer>
 #include <QThread>
 #include <QScrollArea>
+#include <cmath>
+#include <QScrollBar>
 #include <QToolButton>
 #include <QAction>
 #include <QMenu>
@@ -623,6 +625,12 @@ QWidget* xdesk::ui::gui::ViewerWindow::buildViewer_(void)
     this->_screenArea->setWidget(this->_screen);
     this->_screenArea->setWidgetResizable(true);
     this->_tabs->addTab(this->_screenArea, Theme::icon("screen"), "Screen");
+    this->_viewTimer.setSingleShot(true);
+    this->_viewTimer.setInterval(200);
+    QObject::connect(&this->_viewTimer, &QTimer::timeout, this, &ViewerWindow::updateView_);
+    QObject::connect(this->_screenArea->horizontalScrollBar(), &QScrollBar::valueChanged, this, [this]() {this->_viewTimer.start();});
+    QObject::connect(this->_screenArea->verticalScrollBar(), &QScrollBar::valueChanged, this, [this]() {this->_viewTimer.start();});
+    this->_screenArea->viewport()->installEventFilter(this);
     this->_tabs->tabBar()->setTabButton(0, QTabBar::RightSide, nullptr);
     layout->addWidget(this->_tabs, 1);
     QObject::connect(this->_controlAction, &QAction::toggled, this, [this](const bool on) {
@@ -631,6 +639,7 @@ QWidget* xdesk::ui::gui::ViewerWindow::buildViewer_(void)
         this->_screen->setFocus();
     });
     QObject::connect(fit, &QAction::toggled, this->_screen, &ScreenView::setFit);
+    QObject::connect(fit, &QAction::toggled, this, [this]() {this->_viewTimer.start();});
     QObject::connect(fullscreen, &QAction::triggered, this, [this]() {
         if (this->isFullScreen()) this->showNormal();
         else this->showFullScreen();
@@ -661,10 +670,41 @@ QWidget* xdesk::ui::gui::ViewerWindow::buildViewer_(void)
 void xdesk::ui::gui::ViewerWindow::sendQuality_(void)
 {
     const int height = this->_resolution->currentData().toInt();
-    const int native = this->_client.hostScreen().height();
+    const QSize native = this->_client.hostScreen();
+    double scale = height > 0 && native.height() > 0 ? std::min(1.0, static_cast<double>(height) / native.height()) : 1.0;
 
-    // Scale of the captured screen: the host never sends more than it has
-    this->_client.setQuality(this->_quality->value(), height > 0 && native > 0 ? std::min(1.0, static_cast<double>(height) / native) : 1.0, 60);
+    // Fit: no more than the pixels the window shows of it (steps of x1.25: a resize does not ask a new one at every pixel)
+    if (this->_screen && this->_screen->isFit() && native.width() > 0 && native.height() > 0) {
+        const double shown = std::min(static_cast<double>(this->_screen->width()), this->_screen->height() * static_cast<double>(native.width()) / native.height()) * this->devicePixelRatioF() / native.width();
+        if (shown > 0.0) scale = std::min(scale, std::max(0.1, std::min(1.0, std::pow(1.25, std::ceil(std::log(shown) / std::log(1.25))))));
+    }
+    const QString sent = QString::number(this->_quality->value()) + "/" + QString::number(scale, 'f', 3);
+    if (sent == this->_qualitySent) return;
+    this->_qualitySent = sent;
+    this->_client.setQuality(this->_quality->value(), std::round(scale * 1000.0) / 1000.0, 60);
+}
+
+void xdesk::ui::gui::ViewerWindow::updateView_(void)
+{
+    QRectF view(0.0, 0.0, 1.0, 1.0);
+
+    if (this->_screenArea && this->_screen && !this->_screen->isFit() && this->_screen->width() > 0 && this->_screen->height() > 0) {
+        const QRect shown = QRect(-this->_screen->pos(), this->_screenArea->viewport()->size()).intersected(this->_screen->rect());
+        if (!shown.isEmpty())
+            view = QRectF(static_cast<double>(shown.x()) / this->_screen->width(), static_cast<double>(shown.y()) / this->_screen->height(),
+                static_cast<double>(shown.width()) / this->_screen->width(), static_cast<double>(shown.height()) / this->_screen->height());
+    }
+    if (std::abs(view.x() - this->_viewSent.x()) + std::abs(view.y() - this->_viewSent.y()) + std::abs(view.width() - this->_viewSent.width()) + std::abs(view.height() - this->_viewSent.height()) > 0.01) {
+        this->_viewSent = view;
+        this->_client.setView(view);
+    }
+    this->sendQuality_();
+}
+
+bool xdesk::ui::gui::ViewerWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    if (this->_screenArea && watched == this->_screenArea->viewport() && event->type() == QEvent::Resize) this->_viewTimer.start();
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void xdesk::ui::gui::ViewerWindow::openTerminal_(void)
@@ -723,6 +763,9 @@ void xdesk::ui::gui::ViewerWindow::onState_(const client::State state)
             this->setWindowTitle("xdesk - " + this->_client.hostName());
             this->_pages->setCurrentIndex(2);
             this->_screen->setFocus();
+            this->_qualitySent.clear(); // a new session: the host knows nothing of the last one
+            this->_viewSent = QRectF(0.0, 0.0, 1.0, 1.0);
+            this->_viewTimer.start();
             break;
         default: break;
     }

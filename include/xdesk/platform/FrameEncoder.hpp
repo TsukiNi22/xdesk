@@ -32,6 +32,7 @@ File Description:
     #include <QVector>          // QVector
     #include <cstdint>          // std::uint32_t, std::uint64_t
     #include <QImage>           // QImage
+    #include <QRectF>           // QRectF
     #include <memory>           // std::shared_ptr
     #include <QList>            // QList
 
@@ -65,6 +66,12 @@ class FrameEncoder {
         bool _hardware = true; // a gpu encoder may be used
         int _videoFailures = 0; // encoders that failed in a row (3: tiles only until a reset)
         qsizetype _encoderPixels = 0; // frame size the encoder was chosen for (another size: chosen again)
+        QVector<qint64> _changedAt; // ms each tile last changed (its stillness: sent again sharper once still long enough)
+        int _refine = 0; // quality of the tiles still for REFINE_MS (0 = off: the link has no room)
+        qsizetype _budget = -1; // bytes per frame for the tiles sent again sharper (-1 = no limit)
+        double _tileBytes = 3000.0; // mean bytes of a jpeg tile (how many fit in the budget)
+        QRectF _view = QRectF(0.0, 0.0, 1.0, 1.0); // part of the screen the client shows (share of the frame): only its tiles are sent
+        bool _pending = false; // tiles still waiting to be sent sharper (the stream calls encode again even without a new capture)
 
         // ---------- Pre-Function -------- //
         _hot void findCopies_(const QImage& image, const QVector<std::uint64_t>& hashes, QVector<int>& offsets) const; // offsets[tile] = rows its content moved down since the previous frame (0 = not found)
@@ -76,6 +83,7 @@ class FrameEncoder {
         _hot _nodiscard QByteArray encode(const QImage& frame, const int quality); // Binary::Frame message, empty = nothing changed (moving parts lighter, sent again sharp once still)
         _cold void reset(void); // next frame is complete (new client, resize, quality change)
         _cold void setCodecs(const int codecs, const QString& prefer, const bool hardware); // what the client decodes, the settings of the host (a new encoder at the next video frame)
+        _cold void setView(const QRectF& view); // share of the frame the client shows (zoomed / scrolled): the other tiles wait until shown
         _hot _nodiscard static QByteArray encodeJpeg(const QImage& image, const int quality); // libjpeg-turbo
         _hot _nodiscard static QImage decodeJpeg(const QByteArray& data); // libjpeg-turbo, RGB32 (null on error)
 
@@ -84,10 +92,13 @@ class FrameEncoder {
         _cold _nodiscard inline std::uint32_t lastId(void) const {return this->_id;};
         _cold _nodiscard inline bool orderBound(void) const      {return this->_ordered;};
         _cold _nodiscard inline QString videoEncoder(void) const {return this->_encoder ? this->_encoder->name() : QString();}; // name of the encoder in use ("" = none yet)
+        _cold _nodiscard inline bool pending(void) const         {return this->_pending;}; // tiles wait to be sent sharper: encode again even without a new capture
+        _cold _nodiscard inline bool fullView(void) const        {return this->_view.width() >= 0.999 && this->_view.height() >= 0.999;};
         /* setter */
         _cold inline void setPalette(const bool enabled) {this->_palette = enabled;};
         _cold inline void setCopy(const bool enabled)    {this->_copy = enabled; if (!enabled) this->_previous = QImage();};
         _cold inline void setVideo(const bool enabled)   {this->_video = enabled;};
+        _cold inline void setRefine(const int quality, const qsizetype budget) {this->_refine = quality; this->_budget = budget;}; // still tiles sent again at this quality, at most budget bytes per frame (-1 = no limit, 0 = none)
 
         // ---------- Constructor --------- //
         FrameEncoder() = default;

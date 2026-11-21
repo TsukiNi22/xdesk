@@ -526,6 +526,12 @@ void xdesk::client::Client::setQuality(const int quality, const double scale, co
         this->_ws->sendText(QString::fromUtf8(QJsonDocument(QJsonObject{{"t", "quality"}, {"quality", quality}, {"scale", scale}, {"fps", fps}}).toJson(QJsonDocument::Compact)));
 }
 
+void xdesk::client::Client::setView(const QRectF& view)
+{
+    if (!this->_ws || this->_state != State::Active) return;
+    this->_ws->sendText(QString::fromUtf8(QJsonDocument(QJsonObject{{"t", "view"}, {"x", view.x()}, {"y", view.y()}, {"w", view.width()}, {"h", view.height()}}).toJson(QJsonDocument::Compact)));
+}
+
 void xdesk::client::Client::requestMode(const QString& mode)
 {
     if (this->_ws && this->_state == State::Active)

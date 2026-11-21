@@ -42,6 +42,7 @@ File Description:
     #include <QToolBar>                     // QToolBar
     #include <QSlider>                      // QSlider
     #include <QLabel>                       // QLabel
+    #include <QTimer>                       // QTimer
     #include <QHash>                        // QHash
     #include <QSet>                         // QSet
 
@@ -127,10 +128,15 @@ class ViewerWindow: public QMainWindow {
         QSlider* _quality = nullptr;
         QComboBox* _resolution = nullptr; // native, 1080p ... 144p (height asked to the host)
         QLabel* _received = nullptr; // resolution of the frames received
+        QTimer _viewTimer; // the view sent once the scroll / resize settles
+        QRectF _viewSent = QRectF(0.0, 0.0, 1.0, 1.0); // part of the host screen the host was told
+        QString _qualitySent = ""; // last quality message (not sent again unchanged)
         QHash<std::uint8_t, TerminalWidget*> _terminals;
 
         // ---------- Pre-Function -------- //
         void addClipboard_(void); // clipboard button of the toolbar (automatic sync + one way actions)
+        void updateView_(void); // tells the host the part of its screen shown (1:1 larger than the window), the resolution worth sending
+        bool eventFilter(QObject* watched, QEvent* event) override; // resizes of the screen area
         _nodiscard QWidget* buildConnect_(void);
         _nodiscard QWidget* buildViewer_(void);
         void scan_(void);

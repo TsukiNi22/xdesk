@@ -38,6 +38,7 @@ File Description:
     #include <QPoint>                               // QPoint
     #include <memory>                               // std::unique_ptr
     #include <QSize>                                // QSize
+    #include <QRectF>                               // QRectF
     #include <QHash>                                // QHash
 
 namespace xdesk::host { // namespace start
@@ -108,6 +109,7 @@ class Stream: public QObject {
         void setPaused(const QString& session, const bool paused);
         void setAutoResolution(const bool enabled); // setting autoResolution (every client)
         void setVideoCodec(const QString& prefer, const bool hardware); // settings videoCodec / hardwareVideo (every client)
+        void setView(const QString& session, const QRectF& view); // part of the screen this client shows (share of the frame): only its tiles are sent
 
         // ------------ Function ---------- //
         inline void setMaxHeight(const int height) {this->_maxHeight = std::max(0, height);}; // 0 = the screen size
