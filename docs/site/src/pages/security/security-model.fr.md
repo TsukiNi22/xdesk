@@ -34,5 +34,6 @@ Seulement le LAN et le PC lui-même, plus le chemin que le [mode d'exposition](p
 > Un terminal distant tourne avec les droits de ton utilisateur. La [protection contre l'altération](page:tamper-protection#idea) arrête les moyens habituels de toucher à xdesk, pas un attaquant déterminé avec un shell : ne donne les terminaux qu'à des personnes de confiance (le droit peut être retiré en direct).
 
 - Le client web ne peut pas lire le certificat : il envoie le code dans TLS sans la liaison Argon2id. Préfère les clients natifs sur un réseau non sûr.
+- Le presse-papiers partagé est actif par défaut seulement pour les sessions qui ont le contrôle (une session qui regarde seulement ne reçoit jamais ce qui est copié sur l'hôte) ; un hôte auquel tu te connectes peut mettre du texte dans ton presse-papiers et, avec le presse-papiers automatique, lire ce que tu copies tant que sa page / l'appli est au premier plan : coupe le presse-papiers automatique sur un hôte dont tu n'es pas sûr.
 - `cloudflared` termine TLS au relais.
 - Le certificat Tailscale publie le nom MagicDNS dans les logs publics de certificats.

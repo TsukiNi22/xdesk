@@ -34,5 +34,6 @@ Only the LAN and the PC itself, plus the one path the [exposure mode](page:expos
 > A remote terminal runs with the rights of your user. The [tamper protection](page:tamper-protection#idea) stops the usual ways of touching xdesk, not a determined attacker with a shell: give terminals only to people you trust (the right can be removed live).
 
 - The web client cannot read the certificate: it sends the code inside TLS without the Argon2id binding. Prefer the native clients on an untrusted network.
+- The shared clipboard is on by default for the sessions with control only (a session that only watches never gets what is copied on the host); a host you connect to can put text in your clipboard and, with the automatic clipboard on, read what you copy while its page / the app is in front: turn the automatic clipboard off on a host you do not trust.
 - `cloudflared` terminates TLS at the relay.
 - The Tailscale certificate publishes the MagicDNS name in the public certificate logs.

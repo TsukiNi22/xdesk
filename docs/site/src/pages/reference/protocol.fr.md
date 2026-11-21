@@ -44,6 +44,8 @@ Un seul port TLS 1.3 (`47800` par défaut) sert le HTTPS (`/`, `/api/info`, `/ap
 | `quality / mode / refresh` | C → S | quality scale fps / view ou control |
 | `term_open / term_resize / term_close / term_exit` | ↔ | id cols rows code |
 | `perms / screen / info / bye / clip` | S → C (clip ↔) | perms, w h, text, reason, texte du presse-papiers (asked = la réponse d'un `clip_get`) |
+| `view` | C → S | x y w h : la partie de l'écran affichée (parts de celui-ci, zoom / 1:1 défilé) : seules ses tuiles sont envoyées |
+| `cursor` (et `welcome.cursor`) | S → C | embedded : l'hôte dessine son curseur dans les images (sinon le viewer le dessine, forme venant de `CursorShape`) |
 | `clip_sync / clip_get` | C → S | on (chaque copie faite sur l'hôte est envoyée en `clip`) / le texte du presse-papiers de l'hôte une fois |
 | `focus_request` | C → S | contrôle mis en pause par le panneau de l'hôte : rendu après 1 min sauf refus |
 | `input` | S → C | state (loading, ready, paused, none), error, wait, asked |
@@ -78,6 +80,16 @@ Les acquittements dimensionnent les images en vol et mesurent le ping et le déb
 | y | i16 | 2 |  |
 | visible | u8 | 1 | 0 / 1 |
 Le curseur distant, dessiné par le viewer.
+:::
+
+:::message CursorShape 0x14
+| champ | type | taille | description |
+|---|---|---|---|
+| type | u8 | 1 | `0x14` |
+| hotspot x | u16 | 2 | pixels de l'image |
+| hotspot y | u16 | 2 | pixels de l'image |
+| png | png | var | le curseur (512 x 512 au plus) |
+Envoyé quand le curseur change de forme (et à chaque nouvelle session) : en contrôle, le viewer affiche son propre curseur avec, à sa propre souris.
 :::
 
 :::message Video 0x13

@@ -100,6 +100,16 @@ xdesk n'envoie pas plus vite que le viewer ne peut recevoir : il attend que le v
 Le thread de capture tourne toutes les 4 ms. Une session reçoit une image quand son plafond de FPS le permet et que sa fenêtre est ouverte : sans file, les images dont son rythme a besoin pendant un ping (2 sur un LAN, jusqu'à 8 au loin) ; avec une file, seulement ce que le chemin contient (débit × ping) et une qualité JPEG plus basse jusqu'à ce qu'elle se vide, pour qu'aucun retard ne s'accumule. Un viewer dont le lien ne suit pas même à la qualité la plus basse reçoit une résolution plus basse (`autoResolution`), remontée une fois le lien calme. Aucune image n'est envoyée pendant que le viewer affiche un terminal.
 :::
 
+## Comme Chrome Remote Desktop {#crd}
+
+:::simple
+Chrome Remote Desktop garde une image nette presque sans retard avec quelques règles simples, et xdesk les suit. Ce qui reste immobile est renvoyé plus net dès que le lien a de la place. Ce qui bouge est dimensionné pour le lien, donc ne fait jamais la queue. Le pointeur de ta souris est dessiné de ton côté, donc il n'a jamais de retard. Et quand tu zoomes, seule la partie que tu vois est envoyée, avec plus de détail.
+:::
+
+:::technical
+Lu dans les sources de Chromium (`remoting/`) : son encodeur ré-encode la dernière image tant que rien ne change (*top-off*) jusqu'à ce que le quantificateur atteigne son plancher (10 : presque sans perte), VP9 / AV1 en profil 1 (4:4:4, *lossless color*), seuls les blocs 16 × 16 modifiés encodés (*active map*), CBR au débit estimé par WebRTC sans image jetée par l'encodeur, une grosse mise à jour encodée en qualité plus basse quand elle prendrait plus d'un intervalle d'image à envoyer, un encodage à la fois (une image plus récente remplace celle qui attend), la forme du curseur envoyée en bitmap quand elle change et dessinée par le client à sa propre souris. Dans xdesk : une tuile immobile depuis 150 ms revient à la qualité du flux, après 500 ms monte à 90-95 en 4:4:4, dans un budget de la moitié du débit mesuré d'un intervalle d'image et seulement sans file ; seules les tuiles 64 × 64 modifiées sont encodées ; la vidéo GPU passe en CBR à 80 % du débit mesuré dès que le lien est le goulot (2 images de tampon) ; une mise à jour plus grosse que deux intervalles d'image du lien part plus légère tout de suite ; seulement la dernière capture, images en vol bornées par le ping ; le curseur du portail en métadonnées, sa forme (`CursorShape`) dessinée par le viewer à sa propre souris en contrôle. Un viewer zoomé indique la partie affichée (`view`) : seules ces tuiles sont envoyées, à la résolution que son écran affiche.
+:::
+
 ## Vidéo sur le GPU et le bench {#gpu}
 
 :::simple

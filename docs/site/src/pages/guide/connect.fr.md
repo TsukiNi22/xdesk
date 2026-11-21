@@ -63,6 +63,8 @@ Mode toucher direct : tap = clic à cet endroit, glisser = glisser-déposer, app
 
 **Presse-papiers** (quand l'hôte donne le droit, réglage `allowClipboard`) : automatique dans les deux sens par défaut (menu : *Presse-papier auto*), une copie sur l'ordinateur arrive dans le presse-papiers du téléphone / navigateur, une copie ici arrive sur l'ordinateur (quand la page reprend le focus, ou à Ctrl+V sur l'écran) ; *Copier du PC* et *Envoyer le presse-papier* forcent un sens. Le viewer Qt a la même chose dans son bouton *Clipboard*, le client terminal reçoit les copies de l'hôte par OSC 52.
 
+**Zoom** : seule la partie affichée est envoyée (le reste une fois affiché), à la résolution que l'écran de l'appareil affiche : un zoom au pincement demande plus de détail à l'hôte. La résolution *Auto (natif max)* n'envoie jamais plus de pixels que l'écran ne peut en afficher.
+
 **Clavier** : Tab / flèches / Début / Fin se déplacent dans les onglets, la barre d'outils, le menu et les touches spéciales, Entrée / Espace activent, Échap ferme le menu. Tant que l'écran distant a le focus, chaque touche va à l'ordinateur distant (Tab compris) : **Ctrl+Alt+Maj** rend les touches à la page (ou à la fenêtre dans le viewer Qt).
 
 > [!WARNING]

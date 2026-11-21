@@ -63,6 +63,8 @@ Direct touch mode: tap = click there, slide = drag, hold until the gray circle t
 
 **Clipboard** (when the host gives the right, setting `allowClipboard`): automatic both ways by default (menu: *Auto clipboard*), a copy on the computer lands in the clipboard of the phone / browser, a copy here lands on the computer (when the page gets the focus back, or at Ctrl+V on the screen); *Copy from PC* and *Send clipboard* force one way. The Qt viewer has the same in its *Clipboard* button, the terminal client receives the copies of the host through OSC 52.
 
+**Zoom**: only the part shown is sent (the rest once shown), at the resolution the screen of the device shows: a pinch zoom asks the host for more detail. The resolution *Auto (native max)* never sends more pixels than the display can show.
+
 **Keyboard**: Tab / arrows / Home / End move along the tabs, the toolbar, the menu and the special keys, Enter / Space activate, Escape closes the menu. While the remote screen has the focus every key goes to the remote computer (Tab too): **Ctrl+Alt+Shift** gives the keys back to the page (or to the window in the Qt viewer).
 
 > [!WARNING]
