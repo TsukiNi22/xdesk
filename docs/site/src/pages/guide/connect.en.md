@@ -47,16 +47,23 @@ After `ctrl+]`:
 
 Scan the QR code of the panel with the camera: the app or the browser opens with the code filled in. Or open the address shown in the panel and type the code (or Scan).
 
+The gestures are those of Chrome Remote Desktop:
+
 | Gesture (trackpad mode) | Does |
 |---|---|
 | slide | move the pointer |
 | tap / double tap | click / double click |
-| tap then slide, hold then slide | drag |
-| two fingers tap / slide | right click / scroll |
+| hold until the gray circle, then slide | drag |
+| two fingers tap / slide | right click / scroll (it goes on after the fingers leave) |
+| three fingers tap | middle click |
 | pinch | zoom |
-| three fingers tap | keyboard |
+| three fingers swipe up / down | keyboard / special keys |
 
-Direct touch mode: tap = click there, slide = drag, hold then lift = right click. A bar gives Esc, Tab, sticky Ctrl / Alt / Shift, Win, arrows, F1-F12, Ctrl+Alt+Del and Paste.
+Direct touch mode: tap = click there, slide = drag, hold until the gray circle then lift = right click. The bar of special keys gives Esc, Tab, sticky Ctrl / Alt / Shift, Win, arrows, F1-F12, Ctrl+Alt+Del and Paste, with a **text line** above it: type in it, **Send** types the text as it is (nothing added), Send with an empty line sends Enter, and the erase key next to it sends Backspace (held: repeats).
+
+**Clipboard** (when the host gives the right, setting `allowClipboard`): automatic both ways by default (menu: *Auto clipboard*), a copy on the computer lands in the clipboard of the phone / browser, a copy here lands on the computer (when the page gets the focus back, or at Ctrl+V on the screen); *Copy from PC* and *Send clipboard* force one way. The Qt viewer has the same in its *Clipboard* button, the terminal client receives the copies of the host through OSC 52.
+
+**Keyboard**: Tab / arrows / Home / End move along the tabs, the toolbar, the menu and the special keys, Enter / Space activate, Escape closes the menu. While the remote screen has the focus every key goes to the remote computer (Tab too): **Ctrl+Alt+Shift** gives the keys back to the page (or to the window in the Qt viewer).
 
 > [!WARNING]
 > The certificate is self-signed: the browser asks to accept it once (compare the fingerprint with the panel). A browser cannot read the certificate, so it sends the code inside TLS without the Argon2id binding: prefer the native clients on an untrusted network, or the [Tailscale name](page:exposure#tailscale) (real certificate).

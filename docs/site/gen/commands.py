@@ -54,7 +54,7 @@ def pages(ctx: "Context") -> list[dict]:
     for lang in ctx.langs:
         text = TEXT[lang]
         md = [text["intro"].format(version=ctx.version or "-"), "", f"## {text['commands']} {{#commands}}", "", text["chead"], "|---|---|"]
-        md += [f"| `{escape(u)}` | {escape(d)} |" for u, d in cmds]
+        md += ["| `" + u.replace("|", "\\|") + "` | " + escape(d) + " |" for u, d in cmds] # a code span keeps its text as it is (no backslash shown)
         md += ["", f"## {text['flags']} {{#flags}}", "", text["fhead"], "|---|---|---|---|"]
         md += [f"| {('`-' + s + '`, ') if s else ''}`--{n}` | {('`' + v + '`') if v else '-'} | {('`' + e + '`') if e else '-'} | {escape(d)} |"
             for s, n, e, v, d in sorted(opts, key=lambda o: o[1])]

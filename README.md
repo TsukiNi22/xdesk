@@ -37,9 +37,11 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 | Devices | Trusted (reconnect without code), known, banned devices and banned addresses, one record per machine (a browser coming back with a new id replaces its old records, their trust is not kept); unban / trust only locally |
 | Tamper protection | A session touching xdesk (its binary, config, data, process) is banned at once (see [Security](#security)) |
 | Audit log | `jsonl` per day (connections, decisions, inputs, terminal commands) + full terminal transcripts |
-| Screen | Dirty 64x64 tiles (JPEG via libjpeg-turbo or solid color) hashed and encoded on every core, lighter JPEG while a large part moves (scroll, video) then the same tiles sent again sharp once still, scroll sent as copies of what the viewer already has (only the revealed lines are encoded), large moves sent as H.264 video (openh264 loaded at run time, decoded by WebCodecs in the browsers and the app, by openh264 in the Qt viewer) while the link of the viewer is the bottleneck, nothing computed while the capture has no new frame, frames in flight sized from the measured ping and bandwidth (2 on a LAN, up to 8 for a far viewer, acked on arrival) and JPEG quality lowered while a queue builds up then raised again, paused while the client shows a terminal, remote cursor |
+| Screen | Dirty 64x64 tiles (JPEG via libjpeg-turbo or solid color) hashed and encoded on every core, lighter JPEG while a large part moves (scroll, video) then the same tiles sent again sharp once still, scroll sent as copies of what the viewer already has (only the revealed lines are encoded), large moves sent as video while the link of the viewer is the bottleneck: encoded by the GPU (NVENC, Quick Sync, VA-API through FFmpeg 8, AV1 / HEVC / H.264 up to 4K at ~60 fps, the encoder of each viewer chosen from `xdesk bench` by its bandwidth and ping) or by openh264 (up to 1920 x 1200), decoded by WebCodecs in the browsers and the app, by openh264 / libavcodec in the native viewers; the resolution stays native as long as possible (quality, then frame rate, then 1080p at the lowest), nothing computed while the capture has no new frame, frames in flight sized from the measured ping and bandwidth (2 on a LAN, up to 8 for a far viewer, acked on arrival) and JPEG quality lowered while a queue builds up then raised again, paused while the client shows a terminal, remote cursor |
 | Capture | Windows DXGI Desktop Duplication, X11 / macOS through Qt, Wayland through the xdg-desktop-portal ScreenCast + PipeWire video stream (no screenshots: no flash, no shutter sound, only the changed tiles sent) |
-| Input | Windows `SendInput` (scancodes + unicode), Linux `uinput` (Wayland and X11) or XTest, physical key codes (layout of the host) |
+| Input | Windows `SendInput` (scancodes + unicode), Linux `uinput` (Wayland and X11) or XTest, physical key codes (layout of the host); keyboard navigation of every window and page (Tab / arrows / Enter / Escape), the remote screen takes every key (Tab too) until Ctrl+Alt+Shift |
+| Clipboard | Both ways, automatic (can be turned off per viewer) or forced with buttons: web (focus back, Ctrl+V), Android app, Qt viewer, terminal client (OSC 52); on Wayland through the X11 selection of Xwayland; host setting `allowClipboard` |
+| Terminal output | zlib (`TermPacked`) for the viewers off the LAN: 3.6x on a build log |
 | Terminals | Linux / macOS `forkpty`, Windows ConPTY; up to 4 per session, resizable, `xterm-256color` + truecolor, UTF-8 (`C.UTF-8` when started without a locale); web client: xterm.js with the WebGL renderer, Unicode 11 widths and Nerd / powerline fonts when installed |
 | Clients | Qt viewer (fit / 1:1 / full screen, terminals in tabs), terminal client (connect page with LAN scan and known hosts, terminals and the screen in truecolor half blocks in tabs, control, quality, mouse), web client, Android APK |
 | Video over UDP | Qt viewer, terminal client and Android app: frames over UDP on the port of the server, AES-256-GCM with per-session keys sent inside TLS, anti replay, xor parity while the path loses, nacks, frames completing in any order (+32 % fps, half the lag and the stalls at 3-8 % loss); back to TCP when UDP is blocked |
@@ -73,7 +75,7 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 ## Dependencies
 
 > [!CAUTION]
-> The MIT license of this project ([LICENSE](LICENSE)) only applies to the code of `xdesk` itself, not to its dependencies (Qt 6: LGPLv3, OpenSSL: Apache 2.0, libjpeg-turbo: BSD-style, xterm.js: MIT, jsQR: Apache 2.0, qrcodegen: MIT, PipeWire headers: MIT, openh264 headers: BSD-2-Clause; the openh264 library is loaded at run time, the binaries of Cisco come with their own license and H.264 patent coverage).
+> The MIT license of this project ([LICENSE](LICENSE)) only applies to the code of `xdesk` itself, not to its dependencies (Qt 6: LGPLv3, OpenSSL: Apache 2.0, libjpeg-turbo: BSD-style, xterm.js: MIT, jsQR: Apache 2.0, qrcodegen: MIT, PipeWire headers: MIT, openh264 headers: BSD-2-Clause, FFmpeg headers: LGPL 2.1+ (the FFmpeg libraries are loaded at run time); the openh264 library is loaded at run time, the binaries of Cisco come with their own license and H.264 patent coverage).
 
 | Name + Link | Status | Last Update |
 | ----------- | ------ | ----------- |
@@ -89,6 +91,8 @@ Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange
 | libjpeg-turbo | any | `libjpeg-turbo-devel` | `libjpeg-turbo8-dev` | `libjpeg-turbo` |
 | PipeWire (run time, Wayland) | `0.3` / `1.x` | `pipewire-libs` | `libpipewire-0.3-0` | `pipewire` |
 | XTest **[OPTIONAL]** | any | `libXtst-devel` | `libxtst-dev` | `libxtst` |
+| FFmpeg 8 libraries (run time) **[OPTIONAL]** | `libavcodec.so.62` + `libavutil.so.60` (Windows: `avcodec-62.dll` + `avutil-60.dll` next to `xdesk.exe`; GPU encoders: NVENC / Quick Sync / VA-API; HEVC / AV1 decoding of the native viewers), headers vendored | `ffmpeg-libs` (RPM Fusion) | `libavcodec62` | `ffmpeg` |
+| libX11 + libXfixes (run time, Wayland clipboard) **[OPTIONAL]** | any (Xwayland) | `libXfixes` | `libxfixes3` | `libxfixes` |
 | openh264 (run time) **[OPTIONAL]** | `2.6+` (`libopenh264.so.8`, Windows: the `openh264-2.6.x-win64.dll` of Cisco next to `xdesk.exe`) | `openh264` | `libopenh264-8` | `openh264` |
 | GoogleTest (tests only) | any | `gtest-devel` | `libgtest-dev` | `gtest` |
 | MinGW-w64 (Windows only) | GCC `>= 13` | `mingw64-gcc-c++ mingw64-qt6-qtbase mingw64-openssl mingw64-libjpeg-turbo mingw64-libutils` | - | - |
@@ -226,6 +230,8 @@ xdesk scan                                   # hosts announced on the LAN
 xdesk devices                                # known / trusted / banned devices and addresses
 xdesk unban <device id | address>            # local unban (host stopped, the word unban typed)
 xdesk paths                                  # config / data / logs folders
+xdesk bench                                  # measure every way of sending the screen here (1080p + 4K), simulated networks, saved for the host
+xdesk bench 2160                             # 4K only
 xdesk --regen-cert                           # new host identity (clients confirm the new fingerprint)
 ```
 
@@ -334,7 +340,7 @@ path it closes. The panel shows, for each path, who can use it and its address.
 ## Phone & browser
 
 - Scan the **QR code** of the panel (Overview, QR code, or the button of an address) with the camera: the xdesk app or the browser opens with the code filled in.
-- Open `https://<host>:<port>` (shown in the panel): the web client asks the code (or scans it: Scan the QR code of the host), then shows the screen and terminals (xterm.js). On a phone or a tablet: trackpad mode (slide = pointer, tap = click, double tap = double click, tap then slide or hold then slide = drag) or direct touch (tap = click there, double tap = double click, slide = drag, hold then lift = right click), two fingers tap = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard, and a bar of special keys (Esc, Tab, sticky Ctrl / Alt / Shift, Win (tap = the key, hold = sticky), arrows, F1-F12, Ctrl+Alt+Del, Paste); the session tools sit in the menu.
+- Open `https://<host>:<port>` (shown in the panel): the web client asks the code (or scans it: Scan the QR code of the host), then shows the screen and terminals (xterm.js). On a phone or a tablet, the gestures of Chrome Remote Desktop: trackpad mode (slide = pointer, tap = click, double tap = double click, hold until the gray circle then slide = drag) or direct touch (tap = click there, double tap = double click, slide = drag, hold until the gray circle then lift = right click), two fingers tap = right click, three fingers tap = middle click, two fingers slide = scroll (flung), pinch = zoom, three fingers swipe up = keyboard, down = special keys; the bar of special keys (Esc, Tab, sticky Ctrl / Alt / Shift, Win (tap = the key, hold = sticky), arrows, F1-F12, Ctrl+Alt+Del, Paste) has a text line above it (Send types the text as it is, Send on an empty line = Enter, an erase key); the clipboard buttons and the automatic clipboard switch sit in the menu.
 - On Android the page proposes the **xdesk app** (`/app/xdesk.apk`): full screen, certificate pinned on first use (or from the QR code), a QR code scanner (camera asked when it opens), and an update offered as soon as the host serves a newer version.
 - The certificate is self-signed: the browser asks to accept it once (compare the fingerprint with the host panel), or use the Tailscale name (real certificate, see above) / a tunnel with a real certificate.
 - LAN addresses use the `<pc>.local` name when avahi / Bonjour publishes it for that address, the IP otherwise.

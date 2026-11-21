@@ -33,7 +33,7 @@ One TLS 1.3 port (`47800` by default) serves HTTPS (`/`, `/api/info`, `/app/xdes
 
 | t | direction | fields |
 |---|---|---|
-| `hello` | C → S | v kind name os device nonce udp (udp: the Android app has its own UDP socket) |
+| `hello` | C → S | v kind name os device nonce udp enc (udp: the Android app has its own UDP socket; enc: what it decodes, `palette` `copy` `zlib` `h264` `hevc` `av1`) |
 | `challenge` | S → C | host version nonce salt kdf known |
 | `auth` | C → S | method = code (web) or proof, device, remember |
 | `pending / welcome / denied` | S → C | session perms screen capture device proof / reason |
@@ -43,7 +43,8 @@ One TLS 1.3 port (`47800` by default) serves HTTPS (`/`, `/api/info`, `/app/xdes
 | `lane` | C → S (first message of /lane) | session token index |
 | `quality / mode / refresh` | C → S | quality scale fps / view or control |
 | `term_open / term_resize / term_close / term_exit` | ↔ | id cols rows code |
-| `perms / screen / info / bye / clip` | S → C (clip ↔) | perms, w h, text, reason, clipboard text |
+| `perms / screen / info / bye / clip` | S → C (clip ↔) | perms, w h, text, reason, clipboard text (asked = the answer of a `clip_get`) |
+| `clip_sync / clip_get` | C → S | on (every copy made on the host is sent as a `clip`) / the text of the host clipboard once |
 | `focus_request` | C → S | control paused by the host panel: given back after 1 min unless refused |
 | `input` | S → C | state (loading, ready, paused, none), error, wait, asked |
 
@@ -86,9 +87,9 @@ The remote cursor, drawn by the viewer.
 | id | u32 | 4 | frame id |
 | width | u16 | 2 | rounded up to even |
 | height | u16 | 2 | rounded up to even |
-| flags | u8 | 1 | 1 = key frame |
-| data | h264 | var | annex B access unit of the whole frame |
-Only to the clients listing `h264` in `enc`, while their frames keep their order; acked like a frame.
+| flags | u8 | 1 | bit 0 = key frame, bits 1-2 = codec (0 H.264, 1 HEVC, 2 AV1) |
+| data | video | var | the whole frame: H.264 annex B (constrained baseline), HEVC annex B (Main) or AV1 OBUs |
+Only in a codec the client lists in `enc` (`h264`, `hevc`, `av1`), while its frames keep their order; acked like a frame. BT.709 limited range.
 :::
 
 :::message MouseMove 0x20
@@ -143,6 +144,16 @@ A soft keyboard sends only what changed in its input (Backspace keys + the new l
 | id | u8 | 1 | terminal id |
 | data | bytes | var | raw bytes |
 C → S: the input of terminal `id`; S → C: its output.
+:::
+
+:::message TermPacked 0x32
+| field | type | size | description |
+|---|---|---|---|
+| type | u8 | 1 | `0x32` |
+| id | u8 | 1 | terminal id |
+| length | u32 | 4 | bytes once inflated |
+| data | zlib | var | zlib stream of the output |
+S → C, chunks of 512 bytes or more, only to the clients listing `zlib` in `enc` and off the LAN; in order with the `TermData` of the same terminal.
 :::
 
 ## Tiles of a Frame {#tiles}

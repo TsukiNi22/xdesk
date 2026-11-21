@@ -19,7 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## [pre-release]
+### Added
+- Hardware video: the large moves are encoded by the GPU (NVENC, Quick Sync, VA-API through the FFmpeg 8 libraries loaded at run time, headers vendored in `third_party/ffmpeg`) in AV1, HEVC or H.264, up to 4K at about 60 fps (openh264 stays the fallback, up to 1920 x 1200); the codec travels in bits 1-2 of the flags of the `Video` message and the clients list `hevc` / `av1` in `enc` when they decode them (WebCodecs in the browsers and the app, libavcodec in the native viewers); settings `hardwareVideo` and `videoCodec` (auto, h264, hevc, av1)
+- `xdesk bench [heights]`: every way of sending the screen (tiles, tiles + palette + copy, openh264, each GPU encoder of the computer) measured on synthetic scenes (typing, scroll, dragged window, full screen video) at 1080p / 4K (time, bytes, PSNR), played on six simulated networks (LAN to 2 Mb/s, 250 ms, 5 % loss), plus the compression of the terminal output; saved to `bench.json` in the data folder
+- Video encoder per viewer from the bench: while its link is the bottleneck, the encoder giving the most frames on its measured bandwidth and ping is used (the fastest with room on the link, the smallest frames on a slow one), looked at again when the bandwidth moves by 30 %
+- Compressed terminal output (`TermPacked`, zlib): 3.6x on a build log, for the viewers off the LAN (the bench: zlib pays below about 440 Mb/s, the tiles do not compress)
+- Shared clipboard both ways: a copy on the host reaches the viewers that keep the automatic clipboard on (default, can be turned off), a copy on a viewer reaches the host (web: when the page gets the focus back and at Ctrl+V through the paste event; app: the Android clipboard; Qt viewer; terminal client through OSC 52), buttons to force one way; on Wayland the host goes through the X11 selection of Xwayland (libX11 / libXfixes loaded at run time) since a background Wayland client cannot see the clipboard; host setting `allowClipboard` (on)
+- Text line above the special keys (web client and app): Send types the text as it is, Send with an empty line sends Enter, an erase key next to it (held: repeats), like Chrome Remote Desktop
+- Keyboard navigation: Tab / arrows / Home / End / Enter / Escape in the web client and the app (tabs, toolbar, menu, special keys, dialogs) and in the Qt windows (Enter clicks the focused button, arrows along the toolbars, the toolbar buttons reachable with Tab); while the remote screen has the focus every key goes to the remote computer (Tab too), Ctrl+Alt+Shift gives the keys back to the page / window
 ### Changed
+- Touch gestures of Chrome Remote Desktop: three fingers tap = middle click, three fingers swipe up = keyboard, down = special keys, a gray circle under the finger when a hold starts a drag (trackpad) or a right click (direct), the two fingers scroll goes on after the fingers leave (fling)
+- The hardware H.264 is constrained baseline like openh264 (the native viewers decode it with openh264)
+- The automatic resolution never goes under 1080p (native first: the quality goes down, then the frame rate, 1080p last), unless the viewer asked less
+- Faster BGRX -> YUV conversion (no bound check inside the rows): 4K in 5 ms on every core
 - Documentation site in the better-html-doc style ([tsukini22.github.io/xdesk/docs](https://tsukini22.github.io/xdesk/docs/)): user guide, concepts (pairing, screen stream), commands and settings generated from the sources, protocol, files, security and tamper protection, EN / FR with search; sources in `docs/site/`
 
 ## v1.0.0 - 2026-11-09
