@@ -100,6 +100,35 @@ xdesk does not send faster than the viewer can receive: it waits for the viewer 
 The capture thread ticks every 4 ms. A session gets a frame when its FPS cap allows it and its window is open: without a queue, the frames its rate needs during one ping (2 on a LAN, up to 8 far away); with a queue, only what the path holds (bandwidth × ping) and a lower JPEG quality until it drains, so no lag builds up. A viewer whose link can't follow even at the lowest quality gets a lower resolution (`autoResolution`), raised again once the link is calm. No frame is sent while the viewer shows a terminal.
 :::
 
+## Video on the GPU and the bench {#gpu}
+
+:::simple
+When something big moves (a video, a dragged window) and the link of the viewer is the bottleneck, the screen goes as a video. The graphics card makes it (NVENC, Quick Sync, VA-API): 4K at about 60 frames per second with almost no CPU. `xdesk bench` measures every way on your computer, and the host then picks, for each viewer, what gives it the most frames on its link.
+:::
+
+:::technical
+The encoders of libavcodec (FFmpeg 8, loaded at run time) are probed once: each one opens on a small frame and must give a key frame at once (no encoder that holds frames). A viewer lists the codecs it decodes (`h264`, `hevc`, `av1` in `enc`); the host uses a GPU encoder of the best codec both share (AV1, HEVC, then H.264, or the `videoCodec` setting), openh264 without a GPU (up to 1920 × 1200). Constant quantizer from the quality of the flow control, no B frame, an IDR only when asked, BT.709 limited range; H.264 is constrained baseline like openh264. With a `bench.json` in the data folder, while the link of a viewer is the bottleneck, the encoder of the bench giving the most frames on its measured bandwidth and ping is used (looked at every 2 s, chosen again when the bandwidth moves by 30 %). The resolution stays native as long as possible: the quality goes down first, then the frame rate, then the resolution, never under 1080p unless the viewer asked less.
+:::
+
+Measured by `xdesk bench` on a laptop (i7 Alder Lake, RTX 3050 Mobile, Intel iGPU, Optimized build), quality 70, synthetic scenes:
+
+| 4K (3840 × 2160) | encode | per frame | PSNR |
+|---|---|---|---|
+| video, tiles (JPEG) | 9.0 ms | 379 KB | 36.9 dB |
+| video, `hevc_nvenc` | 18 ms | 38 KB | 33.2 dB |
+| video, `hevc_vaapi` | 29 ms | 22 KB | 35.7 dB |
+| scroll, tiles + copy | 12.6 ms | 10 KB | 32.4 dB |
+| dragged window, `hevc_nvenc` | 16.5 ms | 13.6 KB | 34.6 dB |
+
+| Network (modelled) | 4K video | 4K drag | 4K scroll |
+|---|---|---|---|
+| LAN, 1 Gb/s | tiles, 60 fps | tiles, 60 fps | tiles + copy, 60 fps |
+| 4G, 25 Mb/s, 60 ms, 1 % | `hevc_nvenc`, 55 fps | `hevc_nvenc`, 60 fps | tiles + copy, 60 fps |
+| 6 Mb/s, 120 ms, 3 % | `hevc_vaapi`, 28 fps | `hevc_nvenc`, 46 fps | tiles + copy, 60 fps |
+| 2 Mb/s, 250 ms, 5 % | `hevc_vaapi`, 9 fps | `hevc_vaapi`, 27 fps | tiles + copy, 20 fps |
+
+The terminal output is compressed with zlib for the viewers off the LAN: 3.6× on a build log, worth it under about 440 Mb/s (zstd: 3.7×, lz4: 2.4×, but no decoder in the browsers); the tiles are JPEG already and do not compress (1.05×).
+
 ## Over UDP and extra sockets {#transports}
 
 The Qt viewer, the terminal client and the Android app receive the video over **UDP** on the port of the server: AES-256-GCM with one key per direction sent inside TLS, pieces of 1150 bytes, one xor parity per 8 pieces while losses are seen, nacks, and frames that complete in any order. Control, inputs and terminals stay on TLS; the video goes back to TLS when UDP is blocked.
@@ -126,7 +155,7 @@ Browsers have no raw UDP: on a far lossy path a web viewer may get **up to 4 web
 ## Pitfalls {#pitfalls}
 
 - **Wayland** without the PipeWire library falls back to portal screenshots: about 1 frame per second.
-- **H.264** needs `openh264` at run time (`libopenh264.so.8`, or the Cisco dll next to `xdesk.exe` on Windows); without it, large moves stay JPEG.
+- **Video** needs a GPU encoder of the FFmpeg 8 libraries (`libavcodec.so.62`, another major is refused) or `openh264` (`libopenh264.so.8`, or the Cisco dll next to `xdesk.exe` on Windows, up to 1920 × 1200); without both, large moves stay JPEG. HEVC in a browser needs a hardware decoder there; AV1 encoding needs a recent GPU (RTX 40, Arc, Radeon 7000).
 - **Extra sockets** cannot lower the ping: they only give back the throughput a lossy path takes from one connection.
 
 ## Check yourself {#quiz}

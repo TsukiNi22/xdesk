@@ -33,7 +33,7 @@ Un seul port TLS 1.3 (`47800` par défaut) sert le HTTPS (`/`, `/api/info`, `/ap
 
 | t | sens | champs |
 |---|---|---|
-| `hello` | C → S | v kind name os device nonce udp (udp : l'appli Android a sa propre socket UDP) |
+| `hello` | C → S | v kind name os device nonce udp enc (udp : l'appli Android a sa propre socket UDP ; enc : ce qu'il décode, `palette` `copy` `zlib` `h264` `hevc` `av1`) |
 | `challenge` | S → C | host version nonce salt kdf known |
 | `auth` | C → S | method = code (web) ou proof, device, remember |
 | `pending / welcome / denied` | S → C | session perms screen capture device proof / reason |
@@ -43,7 +43,8 @@ Un seul port TLS 1.3 (`47800` par défaut) sert le HTTPS (`/`, `/api/info`, `/ap
 | `lane` | C → S (premier message de /lane) | session token index |
 | `quality / mode / refresh` | C → S | quality scale fps / view ou control |
 | `term_open / term_resize / term_close / term_exit` | ↔ | id cols rows code |
-| `perms / screen / info / bye / clip` | S → C (clip ↔) | perms, w h, text, reason, texte du presse-papiers |
+| `perms / screen / info / bye / clip` | S → C (clip ↔) | perms, w h, text, reason, texte du presse-papiers (asked = la réponse d'un `clip_get`) |
+| `clip_sync / clip_get` | C → S | on (chaque copie faite sur l'hôte est envoyée en `clip`) / le texte du presse-papiers de l'hôte une fois |
 | `focus_request` | C → S | contrôle mis en pause par le panneau de l'hôte : rendu après 1 min sauf refus |
 | `input` | S → C | state (loading, ready, paused, none), error, wait, asked |
 
@@ -86,9 +87,9 @@ Le curseur distant, dessiné par le viewer.
 | id | u32 | 4 | id de l'image |
 | width | u16 | 2 | arrondie au pair supérieur |
 | height | u16 | 2 | arrondie au pair supérieur |
-| flags | u8 | 1 | 1 = image clé |
-| data | h264 | var | access unit annex B de toute l'image |
-Seulement aux clients annonçant `h264` dans `enc`, tant que leurs images gardent leur ordre ; acquittée comme une image.
+| flags | u8 | 1 | bit 0 = image clé, bits 1-2 = codec (0 H.264, 1 HEVC, 2 AV1) |
+| data | vidéo | var | toute l'image : H.264 annex B (constrained baseline), HEVC annex B (Main) ou OBU AV1 |
+Seulement dans un codec que le client annonce dans `enc` (`h264`, `hevc`, `av1`), tant que ses images gardent leur ordre ; acquittée comme une image. BT.709 plage limitée.
 :::
 
 :::message MouseMove 0x20
@@ -143,6 +144,16 @@ Un clavier virtuel n'envoie que ce qui a changé dans son champ (touches Backspa
 | id | u8 | 1 | id du terminal |
 | data | bytes | var | octets bruts |
 C → S : l'entrée du terminal `id` ; S → C : sa sortie.
+:::
+
+:::message TermPacked 0x32
+| champ | type | taille | description |
+|---|---|---|---|
+| type | u8 | 1 | `0x32` |
+| id | u8 | 1 | id du terminal |
+| length | u32 | 4 | octets une fois décompressés |
+| data | zlib | var | flux zlib de la sortie |
+S → C, morceaux de 512 octets ou plus, seulement aux clients annonçant `zlib` dans `enc` et hors du LAN ; dans l'ordre avec les `TermData` du même terminal.
 :::
 
 ## Tuiles d'une Frame {#tiles}

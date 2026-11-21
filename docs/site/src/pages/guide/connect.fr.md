@@ -47,16 +47,23 @@ Après `ctrl+]` :
 
 Scanne le QR code du panneau avec l'appareil photo : l'appli ou le navigateur s'ouvre avec le code rempli. Ou ouvre l'adresse affichée dans le panneau et tape le code (ou Scan).
 
+Les gestes sont ceux de Chrome Remote Desktop :
+
 | Geste (mode trackpad) | Fait |
 |---|---|
 | glisser | déplacer le pointeur |
 | tap / double tap | clic / double clic |
-| tap puis glisser, appui long puis glisser | glisser-déposer |
-| tap / glisser à deux doigts | clic droit / défilement |
+| appui long jusqu'au cercle gris, puis glisser | glisser-déposer |
+| tap / glisser à deux doigts | clic droit / défilement (il continue après le départ des doigts) |
+| tap à trois doigts | clic du milieu |
 | pincer | zoom |
-| tap à trois doigts | clavier |
+| trois doigts vers le haut / le bas | clavier / touches spéciales |
 
-Mode toucher direct : tap = clic à cet endroit, glisser = glisser-déposer, appui long puis relâcher = clic droit. Une barre donne Échap, Tab, Ctrl / Alt / Maj collants, Win, flèches, F1-F12, Ctrl+Alt+Suppr et Coller.
+Mode toucher direct : tap = clic à cet endroit, glisser = glisser-déposer, appui long jusqu'au cercle gris puis relâcher = clic droit. La barre de touches spéciales donne Échap, Tab, Ctrl / Alt / Maj collants, Win, flèches, F1-F12, Ctrl+Alt+Suppr et Coller, avec une **ligne de texte** au-dessus : tapez dedans, **Envoyer** tape le texte tel quel (rien d'ajouté), Envoyer avec une ligne vide envoie Entrée, et la touche d'effacement à côté envoie Retour arrière (maintenue : répétée).
+
+**Presse-papiers** (quand l'hôte donne le droit, réglage `allowClipboard`) : automatique dans les deux sens par défaut (menu : *Presse-papier auto*), une copie sur l'ordinateur arrive dans le presse-papiers du téléphone / navigateur, une copie ici arrive sur l'ordinateur (quand la page reprend le focus, ou à Ctrl+V sur l'écran) ; *Copier du PC* et *Envoyer le presse-papier* forcent un sens. Le viewer Qt a la même chose dans son bouton *Clipboard*, le client terminal reçoit les copies de l'hôte par OSC 52.
+
+**Clavier** : Tab / flèches / Début / Fin se déplacent dans les onglets, la barre d'outils, le menu et les touches spéciales, Entrée / Espace activent, Échap ferme le menu. Tant que l'écran distant a le focus, chaque touche va à l'ordinateur distant (Tab compris) : **Ctrl+Alt+Maj** rend les touches à la page (ou à la fenêtre dans le viewer Qt).
 
 > [!WARNING]
 > Le certificat est auto-signé : le navigateur demande de l'accepter une fois (compare l'empreinte avec le panneau). Un navigateur ne peut pas lire le certificat, il envoie donc le code dans TLS sans la liaison Argon2id : préfère les clients natifs sur un réseau non sûr, ou le [nom Tailscale](page:exposure#tailscale) (vrai certificat).

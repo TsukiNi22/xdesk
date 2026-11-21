@@ -100,6 +100,35 @@ xdesk n'envoie pas plus vite que le viewer ne peut recevoir : il attend que le v
 Le thread de capture tourne toutes les 4 ms. Une session reçoit une image quand son plafond de FPS le permet et que sa fenêtre est ouverte : sans file, les images dont son rythme a besoin pendant un ping (2 sur un LAN, jusqu'à 8 au loin) ; avec une file, seulement ce que le chemin contient (débit × ping) et une qualité JPEG plus basse jusqu'à ce qu'elle se vide, pour qu'aucun retard ne s'accumule. Un viewer dont le lien ne suit pas même à la qualité la plus basse reçoit une résolution plus basse (`autoResolution`), remontée une fois le lien calme. Aucune image n'est envoyée pendant que le viewer affiche un terminal.
 :::
 
+## Vidéo sur le GPU et le bench {#gpu}
+
+:::simple
+Quand quelque chose de grand bouge (une vidéo, une fenêtre déplacée) et que le lien du viewer est le goulot, l'écran part en vidéo. C'est la carte graphique qui la fait (NVENC, Quick Sync, VA-API) : de la 4K à environ 60 images par seconde presque sans CPU. `xdesk bench` mesure chaque façon sur votre ordinateur, puis l'hôte choisit, pour chaque viewer, ce qui lui donne le plus d'images sur son lien.
+:::
+
+:::technical
+Les encodeurs de libavcodec (FFmpeg 8, chargé à l'exécution) sont testés une fois : chacun s'ouvre sur une petite image et doit donner une image clé tout de suite (aucun encodeur qui garde des images). Un viewer annonce les codecs qu'il décode (`h264`, `hevc`, `av1` dans `enc`) ; l'hôte utilise un encodeur GPU du meilleur codec partagé (AV1, HEVC, puis H.264, ou le réglage `videoCodec`), openh264 sans GPU (jusqu'à 1920 × 1200). Quantificateur constant depuis la qualité du contrôle de flux, pas d'image B, un IDR seulement sur demande, BT.709 plage limitée ; le H.264 est en constrained baseline comme openh264. Avec un `bench.json` dans le dossier de données, tant que le lien d'un viewer est le goulot, l'encodeur du bench qui donne le plus d'images sur son débit et son ping mesurés est utilisé (regardé toutes les 2 s, choisi à nouveau quand le débit bouge de 30 %). La résolution reste native le plus longtemps possible : la qualité baisse d'abord, puis le nombre d'images, puis la résolution, jamais sous 1080p sauf si le viewer a demandé moins.
+:::
+
+Mesuré par `xdesk bench` sur un portable (i7 Alder Lake, RTX 3050 Mobile, iGPU Intel, build Optimized), qualité 70, scènes synthétiques :
+
+| 4K (3840 × 2160) | encodage | par image | PSNR |
+|---|---|---|---|
+| vidéo, tuiles (JPEG) | 9,0 ms | 379 Ko | 36,9 dB |
+| vidéo, `hevc_nvenc` | 18 ms | 38 Ko | 33,2 dB |
+| vidéo, `hevc_vaapi` | 29 ms | 22 Ko | 35,7 dB |
+| défilement, tuiles + copy | 12,6 ms | 10 Ko | 32,4 dB |
+| fenêtre déplacée, `hevc_nvenc` | 16,5 ms | 13,6 Ko | 34,6 dB |
+
+| Réseau (modélisé) | vidéo 4K | déplacement 4K | défilement 4K |
+|---|---|---|---|
+| LAN, 1 Gb/s | tuiles, 60 i/s | tuiles, 60 i/s | tuiles + copy, 60 i/s |
+| 4G, 25 Mb/s, 60 ms, 1 % | `hevc_nvenc`, 55 i/s | `hevc_nvenc`, 60 i/s | tuiles + copy, 60 i/s |
+| 6 Mb/s, 120 ms, 3 % | `hevc_vaapi`, 28 i/s | `hevc_nvenc`, 46 i/s | tuiles + copy, 60 i/s |
+| 2 Mb/s, 250 ms, 5 % | `hevc_vaapi`, 9 i/s | `hevc_vaapi`, 27 i/s | tuiles + copy, 20 i/s |
+
+La sortie des terminaux est compressée en zlib pour les viewers hors du LAN : 3,6× sur un log de build, rentable sous environ 440 Mb/s (zstd : 3,7×, lz4 : 2,4×, mais pas de décodeur dans les navigateurs) ; les tuiles sont déjà du JPEG et ne se compressent pas (1,05×).
+
 ## En UDP et sockets supplémentaires {#transports}
 
 Le viewer Qt, le client terminal et l'appli Android reçoivent la vidéo en **UDP** sur le port du serveur : AES-256-GCM avec une clé par sens envoyée dans TLS, morceaux de 1150 octets, une parité xor pour 8 morceaux tant que des pertes sont vues, nacks, et des images qui se complètent dans n'importe quel ordre. Contrôle, entrées et terminaux restent sur TLS ; la vidéo revient sur TLS quand l'UDP est bloqué.
@@ -126,7 +155,7 @@ Les navigateurs n'ont pas d'UDP brut : sur un chemin lointain avec pertes, un vi
 ## Pièges {#pitfalls}
 
 - **Wayland** sans la bibliothèque PipeWire retombe sur les captures du portail : environ 1 image par seconde.
-- **H.264** demande `openh264` à l'exécution (`libopenh264.so.8`, ou la dll de Cisco à côté de `xdesk.exe` sous Windows) ; sans elle, les grands mouvements restent en JPEG.
+- **La vidéo** demande un encodeur GPU des bibliothèques FFmpeg 8 (`libavcodec.so.62`, une autre version majeure est refusée) ou `openh264` (`libopenh264.so.8`, ou la dll de Cisco à côté de `xdesk.exe` sous Windows, jusqu'à 1920 × 1200) ; sans les deux, les grands mouvements restent en JPEG. Le HEVC dans un navigateur demande un décodeur matériel ; l'encodage AV1 demande un GPU récent (RTX 40, Arc, Radeon 7000).
 - Les **sockets supplémentaires** ne baissent pas le ping : elles rendent seulement le débit qu'un chemin avec pertes prend à une connexion.
 
 ## Vérifie-toi {#quiz}
