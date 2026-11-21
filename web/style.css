@@ -243,6 +243,9 @@ input.code { font-family: var(--mono); font-size: 26px !important; letter-spacin
 
 /* special keys (phones / tablets): sticky modifiers, arrows, function keys */
 .keybar { display: flex; flex-direction: column; gap: 4px; padding: 4px max(6px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)); background: var(--surface); border-top: 1px solid var(--border); user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+.textline { display: flex; gap: 4px; margin: 0; }
+.textline input[type="text"] { user-select: text; -webkit-user-select: text; flex: 1 1 auto; min-width: 0; min-height: 40px; padding: 6px 10px; background: var(--bg); }
+.key.send { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .keys { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; overscroll-behavior: contain; }
 .keys::-webkit-scrollbar { display: none; }
 .key { flex: 0 0 auto; min-width: 44px; min-height: 40px; padding: 0 10px; font: 600 14px/1 var(--font); color: var(--text); background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }

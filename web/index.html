@@ -161,6 +161,11 @@
             <div class="pane terms" id="termPane" hidden></div>
             <input class="hidden-kbd" id="kbdInput" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Keyboard input">
             <div class="keybar" id="keybar" role="toolbar" aria-label="Special keys" hidden>
+                <form class="textline" id="textLine" autocomplete="off">
+                    <input id="lineInput" type="text" enterkeyhint="send" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Type, then send" data-i18n-placeholder="linePlaceholder" aria-label="Text to send">
+                    <button class="key" type="button" data-code="Backspace" data-repeat="1" aria-label="Erase" data-title="erase">⌫</button>
+                    <button class="key send" type="button" id="lineSend" data-act="send" data-i18n="send">Send</button>
+                </form>
                 <div class="keys" id="keysFn" hidden></div>
                 <div class="keys" id="keysMain"></div>
             </div>

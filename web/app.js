@@ -60,6 +60,7 @@
             helpTrackpad: "Pavé tactile : glissez pour bouger le pointeur, touchez pour cliquer, touchez deux fois = double clic (maintenu au second : sélection par mots), touchez puis glissez ou maintenez puis glissez = déplacer, deux doigts = clic droit, glisser à deux doigts = défiler, pincer = zoomer, trois doigts = clavier",
             helpDirect: "Toucher direct : touchez là où cliquer, touchez deux fois = double clic (maintenu au second : sélection par mots), glisser = déplacer, maintenir puis lâcher = clic droit, glisser à deux doigts = défiler, pincer = zoomer, trois doigts = clavier",
             pastePrompt: "Texte à coller sur l'ordinateur distant",
+            send: "Envoyer", erase: "Effacer", linePlaceholder: "Tapez, puis envoyez (vide = Entrée)",
             states: {idle: "hors ligne", connecting: "connexion", pending: "en attente", active: "connecté", closed: "fermé", banned: "banni"},
         },
     };
@@ -81,6 +82,7 @@
         helpTrackpad: "Trackpad: slide to move the pointer, tap to click, double tap = double click (held on the second: select by words), tap then slide or hold then slide = drag, two fingers tap = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard",
         helpDirect: "Direct touch: tap where to click, double tap = double click (held on the second: select by words), slide = drag, hold then lift = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard",
         pastePrompt: "Text to paste on the remote computer",
+        send: "Send", erase: "Erase", linePlaceholder: "Type, then send (empty = Enter)",
     };
     let lang = load("lang") || ((navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en");
 
@@ -132,6 +134,11 @@
             if (!el.dataset.i18nEn) el.dataset.i18nEn = el.textContent;
             const tr = (I18N[lang] || {})[el.dataset.i18n];
             el.textContent = tr !== undefined ? tr : el.dataset.i18nEn;
+        }
+        for (const el of document.querySelectorAll("[data-i18n-placeholder]")) {
+            if (!el.dataset.i18nPlaceholderEn) el.dataset.i18nPlaceholderEn = el.placeholder;
+            const tr = (I18N[lang] || {})[el.dataset.i18nPlaceholder];
+            el.placeholder = tr !== undefined ? tr : el.dataset.i18nPlaceholderEn;
         }
         for (const el of document.querySelectorAll("[data-i18n-title]")) {
             const tr = (I18N[lang] || {})[el.dataset.i18nTitle];
@@ -1581,7 +1588,7 @@
     const kbdInput = $("kbdInput");
 
     window.addEventListener("keydown", (e) => {
-        if (!canControl() || e.target === kbdInput) return;
+        if (!canControl() || e.target === kbdInput || e.target === $("lineInput")) return;
         if (document.activeElement && document.activeElement !== canvas && document.activeElement !== document.body && document.activeElement.closest(".toolbar")) return;
         if (!e.code) return; // soft keyboards: handled by the hidden input
         e.preventDefault();
@@ -1589,7 +1596,7 @@
     });
 
     window.addEventListener("keyup", (e) => {
-        if (!canControl() || e.target === kbdInput) return;
+        if (!canControl() || e.target === kbdInput || e.target === $("lineInput")) return;
         if (!e.code || !state.pressed.has(e.code)) return;
         e.preventDefault();
         sendKey(e.code, false);
@@ -1941,7 +1948,30 @@
         else if (d.act === "input") toggleInput();
         else if (d.act === "cad") sendCad();
         else if (d.act === "paste") pasteClipboard();
+        else if (d.act === "send") sendLine();
     }
+
+    /* Text line above the keys (like Chrome Remote Desktop): the text is sent as it is (nothing added at its end),
+     * Send with an empty line sends Enter alone; the erase key next to it sends Backspace (held: repeats)
+    */
+    const lineInput = $("lineInput");
+
+    function sendLine() {
+        const text = lineInput.value;
+        if (!text) {pressKey("Enter"); return;}
+        if (state.activeTab === "screen") {
+            if (!ensureControl()) return;
+            sendText(text);
+        } else {
+            const tm = activeTerm();
+            if (!tm || tm.exited) return;
+            sendTermBytes(tm, text);
+        }
+        releaseOneShot();
+        lineInput.value = "";
+    }
+
+    $("textLine").addEventListener("submit", (e) => {e.preventDefault(); sendLine();});
 
     function stopRepeat() {
         clearTimeout(repeat.timer);
