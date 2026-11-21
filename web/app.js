@@ -64,6 +64,8 @@
             clipGetTitle: "Copier ici le presse-papier de l'ordinateur", clipSendTitle: "Envoyer le presse-papier de cet appareil à l'ordinateur",
             clipAutoTitle: "Copier d'un côté, coller de l'autre", clipGot: "Presse-papier de l'ordinateur copié", clipSent: "Presse-papier envoyé à l'ordinateur",
             clipEmpty: "Presse-papier vide", clipCopyPrompt: "Presse-papier de l'ordinateur (copiez-le)", clipDenied: "L'hôte n'a pas donné le droit au presse-papier.",
+            focusBack: "Clavier rendu à la page : Tab / flèches pour naviguer, Entrée pour activer, revenez sur l'écran pour contrôler",
+            focusScreen: "Les touches vont à l'ordinateur distant (Tab compris) : Ctrl+Alt+Maj pour les récupérer",
             send: "Envoyer", erase: "Effacer", linePlaceholder: "Tapez, puis envoyez (vide = Entrée)",
             states: {idle: "hors ligne", connecting: "connexion", pending: "en attente", active: "connecté", closed: "fermé", banned: "banni"},
         },
@@ -90,6 +92,8 @@
         clipGetTitle: "Copy the clipboard of the computer here", clipSendTitle: "Send the clipboard of this device to the computer",
         clipAutoTitle: "Copy on one side, paste on the other", clipGot: "Clipboard of the computer copied", clipSent: "Clipboard sent to the computer",
         clipEmpty: "Clipboard empty", clipCopyPrompt: "Clipboard of the computer (copy it)", clipDenied: "The host did not give the clipboard right.",
+        focusBack: "Keyboard back to the page: Tab / arrows to move, Enter to activate, back on the screen to control",
+        focusScreen: "Keys go to the remote computer (Tab too): Ctrl+Alt+Shift to get them back",
         send: "Send", erase: "Erase", linePlaceholder: "Type, then send (empty = Enter)",
     };
     let lang = load("lang") || ((navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en");
@@ -660,6 +664,7 @@
         $("waitSpinner").hidden = !spinning;
         $("reconnectBtn").hidden = true;
         $("waitView").querySelector(".card").classList.remove("banned");
+        $("backBtn").focus({preventScroll: true}); // Enter / Escape = back
     }
 
     function showClosed(title, text, banned) {
@@ -673,6 +678,7 @@
         $("waitSpinner").hidden = true;
         $("reconnectBtn").hidden = banned;
         $("waitView").querySelector(".card").classList.toggle("banned", banned);
+        (banned ? $("backBtn") : $("reconnectBtn")).focus({preventScroll: true}); // Enter = the next step
     }
 
     $("reconnectBtn").addEventListener("click", connect);
@@ -1682,9 +1688,48 @@
 
     const kbdInput = $("kbdInput");
 
+    /* Keyboard focus:
+     *  the screen (or nothing) focused while controlling: every key goes to the remote computer, Tab included
+     *  Ctrl+Alt+Shift (left Alt): the keys come back to the page (focus on the tabs), Tab / arrows / Enter then move in it
+     *  any other control focused (buttons, menus, fields, special keys): its keys stay on the page
+    */
+    const MOD_CODES = ["ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight", "AltLeft"];
+    const heldMods = new Set();
+    let focusHint = false; // the shortcut said once per session
+
+    function uiFocused() {
+        const el = document.activeElement;
+        return !!el && el !== document.body && el !== canvas && el !== kbdInput && el !== document.documentElement;
+    }
+
+    function firstControl() {
+        return document.querySelector("#tabs .tab.active") || document.querySelector("#tabs .tab");
+    }
+
+    window.addEventListener("keydown", (e) => {
+        if (MOD_CODES.includes(e.code)) heldMods.add(e.code);
+        if (!e.ctrlKey || !e.altKey || !e.shiftKey || !MOD_CODES.includes(e.code) || !heldMods.has("AltLeft") || state.status !== "active") return;
+        if (!document.activeElement || (document.activeElement !== canvas && document.activeElement !== document.body && !document.activeElement.closest(".term"))) return;
+        e.preventDefault();
+        e.stopImmediatePropagation(); // not for the terminal either
+        releaseAll();
+        heldMods.clear();
+        const el = firstControl();
+        if (el) el.focus();
+        toast(t("focusBack"), 4000);
+    }, true);
+    window.addEventListener("keyup", (e) => heldMods.delete(e.code), true);
+    window.addEventListener("blur", () => heldMods.clear());
+
+    canvas.addEventListener("focus", () => {
+        if (focusHint || !canControl() || touchMode) return;
+        focusHint = true;
+        toast(t("focusScreen"), 5000);
+    });
+
     window.addEventListener("keydown", (e) => {
         if (!canControl() || e.target === kbdInput || e.target === $("lineInput")) return;
-        if (document.activeElement && document.activeElement !== canvas && document.activeElement !== document.body && document.activeElement.closest(".toolbar")) return;
+        if (uiFocused()) return;
         if (!e.code) return; // soft keyboards: handled by the hidden input
         if (pasteShortcut(e)) return; // the paste event of the browser carries the text, the keys follow it
         e.preventDefault();
@@ -2236,11 +2281,49 @@
     });
 
     // ---------------------------------------------------------------- //
+    // Keyboard navigation of the page: arrows move along a row of buttons (tabs, toolbar, special keys, menu),
+    // Home / End to its ends; Enter / Space activate (buttons), Escape closes the menu / goes back
+
+    function focusables(root) {
+        return Array.from(root.querySelectorAll("button, select, input, a[href], [tabindex]:not([tabindex='-1'])"))
+            .filter((el) => !el.disabled && !el.closest("[hidden]") && el.offsetParent !== null && el !== canvas && el !== kbdInput);
+    }
+
+    function moveFocus(list, el, step) {
+        const i = list.indexOf(el);
+        if (i < 0 || !list.length) return false;
+        const next = step === Infinity ? list.length - 1 : (step === -Infinity ? 0 : (i + step + list.length) % list.length);
+        list[next].focus();
+        return true;
+    }
+
+    document.addEventListener("keydown", (e) => {
+        if (e.ctrlKey || e.altKey || e.metaKey || e.defaultPrevented) return;
+        const el = document.activeElement;
+        if (!el || el === canvas || el === kbdInput || el.closest(".term")) return;
+        const menuOpen = $("toolsMenu").classList.contains("open");
+        // Fields keep their arrows (text, range, select); buttons and checkboxes move
+        const own = el.tagName === "SELECT" || (el.tagName === "INPUT" && el.type !== "checkbox");
+        const row = el.closest("#tabs") || (menuOpen && el.closest("#toolsMenu")) || el.closest(".toolbar") || el.closest(".keys") || el.closest(".textline") || el.closest(".row");
+        if (!row || own) {
+            if (e.key === "Escape" && !$("waitView").hidden && document.activeElement === $("backBtn")) $("backBtn").click();
+            return;
+        }
+        const vertical = menuOpen && row.id === "toolsMenu";
+        const steps = vertical ? {ArrowDown: 1, ArrowUp: -1, Home: -Infinity, End: Infinity} : {ArrowRight: 1, ArrowLeft: -1, Home: -Infinity, End: Infinity};
+        if (!(e.key in steps)) {
+            if (e.key === "Escape" && menuOpen) {setMenu(false); $("menuBtn").focus(); e.preventDefault();}
+            return;
+        }
+        if (moveFocus(focusables(row), el, steps[e.key])) e.preventDefault();
+    });
+
     // Tools menu (small screens)
 
     function setMenu(open) {
         $("toolsMenu").classList.toggle("open", open);
         $("menuBtn").setAttribute("aria-expanded", String(open));
+        if (open) requestAnimationFrame(() => {const list = focusables($("toolsMenu")); if (list.length && document.activeElement === $("menuBtn")) list[0].focus();});
     }
 
     $("menuBtn").addEventListener("click", () => setMenu(!$("toolsMenu").classList.contains("open")));

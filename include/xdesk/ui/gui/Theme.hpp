@@ -69,6 +69,7 @@ class Theme {
     public:
         // ---------- Pre-Function -------- //
         _cold static void apply(QApplication& app, const QString& setting); // system | dark | light
+        _cold static void keyboard(QApplication& app); // Enter clicks the focused button, arrows move along a toolbar / segmented control
         _cold _nodiscard static const Palette& palette(void);
         _cold _nodiscard static const QString& setting(void); // system | dark | light (as applied)
         _cold _nodiscard static QWidget* switcher(const std::function<void(const QString&)>& saved, QWidget* parent = nullptr); // Auto | Light | Dark segmented control (applies, then saved(setting))

@@ -74,6 +74,8 @@ class ScreenView: public QWidget {
         void keyPressEvent(QKeyEvent* event) override;
         void keyReleaseEvent(QKeyEvent* event) override;
         void focusOutEvent(QFocusEvent* event) override;
+        void focusInEvent(QFocusEvent* event) override; // says how to get the keyboard back while controlling
+        void releaseKeyboard_(void); // Ctrl+Alt+Shift: remote keys up, the focus to the next widget
         bool focusNextPrevChild(const bool next) override; // tab goes to the remote
         bool event(QEvent* event) override;
 

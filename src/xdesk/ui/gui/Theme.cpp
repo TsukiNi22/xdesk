@@ -28,7 +28,11 @@ File Description:
 #include <QPainterPath>
 #include <QButtonGroup>
 #include <QHBoxLayout>
+#include <QAbstractButton>
 #include <QToolButton>
+#include <QKeyEvent>
+#include <QToolBar>
+#include <algorithm>
 #include <QStyleHints>
 #include <functional>
 #include <QPainter>
@@ -39,6 +43,59 @@ File Description:
 
 static xdesk::ui::gui::Palette current;
 static QString currentSetting = "system";
+
+//----------------------------------------------------------------//
+/* CLASS */
+
+/*
+ * Keyboard of every window: Enter / Return clicks the focused button (or opens its menu), the arrows move along a
+ * toolbar or a segmented control (Home / End: its ends), the buttons of the toolbars are reachable with Tab
+*/
+class KeyboardNavigation: public QObject {
+    private:
+        // ---------- Pre-Function -------- //
+        _cold bool move_(QWidget* focused, const int key) const
+        {
+            QWidget* row = focused->parentWidget();
+            QList<QWidget*> list;
+            qsizetype at = -1;
+
+            if (!row || (!qobject_cast<QToolBar*>(row) && row->objectName() != "segmented")) return false;
+            for (QWidget* w: row->findChildren<QWidget*>(Qt::FindDirectChildrenOnly))
+                if (w->isVisible() && w->isEnabled() && (w->focusPolicy() & Qt::TabFocus)) list << w;
+            std::sort(list.begin(), list.end(), [](const QWidget* a, const QWidget* b) {return a->x() < b->x();});
+            at = list.indexOf(focused);
+            if (at < 0 || list.size() < 2) return false;
+            if (key == Qt::Key_Home) at = 0;
+            else if (key == Qt::Key_End) at = list.size() - 1;
+            else at = (at + (key == Qt::Key_Right ? 1 : list.size() - 1)) % list.size();
+            list[at]->setFocus(Qt::TabFocusReason);
+            return true;
+        }
+
+    public:
+        // ---------- Pre-Function -------- //
+        bool eventFilter(QObject* watched, QEvent* event) override
+        {
+            QAbstractButton* button = qobject_cast<QAbstractButton*>(watched);
+            QToolButton* tool = qobject_cast<QToolButton*>(watched);
+            const QKeyEvent* key = static_cast<const QKeyEvent*>(event);
+
+            if (event->type() == QEvent::Polish && tool && tool->focusPolicy() == Qt::NoFocus && qobject_cast<QToolBar*>(tool->parentWidget()))
+                tool->setFocusPolicy(Qt::TabFocus);
+            if (event->type() != QEvent::KeyPress || !button || !button->hasFocus() || (key->modifiers() & ~Qt::KeypadModifier)) return false;
+            if (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter) {
+                if (tool && tool->menu()) tool->showMenu();
+                else button->animateClick();
+                return true;
+            }
+            if (key->key() == Qt::Key_Left || key->key() == Qt::Key_Right || key->key() == Qt::Key_Home || key->key() == Qt::Key_End) return this->move_(button, key->key());
+            return false;
+        }
+
+        // ---------- Constructor --------- //
+        using QObject::QObject;
+};
 
 /*
  * xdesk look: "graphite + signal green"
@@ -218,6 +275,8 @@ QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QPlainTextEdit, QTextEdit {
 QLineEdit#codeInput { font-family: "@mono"; font-size: 16px; letter-spacing: 2px; padding: 7px 10px; }
 QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover, QComboBox:hover { border-color: @borderHover; }
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus, QPlainTextEdit:focus { border-color: @accent; }
+QPushButton:focus, QToolBar QToolButton:focus { border: 1px solid @accent; }
+QCheckBox:focus, QRadioButton:focus { color: @accent; }
 QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled { color: @muted; background: @surface; }
 
 QComboBox { padding-right: 30px; }
@@ -321,6 +380,15 @@ QSplitter::handle:vertical { height: 1px; }
     qss.replace("@danger", p.danger.name());
     qss.replace("@mono", xdesk::ui::gui::Theme::monospaceFamily());
     return qss;
+}
+
+void xdesk::ui::gui::Theme::keyboard(QApplication& app)
+{
+    static KeyboardNavigation* filter = nullptr;
+
+    if (filter) return;
+    filter = new KeyboardNavigation(&app);
+    app.installEventFilter(filter);
 }
 
 void xdesk::ui::gui::Theme::apply(QApplication& app, const QString& setting)

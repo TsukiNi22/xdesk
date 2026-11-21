@@ -202,7 +202,10 @@ void xdesk::ui::gui::ScreenView::keyPressEvent(QKeyEvent* event)
 {
     const QString code = keyCode(event);
 
+    const Qt::KeyboardModifiers all = Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier;
+
     if (!this->_control || code.isEmpty()) {QWidget::keyPressEvent(event); return;}
+    if ((event->modifiers() & all) == all && (code.startsWith("Control") || code.startsWith("Shift") || code == "AltLeft")) {this->releaseKeyboard_(); event->accept(); return;}
     this->_pressed.insert(code);
     this->_client.key(code, true);
     event->accept();
@@ -227,9 +230,30 @@ void xdesk::ui::gui::ScreenView::focusOutEvent(QFocusEvent* event)
     QWidget::focusOutEvent(event);
 }
 
-bool xdesk::ui::gui::ScreenView::focusNextPrevChild(const bool)
+bool xdesk::ui::gui::ScreenView::focusNextPrevChild(const bool next)
 {
-    return false;
+    if (this->_control) return false; // Tab goes to the remote
+    return QWidget::focusNextPrevChild(next);
+}
+
+// Ctrl+Alt+Shift (left Alt, never AltGr) while controlling: the keys come back to the window (the toolbar)
+void xdesk::ui::gui::ScreenView::releaseKeyboard_(void)
+{
+    QMainWindow* window = qobject_cast<QMainWindow*>(this->window());
+
+    for (const QString& code: this->_pressed)
+        this->_client.key(code, false);
+    this->_pressed.clear();
+    (void)QWidget::focusNextPrevChild(true);
+    if (window) window->statusBar()->showMessage("Keyboard back to the window: Tab / arrows to move, Enter to activate, click the screen to control", 5000);
+}
+
+void xdesk::ui::gui::ScreenView::focusInEvent(QFocusEvent* event)
+{
+    QMainWindow* window = qobject_cast<QMainWindow*>(this->window());
+
+    if (this->_control && window) window->statusBar()->showMessage("Keys go to the remote PC (Tab too): Ctrl+Alt+Shift gives them back", 5000);
+    QWidget::focusInEvent(event);
 }
 
 bool xdesk::ui::gui::ScreenView::event(QEvent* event)

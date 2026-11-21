@@ -122,6 +122,7 @@ int xdesk::ui::run_host_gui(int& argc, char** argv, core::Config& config)
     QApplication::setApplicationVersion(XDESK_VERSION);
     QApplication::setQuitOnLastWindowClosed(false);
     gui::Theme::apply(app, config.settings().theme);
+    gui::Theme::keyboard(app);
     host = std::make_unique<host::Host>(config);
     try {
         host->start(false); // sharing off until the person in front of the PC starts it
@@ -182,6 +183,7 @@ int xdesk::ui::run_viewer_gui(int& argc, char** argv, const client::Options& opt
     QApplication::setApplicationName("xdesk");
     config.load();
     gui::Theme::apply(app, viewer_theme(config.settings().theme)); // before the window: its icons take the colours of the theme
+    gui::Theme::keyboard(app);
     window = std::make_unique<gui::ViewerWindow>();
     window->show();
     if (!options.host.isEmpty()) window->connectNow(options);
