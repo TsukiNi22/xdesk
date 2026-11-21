@@ -26,6 +26,7 @@ File Description:
     /* type */
     #define _Attribute
     #include <utils/utils.hpp>  // _hot, _cold, _nodiscard
+    #include "IVideoEncoder.hpp" // xdesk::platform::IVideoEncoder
     #include <QByteArray>       // QByteArray
     #include <QString>          // QString
     #include <QImage>           // QImage
@@ -42,12 +43,15 @@ namespace xdesk::platform { // namespace start
 
 _cold _nodiscard bool h264_available(void); // openh264 2.6+ loaded: the video can be encoded / decoded
 _cold _nodiscard QString h264_library(void); // path of the library, or why it is missing
+// BGRX -> 4:2:0 BT.709 limited range (u = nullptr: nv12, the chroma interleaved in v), the frame repeated up to width x height (even)
+_hot void bgrx_to_yuv420(const QImage& frame, const int width, const int height, unsigned char* y, const int yStride, unsigned char* u, const int uStride, unsigned char* v, const int vStride);
+_hot void yuv420_to_bgrx(const unsigned char* const planes[3], const int yStride, const int uStride, const int vStride, QImage& image); // I420 BT.709 limited range -> RGB32 (the size of the image)
 
 //----------------------------------------------------------------//
 /* CLASS */
 
 // H.264 of one client while its screen moves: screen content real time mode, no B frame, one access unit per frame
-class H264Encoder {
+class H264Encoder: public IVideoEncoder {
     private:
         ISVCEncoder* _encoder = nullptr;
         QByteArray _yuv; // I420 planes of the frame (even size)
@@ -63,11 +67,16 @@ class H264Encoder {
 
     public:
         // ---------- Pre-Function -------- //
-        _hot _nodiscard QByteArray encode(const QImage& frame, const int quality, bool* key); // annex B access unit (empty = failed), key = an IDR
+        _hot _nodiscard QByteArray encode(const QImage& frame, const int quality, bool* key) override; // annex B access unit (empty = failed), key = an IDR
 
         // ------------ Function ---------- //
+        /* getter */
+        _cold _nodiscard inline VideoCodec codec(void) const override {return VideoCodec::H264;};
+        _cold _nodiscard inline QString name(void) const override     {return "openh264";};
+        _cold _nodiscard inline bool hardware(void) const override    {return false;};
+
         /* setter */
-        _cold inline void forceKey(void) {this->_key = true;}; // the next frame starts a new stream (new decoder on the client)
+        _cold inline void forceKey(void) override {this->_key = true;}; // the next frame starts a new stream (new decoder on the client)
 
         // ------------ Operator ---------- //
         H264Encoder& operator=(const H264Encoder&) = delete;
@@ -78,7 +87,7 @@ class H264Encoder {
         H264Encoder(const H264Encoder&) = delete;
 
         // ----------- Destructor --------- //
-        ~H264Encoder() noexcept {this->close_();};
+        ~H264Encoder() noexcept override {this->close_();};
 };
 
 // Decoder of the video of a host (viewer)

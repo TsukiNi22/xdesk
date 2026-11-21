@@ -175,7 +175,7 @@ void xdesk::client::Client::sendHello_(void)
     this->_ws->sendText(QString::fromUtf8(QJsonDocument(QJsonObject{
         {"t", "hello"}, {"v", XDESK_PROTOCOL_VERSION}, {"kind", net::client_kind_name(this->_options.kind)},
         {"name", this->_options.name}, {"os", QSysInfo::prettyProductName()}, {"device", known.value("device").toString()},
-        {"nonce", QString::fromLatin1(this->_clientNonce.toBase64())}, {"enc", platform::h264_available() ? QJsonArray{"palette", "copy", "h264"} : QJsonArray{"palette", "copy"}},
+        {"nonce", QString::fromLatin1(this->_clientNonce.toBase64())}, {"enc", encodings_()},
     }).toJson(QJsonDocument::Compact)));
 }
 
@@ -307,13 +307,26 @@ void xdesk::client::Client::fitCanvas_(const int width, const int height)
     this->_tiles = QVector<std::uint32_t>(this->_tileColumns * ((height + XDESK_TILE_SIZE - 1) / XDESK_TILE_SIZE), 0);
 }
 
+// What this viewer decodes: palette and copy tiles, the video codecs of openh264 / libavcodec
+QJsonArray xdesk::client::Client::encodings_(void)
+{
+    QJsonArray enc = {"palette", "copy"};
+
+    if (platform::h264_available() || platform::av_decodes(platform::VideoCodec::H264)) enc.append("h264");
+    if (platform::av_decodes(platform::VideoCodec::Hevc)) enc.append("hevc");
+    if (platform::av_decodes(platform::VideoCodec::Av1)) enc.append("av1");
+    return enc;
+}
+
 void xdesk::client::Client::decodeVideo_(const QByteArray& data, const bool udp)
 {
     net::ByteReader r(data);
     const std::uint32_t id = r.u32();
     const int width = r.u16();
     const int height = r.u16();
-    const bool key = (r.u8() & 1) != 0;
+    const std::uint8_t flags = r.u8();
+    const bool key = (flags & 1) != 0;
+    const platform::VideoCodec codec = static_cast<platform::VideoCodec>((flags >> 1) & 3);
     const QByteArray unit = r.rest();
 
     if (!r.ok() || width == 0 || height == 0) return;
@@ -325,10 +338,12 @@ void xdesk::client::Client::decodeVideo_(const QByteArray& data, const bool udp)
     // After a broken frame only a key frame can be decoded
     if (key) this->_videoBroken = false;
     if (this->_videoBroken) return;
-    const QImage image = this->_video.decode(unit, width, height);
+    const bool openh264 = codec == platform::VideoCodec::H264 && platform::h264_available();
+    const QImage image = openh264 ? this->_video.decode(unit, width, height) : this->_avVideo.decode(unit, codec, width, height);
     if (image.isNull() || image.size() != QSize(width, height)) {
         this->_videoBroken = true;
         this->_video.reset();
+        this->_avVideo.reset();
         if (this->_ws) this->_ws->sendText(R"({"t":"refresh"})"); // a complete frame and a key frame
         return;
     }

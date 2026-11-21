@@ -113,49 +113,57 @@ _cold static const OpenH264& openh264(void)
     return lib;
 }
 
-// BGRX -> I420 BT.709 limited range (pairs of rows in parallel), the last column / row repeated up to the even size
-_hot static void bgrx_to_i420(const QImage& frame, const int width, const int height, unsigned char* planes)
+// Y of one BGRX pixel (BT.709 limited range)
+_hot static inline unsigned char luma_of(const std::uint32_t p)
 {
-    unsigned char* yPlane = planes;
-    unsigned char* uPlane = planes + static_cast<std::size_t>(width) * height;
-    unsigned char* vPlane = uPlane + static_cast<std::size_t>(width / 2) * (height / 2);
-    const int lastX = frame.width() - 1;
+    return static_cast<unsigned char>(((47 * static_cast<int>((p >> 16) & 0xFF) + 157 * static_cast<int>((p >> 8) & 0xFF) + 16 * static_cast<int>(p & 0xFF) + 128) >> 8) + 16);
+}
+
+// Cb / Cr of the mean of 2 x 2 BGRX pixels (BT.709 limited range)
+_hot static inline void chroma_of(const std::uint32_t a, const std::uint32_t b, const std::uint32_t c, const std::uint32_t d, unsigned char* cb, unsigned char* cr)
+{
+    const int red = (static_cast<int>(((a >> 16) & 0xFF) + ((b >> 16) & 0xFF) + ((c >> 16) & 0xFF) + ((d >> 16) & 0xFF)) + 2) >> 2;
+    const int green = (static_cast<int>(((a >> 8) & 0xFF) + ((b >> 8) & 0xFF) + ((c >> 8) & 0xFF) + ((d >> 8) & 0xFF)) + 2) >> 2;
+    const int blue = (static_cast<int>((a & 0xFF) + (b & 0xFF) + (c & 0xFF) + (d & 0xFF)) + 2) >> 2;
+
+    *cb = static_cast<unsigned char>(((-26 * red - 87 * green + 112 * blue + 128) >> 8) + 128);
+    *cr = static_cast<unsigned char>(((112 * red - 102 * green - 10 * blue + 128) >> 8) + 128);
+}
+
+// BGRX -> 4:2:0 BT.709 limited range (pairs of rows in parallel), the last column / row repeated up to the even size
+// The inside of a row has no bound check (the compiler vectorizes it), only the odd last column is clamped
+void xdesk::platform::bgrx_to_yuv420(const QImage& frame, const int width, const int height, unsigned char* y, const int yStride, unsigned char* u, const int uStride, unsigned char* v, const int vStride)
+{
     const int lastY = frame.height() - 1;
+    const int pairs = frame.width() / 2; // pairs of columns inside the frame
+    const bool nv12 = u == nullptr;
 
     xdesk::platform::parallel_for(height / 2, [&](const int pair) {
-        const std::uint32_t* rows[2] = {
-            reinterpret_cast<const std::uint32_t*>(frame.constScanLine(std::min(pair * 2, lastY))),
-            reinterpret_cast<const std::uint32_t*>(frame.constScanLine(std::min(pair * 2 + 1, lastY)))
-        };
-        unsigned char* yRows[2] = {yPlane + static_cast<std::size_t>(pair * 2) * width, yPlane + static_cast<std::size_t>(pair * 2 + 1) * width};
-        unsigned char* u = uPlane + static_cast<std::size_t>(pair) * (width / 2);
-        unsigned char* v = vPlane + static_cast<std::size_t>(pair) * (width / 2);
-
-        for (int i = 0; i < width / 2; ++i) {
-            int red = 0;
-            int green = 0;
-            int blue = 0;
-            for (int k = 0; k < 4; ++k) {
-                const std::uint32_t pixel = rows[k / 2][std::min(i * 2 + k % 2, lastX)];
-                const int r = static_cast<int>((pixel >> 16) & 0xFF);
-                const int g = static_cast<int>((pixel >> 8) & 0xFF);
-                const int b = static_cast<int>(pixel & 0xFF);
-                yRows[k / 2][i * 2 + k % 2] = static_cast<unsigned char>(((47 * r + 157 * g + 16 * b + 128) >> 8) + 16);
-                red += r;
-                green += g;
-                blue += b;
-            }
-            red = (red + 2) >> 2;
-            green = (green + 2) >> 2;
-            blue = (blue + 2) >> 2;
-            u[i] = static_cast<unsigned char>(((-26 * red - 87 * green + 112 * blue + 128) >> 8) + 128);
-            v[i] = static_cast<unsigned char>(((112 * red - 102 * green - 10 * blue + 128) >> 8) + 128);
+        const std::uint32_t* top = reinterpret_cast<const std::uint32_t*>(frame.constScanLine(std::min(pair * 2, lastY)));
+        const std::uint32_t* bottom = reinterpret_cast<const std::uint32_t*>(frame.constScanLine(std::min(pair * 2 + 1, lastY)));
+        unsigned char* y0 = y + static_cast<std::size_t>(pair * 2) * yStride;
+        unsigned char* y1 = y + static_cast<std::size_t>(pair * 2 + 1) * yStride;
+        unsigned char* uRow = nv12 ? nullptr : u + static_cast<std::size_t>(pair) * uStride;
+        unsigned char* vRow = v + static_cast<std::size_t>(pair) * vStride;
+        for (int x = 0; x < pairs * 2; ++x) {
+            y0[x] = luma_of(top[x]);
+            y1[x] = luma_of(bottom[x]);
+        }
+        for (int i = 0; i < pairs; ++i)
+            chroma_of(top[i * 2], top[i * 2 + 1], bottom[i * 2], bottom[i * 2 + 1], nv12 ? vRow + i * 2 : uRow + i, nv12 ? vRow + i * 2 + 1 : vRow + i);
+        // The frame is narrower than the even size: its last column repeated
+        for (int i = pairs; i < width / 2; ++i) {
+            const std::uint32_t a = top[frame.width() - 1];
+            const std::uint32_t b = bottom[frame.width() - 1];
+            y0[i * 2] = y0[i * 2 + 1] = luma_of(a);
+            y1[i * 2] = y1[i * 2 + 1] = luma_of(b);
+            chroma_of(a, a, b, b, nv12 ? vRow + i * 2 : uRow + i, nv12 ? vRow + i * 2 + 1 : vRow + i);
         }
     });
 }
 
 // I420 BT.709 limited range -> RGB32 (rows in parallel)
-_hot static void i420_to_bgrx(unsigned char* const planes[3], const int yStride, const int uvStride, QImage& image)
+void xdesk::platform::yuv420_to_bgrx(const unsigned char* const planes[3], const int yStride, const int uStride, const int vStride, QImage& image)
 {
     const int width = image.width();
     uchar* bits = image.bits();
@@ -163,8 +171,8 @@ _hot static void i420_to_bgrx(unsigned char* const planes[3], const int yStride,
 
     xdesk::platform::parallel_for(image.height(), [&](const int row) {
         const unsigned char* y = planes[0] + static_cast<std::size_t>(row) * yStride;
-        const unsigned char* u = planes[1] + static_cast<std::size_t>(row / 2) * uvStride;
-        const unsigned char* v = planes[2] + static_cast<std::size_t>(row / 2) * uvStride;
+        const unsigned char* u = planes[1] + static_cast<std::size_t>(row / 2) * uStride;
+        const unsigned char* v = planes[2] + static_cast<std::size_t>(row / 2) * vStride;
         std::uint32_t* out = reinterpret_cast<std::uint32_t*>(bits + static_cast<std::size_t>(row) * stride);
 
         for (int x = 0; x < width; ++x) {
@@ -281,7 +289,8 @@ QByteArray xdesk::platform::H264Encoder::encode(const QImage& frame, const int q
 
     // Planes, then one access unit (an IDR when asked)
     this->_yuv.resize(static_cast<qsizetype>(width) * height * 3 / 2);
-    bgrx_to_i420(image, width, height, reinterpret_cast<unsigned char*>(this->_yuv.data()));
+    unsigned char* planes = reinterpret_cast<unsigned char*>(this->_yuv.data());
+    xdesk::platform::bgrx_to_yuv420(image, width, height, planes, width, planes + static_cast<std::size_t>(width) * height, width / 2, planes + static_cast<std::size_t>(width) * height + static_cast<std::size_t>(width / 2) * (height / 2), width / 2);
     std::memset(&picture, 0, sizeof(picture));
     std::memset(&info, 0, sizeof(info));
     picture.iColorFormat = videoFormatI420;
@@ -347,6 +356,7 @@ QImage xdesk::platform::H264Decoder::decode(const QByteArray& data, const int wi
     const SSysMEMBuffer& buffer = info.UsrData.sSystemBuffer;
     QImage image(std::min(width, buffer.iWidth), std::min(height, buffer.iHeight), QImage::Format_RGB32);
     if (image.isNull()) return {};
-    i420_to_bgrx(planes, buffer.iStride[0], buffer.iStride[1], image);
+    const unsigned char* const yuv[3] = {planes[0], planes[1], planes[2]};
+    xdesk::platform::yuv420_to_bgrx(yuv, buffer.iStride[0], buffer.iStride[1], buffer.iStride[1], image);
     return image;
 }

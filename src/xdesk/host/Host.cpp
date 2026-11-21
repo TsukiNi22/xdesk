@@ -22,6 +22,7 @@ File Description:
 #define _Exception
 #include <utils/utils.hpp>
 #include "xdesk/security/Crypto.hpp"
+#include "xdesk/platform/AvCodec.hpp"
 #include "xdesk/platform/H264.hpp"
 #include "xdesk/host/Host.hpp"
 #include <QGuiApplication>
@@ -287,7 +288,12 @@ void xdesk::host::Host::startStream_(void)
     QMetaObject::invokeMethod(this->_stream, "setMaxHeight", Qt::QueuedConnection, Q_ARG(int, this->_config.settings().maxHeight));
     QMetaObject::invokeMethod(this->_stream, "setAutoResolution", Qt::QueuedConnection, Q_ARG(bool, this->_config.settings().autoResolution));
     QMetaObject::invokeMethod(this->_stream, "setVideo", Qt::QueuedConnection, Q_ARG(bool, this->_config.settings().h264));
-    this->_log.info("server", "", platform::h264_available() ? "H.264 video for the far viewers: " + platform::h264_library() : "H.264 video off (" + platform::h264_library() + "): tiles only");
+    QMetaObject::invokeMethod(this->_stream, "setVideoCodec", Qt::QueuedConnection, Q_ARG(QString, this->_config.settings().videoCodec), Q_ARG(bool, this->_config.settings().hardwareVideo));
+    QObject::connect(this->_stream, &Stream::encoder, this, [this](const QString& id, const QString& name) {
+        if (this->_sessions.contains(id)) this->_log.info("session", id, "Video encoder: " + name);
+    });
+    this->_log.info("server", "", platform::h264_available() ? "H.264 video (cpu) for the far viewers: " + platform::h264_library() : "openh264 missing (" + platform::h264_library() + ")");
+    this->_log.info("server", "", platform::av_available() ? "Hardware video (gpu) through " + platform::av_library() : "Hardware video off: " + platform::av_library());
     this->_streamThread.start();
 }
 
@@ -502,14 +508,19 @@ void xdesk::host::Host::admit_(Session* session, const bool remember)
     if (this->_pendingProof.contains(session->id())) extra["proof"] = this->_pendingProof.take(session->id());
     if (s.udp && this->_udp.isListening() && (session->kind() == net::ClientKind::Gui || session->kind() == net::ClientKind::Tty || this->_udpViewers.contains(session->id())))
         extra["udp"] = this->_udp.offer(session->id()); // keys inside the authenticated TLS session only
-    const bool video = s.h264 && session->encodings().contains("h264") && platform::h264_available();
+    int codecs = 0;
+    if (session->encodings().contains("h264") && (platform::h264_available() || platform::av_available())) codecs |= VIDEO_H264;
+    if (session->encodings().contains("hevc") && platform::av_available()) codecs |= VIDEO_HEVC;
+    if (session->encodings().contains("av1") && platform::av_available()) codecs |= VIDEO_AV1;
+    if (!s.h264) codecs = 0;
+    const bool video = codecs != 0;
     if (s.lanes && !video && (session->kind() == net::ClientKind::Web || session->kind() == net::ClientKind::Apk)) // H.264 needs its frames in order: one socket
         extra["lanes"] = this->_lanes.offer(session->id()); // token of its extra sockets, same channel
     session->accept(this->defaultPermissions_(session), extra);
     this->sendInputState_(session);
     this->_scales[session->id()] = s.scale;
     if (this->_stream)
-        QMetaObject::invokeMethod(this->_stream, "addClient", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(int, s.quality), Q_ARG(double, s.scale), Q_ARG(int, s.fps), Q_ARG(bool, session->encodings().contains("palette")), Q_ARG(bool, session->encodings().contains("copy")), Q_ARG(bool, video));
+        QMetaObject::invokeMethod(this->_stream, "addClient", Qt::QueuedConnection, Q_ARG(QString, session->id()), Q_ARG(int, s.quality), Q_ARG(double, s.scale), Q_ARG(int, s.fps), Q_ARG(bool, session->encodings().contains("palette")), Q_ARG(bool, session->encodings().contains("copy")), Q_ARG(int, codecs));
     this->_log.info("session", session->id(), "Session started: " + session->name() + " (" + net::client_kind_name(session->kind()) + ", " + session->address() + ")", session->describe());
     this->updateMarker_();
     emit this->sessionChanged(session);
@@ -981,6 +992,8 @@ bool xdesk::host::Host::applySettings(const core::Settings& settings)
         QMetaObject::invokeMethod(this->_stream, "setAutoResolution", Qt::QueuedConnection, Q_ARG(bool, settings.autoResolution));
     if (this->_stream && old.h264 != settings.h264)
         QMetaObject::invokeMethod(this->_stream, "setVideo", Qt::QueuedConnection, Q_ARG(bool, settings.h264));
+    if (this->_stream && (old.videoCodec != settings.videoCodec || old.hardwareVideo != settings.hardwareVideo))
+        QMetaObject::invokeMethod(this->_stream, "setVideoCodec", Qt::QueuedConnection, Q_ARG(QString, settings.videoCodec), Q_ARG(bool, settings.hardwareVideo));
     if (this->_sharing && (old.port != settings.port || old.bind != settings.bind)) {
         this->_server.stop();
         this->_server.listen(settings.bind, settings.port, this->tls_());

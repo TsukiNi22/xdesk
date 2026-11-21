@@ -31,7 +31,7 @@ File Description:
 /* DEFINE */
 
 #define OPEN_DELAY 400 // ms waited after a new client before the capture starts (its pause message comes first)
-#define AUTO_MIN_HEIGHT 720.0 // the automatic resolution never goes under this height (the text stays readable), unless the viewer asked less
+#define AUTO_MIN_HEIGHT 1080.0 // the automatic resolution never goes under 1080p (native first: the quality goes down, then the frame rate, 1080p last), unless the viewer asked less
 #define PALETTE_RTT 20.0 // ms of ping from which a viewer is far (its link, not the cpu, is the bottleneck): palette tiles, H.264 for the large moves
 
 xdesk::host::Stream::Stream(QObject* parent)
@@ -89,7 +89,7 @@ void xdesk::host::Stream::closeCapture_(void)
     emit this->closed();
 }
 
-void xdesk::host::Stream::addClient(const QString& session, const int quality, const double scale, const int fps, const bool palette, const bool copy, const bool h264)
+void xdesk::host::Stream::addClient(const QString& session, const int quality, const double scale, const int fps, const bool palette, const bool copy, const int codecs)
 {
     StreamClient client;
 
@@ -99,7 +99,8 @@ void xdesk::host::Stream::addClient(const QString& session, const int quality, c
     client.flow.setAutoScale(this->_autoResolution);
     client.palette = palette;
     client.copy = copy;
-    client.h264 = h264;
+    client.codecs = codecs;
+    client.encoder.setCodecs(codecs, this->_prefer, this->_hardware);
     this->_clients.insert(session, client);
     if (this->_idle) this->_idle->stop();
     if (!this->_capture) QTimer::singleShot(OPEN_DELAY, this, &Stream::openIfWatched_); // a client opening on a terminal pauses at once: no capture for it
@@ -177,6 +178,14 @@ void xdesk::host::Stream::setAutoResolution(const bool enabled)
         client.flow.setAutoScale(enabled);
 }
 
+void xdesk::host::Stream::setVideoCodec(const QString& prefer, const bool hardware)
+{
+    this->_prefer = prefer;
+    this->_hardware = hardware;
+    for (StreamClient& client: this->_clients)
+        client.encoder.setCodecs(client.codecs, prefer, hardware);
+}
+
 void xdesk::host::Stream::tick_(void)
 {
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
@@ -245,8 +254,12 @@ void xdesk::host::Stream::tick_(void)
         // Copy tiles (scroll) and video frames only while the frames keep their order and every frame of the other paths arrived
         if (client.settling && client.flow.queue() == 0) client.settling = false;
         client.encoder.setCopy(client.copy && client.ordered && !client.settling);
-        client.encoder.setVideo(client.h264 && this->_video && linkBound && client.ordered && !client.settling);
+        client.encoder.setVideo(client.codecs != 0 && this->_video && linkBound && client.ordered && !client.settling);
         message = client.encoder.encode(scaled.value(key), client.flow.quality(client.quality));
+        if (client.encoder.videoEncoder() != client.videoName && !client.encoder.videoEncoder().isEmpty()) {
+            client.videoName = client.encoder.videoEncoder();
+            emit this->encoder(it.key(), client.videoName);
+        }
         client.idle = message.isEmpty() ? frame.cacheKey() : 0;
         if (message.isEmpty()) continue;
         client.flow.sent(client.encoder.lastId(), message.size(), now);

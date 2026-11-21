@@ -143,7 +143,9 @@ class HostWindow: public QMainWindow {
         QSpinBox* _setFps = nullptr;
         QComboBox* _setResolution = nullptr; // max height presets (0 = native)
         QCheckBox* _setAutoResolution = nullptr; // lower resolution while a link cannot follow
-        QCheckBox* _setH264 = nullptr; // H.264 video of the large moves for the far viewers
+        QCheckBox* _setH264 = nullptr; // video of the large moves for the far viewers
+        QCheckBox* _setHardwareVideo = nullptr; // gpu encoders
+        QComboBox* _setVideoCodec = nullptr; // auto, h264, hevc, av1
         QComboBox* _setQuality = nullptr; // jpeg quality presets
         QComboBox* _setLanguage = nullptr;
         QCheckBox* _setMinimized = nullptr;

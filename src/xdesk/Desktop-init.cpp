@@ -43,7 +43,7 @@ _nodiscard static std::optional<std::string> ExposeParsingHook(const std::string
 
 void xdesk::Desktop::init(const int argc, const char* const argv[])
 {
-    static const std::vector<std::string> COMMANDS = {"host", "connect", "viewer", "scan", "devices", "unban", "paths"};
+    static const std::vector<std::string> COMMANDS = {"host", "connect", "viewer", "scan", "devices", "unban", "paths", "bench"};
     utils::arguments::ArgParser parser = utils::arguments::ArgParser("xdesk",
         "Remote desktop & terminal, secured end to end (TLS 1.3 + ML-KEM post-quantum key exchange, Argon2id codes).\n"
         "Commands:\n"
@@ -53,7 +53,8 @@ void xdesk::Desktop::init(const int argc, const char* const argv[])
         "  xdesk scan                 list the hosts announced on the LAN\n"
         "  xdesk devices              list the known / trusted / banned devices\n"
         "  xdesk unban <id|address>   unban (only on this PC, typed confirmation, host stopped)\n"
-        "  xdesk paths                print the configuration, data and log folders");
+        "  xdesk paths                print the configuration, data and log folders\n"
+        "  xdesk bench [heights]      measure every way of sending the screen here (tiles, openh264, the gpu encoders), simulated networks (heights: 1080,2160 | all)");
     std::vector<std::string> args;
 
     this->_argc = argc;
@@ -64,7 +65,7 @@ void xdesk::Desktop::init(const int argc, const char* const argv[])
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (i == 1 && std::find(COMMANDS.begin(), COMMANDS.end(), arg) != COMMANDS.end()) {this->_command = arg; continue;}
-        if ((this->_command == "connect" || this->_command == "unban") && this->_target.empty() && !arg.starts_with('-') && (i == 2 || args.size() == 1 || !args.back().starts_with('-'))) {
+        if ((this->_command == "connect" || this->_command == "unban" || this->_command == "bench") && this->_target.empty() && !arg.starts_with('-') && (i == 2 || args.size() == 1 || !args.back().starts_with('-'))) {
             this->_target = arg;
             continue;
         }

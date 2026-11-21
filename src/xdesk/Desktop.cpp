@@ -25,6 +25,7 @@ File Description:
 #define _Attribute
 #define _Exception
 #include <utils/utils.hpp>
+#include "xdesk/host/Bench.hpp"
 #include "xdesk/security/DeviceRegistry.hpp"
 #include "xdesk/security/IntegrityGuard.hpp"
 #include "xdesk/security/Certificate.hpp"
@@ -62,6 +63,7 @@ void xdesk::Desktop::run(void)
         return;
     }
     if (this->_command == "scan") {this->runScan_(); return;}
+    if (this->_command == "bench") {this->_exit = host::run_bench(this->_argc, this->_argv, QString::fromStdString(this->_target)); return;}
     if (this->_command == "devices") {this->runDevices_(); return;}
     if (this->_command == "unban") {this->runUnban_(); return;}
     if (this->_command == "connect" || this->_command == "viewer") {this->runConnect_(); return;}

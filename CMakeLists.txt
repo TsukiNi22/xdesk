@@ -158,6 +158,8 @@ set(SRC_SHARED
     src/xdesk/host/UdpServer.cpp
     src/xdesk/host/Lanes.cpp
     src/xdesk/host/Host.cpp
+    src/xdesk/host/Compress.cpp
+    src/xdesk/host/Bench.cpp
 
     ## Client (sub-part: client)
     src/xdesk/client/Client.cpp
@@ -166,6 +168,8 @@ set(SRC_SHARED
     ## Platform (sub-part: platform)
     src/xdesk/platform/FrameEncoder.cpp
     src/xdesk/platform/H264.cpp
+    src/xdesk/platform/AvCodec.cpp
+    src/xdesk/platform/VideoEncoder.cpp
     src/xdesk/platform/ScreenCapture.cpp
     src/xdesk/platform/QtCapture.cpp
     src/xdesk/platform/InputInjector.cpp
@@ -394,7 +398,7 @@ add_custom_target(package_release
 # =========================
 foreach(target ${COMPILED_TARGETS})
     target_include_directories(${target} PRIVATE include/exception third_party)
-    target_include_directories(${target} SYSTEM PRIVATE third_party/openh264) # <wels/...>: openh264 is loaded at run time
+    target_include_directories(${target} SYSTEM PRIVATE third_party/openh264 third_party/ffmpeg) # <wels/...>, <libavcodec/...>: openh264 and FFmpeg are loaded at run time
     if(XDESK_HAS_PIPEWIRE)
         target_include_directories(${target} SYSTEM PRIVATE third_party/pipewire) # <pipewire/...>, <spa/...>
     endif()

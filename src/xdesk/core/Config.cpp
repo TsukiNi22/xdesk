@@ -171,6 +171,8 @@ void xdesk::core::Config::load(void)
     s.maxHeight = std::clamp(o.value("maxHeight").toInt(s.maxHeight), 0, 4320);
     s.autoResolution = o.value("autoResolution").toBool(s.autoResolution);
     s.h264 = o.value("h264").toBool(s.h264);
+    s.hardwareVideo = o.value("hardwareVideo").toBool(s.hardwareVideo);
+    s.videoCodec = QStringList({"auto", "h264", "hevc", "av1"}).contains(o.value("videoCodec").toString()) ? o.value("videoCodec").toString() : s.videoCodec;
 
     // Ui
     s.theme = o.value("theme").toString(s.theme);
@@ -212,6 +214,8 @@ void xdesk::core::Config::save(void) const
     o["maxHeight"] = s.maxHeight;
     o["autoResolution"] = s.autoResolution;
     o["h264"] = s.h264;
+    o["hardwareVideo"] = s.hardwareVideo;
+    o["videoCodec"] = s.videoCodec;
     o["theme"] = s.theme;
     o["language"] = s.language;
     o["startMinimized"] = s.startMinimized;

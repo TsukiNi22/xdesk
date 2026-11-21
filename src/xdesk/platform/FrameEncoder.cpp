@@ -51,7 +51,7 @@ File Description:
 #define COPY_MIN_MOVED 4 // known tiles changed before a scroll is looked for
 #define COPY_MIN_TILES 2 // changed tiles of a column before its lines are compared
 #define COPY_MIN_VOTES 12 // lines of a column found at the same offset before it is trusted
-#define VIDEO_MAX_PIXELS (1920 * 1200) // larger frames stay in tiles (the software encoder would hold the stream back)
+#define VIDEO_RETRIES 3 // encoders that fail in a row before the video stops until a reset
 #define VIDEO_QUALITY 1 // quality the tiles are known with after a video frame (sent again sharp once still)
 
 //----------------------------------------------------------------//
@@ -325,12 +325,23 @@ void xdesk::platform::parallel_for(const int count, const std::function<void(con
 //----------------------------------------------------------------//
 /* CLASS */
 
+void xdesk::platform::FrameEncoder::setCodecs(const int codecs, const QString& prefer, const bool hardware)
+{
+    if (codecs == this->_codecs && prefer == this->_prefer && hardware == this->_hardware) return;
+    this->_codecs = codecs;
+    this->_prefer = prefer;
+    this->_hardware = hardware;
+    this->_encoder.reset(); // the next video frame opens the best one (a key frame)
+    this->_videoFailures = 0;
+}
+
 void xdesk::platform::FrameEncoder::reset(void)
 {
     std::fill(this->_hashes.begin(), this->_hashes.end(), 0);
     std::fill(this->_quality.begin(), this->_quality.end(), 0);
     this->_ordered = false;
-    if (this->_h264) this->_h264->forceKey(); // the client may have lost its decoder state too
+    if (this->_encoder) this->_encoder->forceKey(); // the client may have lost its decoder state too
+    this->_videoFailures = 0;
 }
 
 void xdesk::platform::FrameEncoder::findCopies_(const QImage& image, const QVector<std::uint64_t>& hashes, QVector<int>& offsets) const
@@ -436,9 +447,21 @@ QByteArray xdesk::platform::FrameEncoder::encodeVideo_(const QImage& image, cons
 {
     bool key = false;
 
-    if (!this->_h264) this->_h264 = std::make_shared<H264Encoder>();
-    const QByteArray unit = this->_h264->encode(image, quality, &key);
-    if (unit.isEmpty()) return {};
+    if (this->_videoFailures >= VIDEO_RETRIES) return {};
+    if (this->_encoder && this->_encoderPixels != static_cast<qsizetype>(this->_width) * this->_height) this->_encoder.reset(); // another size may need another encoder (4k: the gpu only)
+    if (!this->_encoder) {
+        this->_encoder = create_video_encoder(this->_codecs, this->_prefer, this->_hardware, this->_width, this->_height);
+        this->_encoderPixels = static_cast<qsizetype>(this->_width) * this->_height;
+    }
+    if (!this->_encoder) {this->_videoFailures = VIDEO_RETRIES; return {};} // nothing can encode this size for this client: tiles
+    const QByteArray unit = this->_encoder->encode(image, quality, &key);
+    if (unit.isEmpty()) {
+        // This encoder failed (a gpu session limit, a size it refuses): the next one is tried at the next move
+        this->_encoder.reset();
+        this->_hardware = this->_hardware && ++this->_videoFailures < 2;
+        return {};
+    }
+    this->_videoFailures = 0;
 
     // The client now has this frame (lossy): every tile known, sent again sharp once still
     this->_hashes = hashes;
@@ -447,7 +470,7 @@ QByteArray xdesk::platform::FrameEncoder::encodeVideo_(const QImage& image, cons
     if (this->_copy) this->_previous = image;
     net::ByteWriter message(net::Binary::Video, static_cast<std::size_t>(unit.size()) + 16);
     message.u32(++this->_id).u16(static_cast<std::uint16_t>(this->_width)).u16(static_cast<std::uint16_t>(this->_height));
-    message.u8(key ? 1 : 0);
+    message.u8(static_cast<std::uint8_t>((key ? 1 : 0) | (static_cast<int>(this->_encoder->codec()) << 1)));
     message.bytes(unit);
     return message.data();
 }
@@ -513,7 +536,7 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
         if (this->_hashes[i] != 0) moved++;
     }
     // Video: a large move with no scroll found, while the link is the bottleneck: one H.264 frame of the whole screen
-    if (this->_video && copies.isEmpty() && moved * MOTION_SHARE > count && static_cast<qsizetype>(this->_width) * this->_height <= VIDEO_MAX_PIXELS) {
+    if (this->_video && copies.isEmpty() && moved * MOTION_SHARE > count) {
         const QByteArray video = this->encodeVideo_(image, hashes, quiet);
         if (!video.isEmpty()) return video;
     }

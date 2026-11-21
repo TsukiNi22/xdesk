@@ -26,7 +26,7 @@ File Description:
     /* type */
     #define _Attribute
     #include <utils/utils.hpp>  // _hot, _cold, _nodiscard
-    #include "H264.hpp"         // xdesk::platform::H264Encoder
+    #include "IVideoEncoder.hpp" // xdesk::platform::IVideoEncoder, create_video_encoder
     #include <QByteArray>       // QByteArray
     #include <functional>       // std::function
     #include <QVector>          // QVector
@@ -59,7 +59,12 @@ class FrameEncoder {
         bool _video = false; // a large move is sent as one H.264 frame (the client decodes it, its link is the bottleneck)
         bool _ordered = false; // copy tiles or video frames sent since the last reset: they need the frames in order
         QImage _previous; // last frame encoded (source of the copy tiles), kept only while _copy
-        std::shared_ptr<H264Encoder> _h264; // created at the first video frame (shared: the clients are copied into their table once)
+        std::shared_ptr<IVideoEncoder> _encoder; // created at the first video frame (shared: the clients are copied into their table once)
+        int _codecs = VIDEO_H264; // codecs the client decodes (VIDEO_* bits)
+        QString _prefer = "auto"; // codec asked by the host settings (auto, h264, hevc, av1)
+        bool _hardware = true; // a gpu encoder may be used
+        int _videoFailures = 0; // encoders that failed in a row (3: tiles only until a reset)
+        qsizetype _encoderPixels = 0; // frame size the encoder was chosen for (another size: chosen again)
 
         // ---------- Pre-Function -------- //
         _hot void findCopies_(const QImage& image, const QVector<std::uint64_t>& hashes, QVector<int>& offsets) const; // offsets[tile] = rows its content moved down since the previous frame (0 = not found)
@@ -70,6 +75,7 @@ class FrameEncoder {
         // ---------- Pre-Function -------- //
         _hot _nodiscard QByteArray encode(const QImage& frame, const int quality); // Binary::Frame message, empty = nothing changed (moving parts lighter, sent again sharp once still)
         _cold void reset(void); // next frame is complete (new client, resize, quality change)
+        _cold void setCodecs(const int codecs, const QString& prefer, const bool hardware); // what the client decodes, the settings of the host (a new encoder at the next video frame)
         _hot _nodiscard static QByteArray encodeJpeg(const QImage& image, const int quality); // libjpeg-turbo
         _hot _nodiscard static QImage decodeJpeg(const QByteArray& data); // libjpeg-turbo, RGB32 (null on error)
 
@@ -77,6 +83,7 @@ class FrameEncoder {
         /* getter */
         _cold _nodiscard inline std::uint32_t lastId(void) const {return this->_id;};
         _cold _nodiscard inline bool orderBound(void) const      {return this->_ordered;};
+        _cold _nodiscard inline QString videoEncoder(void) const {return this->_encoder ? this->_encoder->name() : QString();}; // name of the encoder in use ("" = none yet)
         /* setter */
         _cold inline void setPalette(const bool enabled) {this->_palette = enabled;};
         _cold inline void setCopy(const bool enabled)    {this->_copy = enabled; if (!enabled) this->_previous = QImage();};

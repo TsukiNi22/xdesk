@@ -488,7 +488,7 @@
         ws.onopen = () => {
             const device = getDevice();
             // The udp of the app (udp = 1 in the storage) only on demand: each of its frames crosses the ui thread of android as base64 text
-            sendJson({t: "hello", v: PROTOCOL, kind: KIND, name: name, os: guessOs(), device: device ? device.id : "", nonce: b64encode(state.clientNonce), udp: !!bridge.port && load("udp") === "1", enc: (PALETTE ? ["palette", "copy"] : ["copy"]).concat(h264.supported ? ["h264"] : [])});
+            sendJson({t: "hello", v: PROTOCOL, kind: KIND, name: name, os: guessOs(), device: device ? device.id : "", nonce: b64encode(state.clientNonce), udp: !!bridge.port && load("udp") === "1", enc: (PALETTE ? ["palette", "copy"] : ["copy"]).concat(VIDEO_CODECS.filter((c) => h264.decodes[c]))});
         };
         ws.onmessage = (e) => {
             if (typeof e.data === "string") onText(e.data);
@@ -925,7 +925,7 @@
         const id = view.getUint32(1);
         const w = view.getUint16(5);
         const h = view.getUint16(7);
-        const shown = h264Submit(id, (data[9] & 1) !== 0, data.subarray(10));
+        const shown = h264Submit(id, (data[9] & 1) !== 0, data.subarray(10), VIDEO_CODECS[(data[9] >> 1) & 3] || "h264");
         const ack = new Uint8Array(5);
         ack[0] = BIN.FrameAck;
         new DataView(ack.buffer).setUint32(1, id);
@@ -956,10 +956,16 @@
         }).catch(() => {state.drawing = Math.max(0, state.drawing - 1); if (!early) sendAck();});
     }
 
-    // Decoder of the video (WebCodecs): pending = the resolves of the chunks decoded, in their order (no B frame)
-    const h264 = {decoder: null, codec: "", needKey: true, pending: [], supported: false};
+    /* Decoder of the video (WebCodecs): pending = the resolves of the chunks decoded, in their order (no B frame)
+     * codecs (bits 1-2 of the flags of a Video message): h264 (annex B), hevc (annex B, Main), av1 (OBUs); a codec is listed
+     * in the hello only when this browser decodes it (HEVC: a hardware decoder, AV1: most browsers since 2023)
+    */
+    const VIDEO_CODECS = ["h264", "hevc", "av1"];
+    const VIDEO_CONFIG = {h264: "avc1.42E034", hevc: "hvc1.1.6.L153.B0", av1: "av01.0.13M.08"};
+    const h264 = {decoder: null, codec: "", needKey: true, pending: [], decodes: {h264: false, hevc: false, av1: false}};
     if (typeof VideoDecoder === "function")
-        VideoDecoder.isConfigSupported({codec: "avc1.42E034", optimizeForLatency: true}).then((r) => {h264.supported = !!(r && r.supported);}).catch(() => {});
+        for (const name of VIDEO_CODECS)
+            VideoDecoder.isConfigSupported({codec: VIDEO_CONFIG[name], optimizeForLatency: true}).then((r) => {h264.decodes[name] = !!(r && r.supported);}).catch(() => {});
 
     function h264Reset(refresh) {
         const pending = h264.pending;
@@ -985,9 +991,9 @@
     }
 
     // Promise of the picture of a chunk (null: not decodable, waits for a key frame)
-    function h264Submit(id, key, unit) {
+    function h264Submit(id, key, unit, kind) {
         if (key) {
-            const codec = avcCodec(unit);
+            const codec = kind === "h264" ? avcCodec(unit) : VIDEO_CONFIG[kind];
             if (!h264.decoder || h264.decoder.state !== "configured" || h264.codec !== codec) {
                 h264Reset(false);
                 try {

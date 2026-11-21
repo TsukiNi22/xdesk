@@ -88,7 +88,9 @@ struct Settings {
     double scale = 1.0; // scale of the frames sent (0.25 - 1.0)
     int maxHeight = 0; // frames at most this tall, the width follows (0 = the screen size): 1080, 720, 480...
     bool autoResolution = true; // a viewer whose link cannot follow even at the lowest quality gets a lower resolution, raised again once the link is calm
-    bool h264 = true; // the large moves go as H.264 video (openh264) to the viewers that decode it while their link is the bottleneck
+    bool h264 = true; // the large moves go as video (H.264 / HEVC / AV1) to the viewers that decode it while their link is the bottleneck
+    bool hardwareVideo = true; // the gpu encodes the video (NVENC, Quick Sync, VA-API through FFmpeg 8): 4k at 60 fps, almost no cpu
+    QString videoCodec = "auto"; // auto (av1, hevc, then h264: the first one the gpu and the viewer share) | h264 | hevc | av1
 
     /* ui */
     QString theme = "system"; // system | dark | light

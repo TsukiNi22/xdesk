@@ -25,6 +25,7 @@ File Description:
 #include <utils/utils.hpp>
 #include "xdesk/ui/gui/HostWindow.hpp"
 #include "xdesk/security/Crypto.hpp"
+#include "xdesk/platform/AvCodec.hpp"
 #include "xdesk/platform/H264.hpp"
 #include "xdesk/ui/gui/Theme.hpp"
 #include <qrcodegen/qrcodegen.hpp>
@@ -1421,9 +1422,19 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     this->_setAutoResolution = new QCheckBox("Automatic resolution (slow links)");
     this->_setAutoResolution->setToolTip("A viewer whose link cannot follow even at the lowest quality gets a lower resolution, raised again once the link is calm");
     stream->addRow("", this->_setAutoResolution);
-    this->_setH264 = new QCheckBox("H.264 video for far viewers");
-    this->_setH264->setToolTip(platform::h264_available() ? "While the link of a viewer is the bottleneck, the large moves (video, dragged windows) go as H.264 (" + platform::h264_library() + "): far fewer bytes, then the screen is sent again sharp once still" : "Needs openh264 2.6+ (" + platform::h264_library() + "): tiles only meanwhile");
+    this->_setH264 = new QCheckBox("Video for far viewers");
+    this->_setH264->setToolTip("While the link of a viewer is the bottleneck, the large moves (video, dragged windows) go as video: far fewer bytes, then the screen is sent again sharp once still. openh264: " + platform::h264_library());
     stream->addRow("", this->_setH264);
+    this->_setHardwareVideo = new QCheckBox("Encode the video on the GPU");
+    this->_setHardwareVideo->setToolTip(platform::av_available() ? "NVENC, Quick Sync or VA-API through " + platform::av_library() + ": 4K at 60 fps with almost no CPU (openh264 otherwise, up to 1920 x 1200)" : "Needs the FFmpeg 8 libraries (" + platform::av_library() + "): openh264 meanwhile");
+    stream->addRow("", this->_setHardwareVideo);
+    this->_setVideoCodec = new QComboBox();
+    this->_setVideoCodec->addItem("Automatic (AV1, HEVC, then H.264)", "auto");
+    this->_setVideoCodec->addItem("H.264 first", "h264");
+    this->_setVideoCodec->addItem("HEVC first", "hevc");
+    this->_setVideoCodec->addItem("AV1 first", "av1");
+    this->_setVideoCodec->setToolTip("Codec tried first on the GPU: the first one the GPU encodes and the viewer decodes is used");
+    stream->addRow(make_label("Video codec", "muted"), this->_setVideoCodec);
     stream->addRow(make_label("Image quality", "muted"), this->_setQuality);
     stream->addRow(streamHint);
     stream->addRow(make_label("Language", "muted"), this->_setLanguage);
@@ -1530,6 +1541,8 @@ void xdesk::ui::gui::HostWindow::loadSettings_(void)
     this->_setFps->setValue(s.fps);
     this->_setAutoResolution->setChecked(s.autoResolution);
     this->_setH264->setChecked(s.h264);
+    this->_setHardwareVideo->setChecked(s.hardwareVideo);
+    this->_setVideoCodec->setCurrentIndex(std::max(0, this->_setVideoCodec->findData(s.videoCodec)));
     this->_setResolution->setCurrentIndex(std::max(0, this->_setResolution->findData(s.maxHeight)));
     if (this->_setResolution->findData(s.maxHeight) < 0) {
         this->_setResolution->addItem(QString::number(s.maxHeight) + "p (config.json)", s.maxHeight);
@@ -1572,6 +1585,8 @@ void xdesk::ui::gui::HostWindow::saveSettings_(void)
     s.maxHeight = this->_setResolution->currentData().toInt();
     s.autoResolution = this->_setAutoResolution->isChecked();
     s.h264 = this->_setH264->isChecked();
+    s.hardwareVideo = this->_setHardwareVideo->isChecked();
+    s.videoCodec = this->_setVideoCodec->currentData().toString();
     s.language = this->_setLanguage->currentText();
     s.startMinimized = this->_setMinimized->isChecked();
     try {
