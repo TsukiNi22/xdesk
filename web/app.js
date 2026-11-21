@@ -10,7 +10,7 @@
     // Constants
 
     const PROTOCOL = 1;
-    const BIN = {Frame: 0x10, FrameAck: 0x11, Cursor: 0x12, Video: 0x13, MouseMove: 0x20, MouseButton: 0x21, MouseWheel: 0x22, Key: 0x23, Text: 0x24, TermData: 0x31};
+    const BIN = {Frame: 0x10, FrameAck: 0x11, Cursor: 0x12, Video: 0x13, MouseMove: 0x20, MouseButton: 0x21, MouseWheel: 0x22, Key: 0x23, Text: 0x24, TermData: 0x31, TermPacked: 0x32};
     const TILE = {Jpeg: 1, Solid: 2, Palette: 3, Copy: 4};
     const PALETTE = typeof DecompressionStream === "function"; // lossless palette tiles (text / ui) need the zlib inflater of the browser
     const VIDEO_WAIT = 150; // ms a decoder may hold a video frame before it is flushed out (the next move then starts from a key frame)
@@ -488,7 +488,7 @@
         ws.onopen = () => {
             const device = getDevice();
             // The udp of the app (udp = 1 in the storage) only on demand: each of its frames crosses the ui thread of android as base64 text
-            sendJson({t: "hello", v: PROTOCOL, kind: KIND, name: name, os: guessOs(), device: device ? device.id : "", nonce: b64encode(state.clientNonce), udp: !!bridge.port && load("udp") === "1", enc: (PALETTE ? ["palette", "copy"] : ["copy"]).concat(VIDEO_CODECS.filter((c) => h264.decodes[c]))});
+            sendJson({t: "hello", v: PROTOCOL, kind: KIND, name: name, os: guessOs(), device: device ? device.id : "", nonce: b64encode(state.clientNonce), udp: !!bridge.port && load("udp") === "1", enc: (PALETTE ? ["palette", "copy", "zlib"] : ["copy"]).concat(VIDEO_CODECS.filter((c) => h264.decodes[c]))});
         };
         ws.onmessage = (e) => {
             if (typeof e.data === "string") onText(e.data);
@@ -642,6 +642,7 @@
             case BIN.Video: onVideo(data, state.ws); break;
             case BIN.Cursor: onCursor(data); break;
             case BIN.TermData: onTermData(data); break;
+            case BIN.TermPacked: onTermPacked(data); break;
             default: break;
         }
     }
@@ -2466,10 +2467,27 @@
         if (tm) fitTerm(tm);
     }
 
+    /* Output of a terminal: raw (TermData) or zlib (TermPacked, inflated by the browser): written in the order it came,
+     * the raw chunks at once while nothing packed is being inflated before them
+    */
     function onTermData(data) {
         if (data.length < 2) return;
         const tm = state.terms.get(data[1]);
-        if (tm) tm.term.write(data.subarray(2));
+        if (!tm) return;
+        const bytes = data.slice(2);
+        if (!tm.inflating) {tm.term.write(bytes); return;}
+        tm.queue = tm.queue.then(() => tm.term.write(bytes));
+    }
+
+    function onTermPacked(data) {
+        if (data.length < 6 || !PALETTE) return;
+        const tm = state.terms.get(data[1]);
+        if (!tm) return;
+        const packed = data.slice(6);
+        tm.inflating = (tm.inflating || 0) + 1;
+        tm.queue = (tm.queue || Promise.resolve()).then(() => new Response(new Blob([packed]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer())
+            .then((out) => tm.term.write(new Uint8Array(out)), () => {})
+            .finally(() => {tm.inflating -= 1;});
     }
 
     function onTermExit(id, code) {

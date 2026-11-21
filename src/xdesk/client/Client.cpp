@@ -24,6 +24,7 @@ File Description:
 #include "xdesk/security/Certificate.hpp"
 #include "xdesk/security/Crypto.hpp"
 #include "xdesk/client/Client.hpp"
+#include "xdesk/host/Compress.hpp"
 #include "xdesk/core/Config.hpp"
 #include <QSslConfiguration>
 #include <QJsonDocument>
@@ -295,6 +296,13 @@ void xdesk::client::Client::onBinary_(const QByteArray& data)
             if (r.ok()) emit this->terminalOutput(id, r.rest());
             break;
         }
+        case net::Binary::TermPacked: {
+            const std::uint8_t id = r.u8();
+            const std::uint32_t size = r.u32();
+            const QByteArray out = r.ok() && size <= (16U << 20) ? host::decompress_with("zlib", r.rest(), static_cast<int>(size)) : QByteArray();
+            if (!out.isEmpty()) emit this->terminalOutput(id, out);
+            break;
+        }
         default: break;
     }
 }
@@ -310,7 +318,7 @@ void xdesk::client::Client::fitCanvas_(const int width, const int height)
 // What this viewer decodes: palette and copy tiles, the video codecs of openh264 / libavcodec
 QJsonArray xdesk::client::Client::encodings_(void)
 {
-    QJsonArray enc = {"palette", "copy"};
+    QJsonArray enc = {"palette", "copy", "zlib"};
 
     if (platform::h264_available() || platform::av_decodes(platform::VideoCodec::H264)) enc.append("h264");
     if (platform::av_decodes(platform::VideoCodec::Hevc)) enc.append("hevc");

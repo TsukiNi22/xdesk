@@ -23,6 +23,7 @@ File Description:
 #include <utils/utils.hpp>
 #include "xdesk/security/Crypto.hpp"
 #include "xdesk/platform/AvCodec.hpp"
+#include "xdesk/host/Compress.hpp"
 #include "xdesk/platform/H264.hpp"
 #include "xdesk/host/Host.hpp"
 #include <QGuiApplication>
@@ -50,6 +51,9 @@ static QString mouse_button_name(const std::uint8_t button)
 
     return button < 5 ? NAMES[button] : "button " + QString::number(button);
 }
+
+#define TERM_PACK_MIN 512 // bytes of terminal output from which zlib is tried
+#define TERM_PACK_LAN_MS 3 // ping under which the link is faster than zlib (raw bytes)
 
 xdesk::host::Host::Host(core::Config& config, QObject* parent)
 : QObject(parent), _config{config}, _log{core::Config::logDir()}, _cert{core::Config::dataDir()}, _registry{core::Config::dataDir()}
@@ -591,6 +595,22 @@ void xdesk::host::Host::sendClipboard_(const QString& text, const QString& excep
     }
 }
 
+// Output of a terminal: zlib when it pays (the bench: 3.6x on a build log, worth it under ~440 Mb/s, so not on the same LAN)
+static QByteArray terminal_message(const xdesk::host::Session* session, const std::uint8_t id, const QByteArray& data)
+{
+    const int latency = session->stats().latency;
+
+    if (data.size() >= TERM_PACK_MIN && session->encodings().contains("zlib") && (latency < 0 || latency >= TERM_PACK_LAN_MS)) {
+        const QByteArray packed = xdesk::host::compress_with("zlib", data);
+        if (!packed.isEmpty() && packed.size() * 10 < data.size() * 9) {
+            xdesk::net::ByteWriter w(xdesk::net::Binary::TermPacked, static_cast<std::size_t>(packed.size()) + 6);
+            return w.u8(id).u32(static_cast<std::uint32_t>(data.size())).bytes(packed).data();
+        }
+    }
+    xdesk::net::ByteWriter w(xdesk::net::Binary::TermData, static_cast<std::size_t>(data.size()) + 2);
+    return w.u8(id).bytes(data).data();
+}
+
 void xdesk::host::Host::onInput_(Session* session, const QByteArray& message)
 {
     const net::Binary type = static_cast<net::Binary>(static_cast<std::uint8_t>(message[0]));
@@ -691,9 +711,8 @@ void xdesk::host::Host::openTerminal_(Session* session, const std::uint8_t id, c
     this->_guard.addTerminal(session->id(), terminal.pty->pid());
     QObject::connect(terminal.pty, &platform::ITerminal::output, this, [this, sid = session->id(), id, path = terminal.transcript](const QByteArray& data) {
         Session* s = this->_sessions.value(sid);
-        net::ByteWriter w(net::Binary::TermData, static_cast<std::size_t>(data.size()) + 2);
         QFile file(path);
-        if (s) s->sendBinary(w.u8(id).bytes(data).data());
+        if (s) s->sendBinary(terminal_message(s, id, data));
         if (file.open(QIODevice::Append)) file.write(data);
         emit this->terminalOutput(sid, id, data);
     });
