@@ -44,6 +44,8 @@ One TLS 1.3 port (`47800` by default) serves HTTPS (`/`, `/api/info`, `/app/xdes
 | `quality / mode / refresh` | C → S | quality scale fps / view or control |
 | `term_open / term_resize / term_close / term_exit` | ↔ | id cols rows code |
 | `perms / screen / info / bye / clip` | S → C (clip ↔) | perms, w h, text, reason, clipboard text (asked = the answer of a `clip_get`) |
+| `view` | C → S | x y w h: the part of the screen shown (shares of it, zoom / 1:1 scrolled): only its tiles are sent |
+| `cursor` (and `welcome.cursor`) | S → C | embedded: the host draws its cursor in the frames (else the viewer draws it, shape from `CursorShape`) |
 | `clip_sync / clip_get` | C → S | on (every copy made on the host is sent as a `clip`) / the text of the host clipboard once |
 | `focus_request` | C → S | control paused by the host panel: given back after 1 min unless refused |
 | `input` | S → C | state (loading, ready, paused, none), error, wait, asked |
@@ -78,6 +80,16 @@ The acks size the frames in flight and measure the ping and the bandwidth.
 | y | i16 | 2 |  |
 | visible | u8 | 1 | 0 / 1 |
 The remote cursor, drawn by the viewer.
+:::
+
+:::message CursorShape 0x14
+| field | type | size | description |
+|---|---|---|---|
+| type | u8 | 1 | `0x14` |
+| hotspot x | u16 | 2 | pixels of the picture |
+| hotspot y | u16 | 2 | pixels of the picture |
+| png | png | var | the cursor (512 x 512 at most) |
+Sent when the cursor changes of shape (and to each new session): while controlling the viewer shows its own cursor with it, at its own mouse.
 :::
 
 :::message Video 0x13

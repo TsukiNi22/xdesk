@@ -100,6 +100,16 @@ xdesk does not send faster than the viewer can receive: it waits for the viewer 
 The capture thread ticks every 4 ms. A session gets a frame when its FPS cap allows it and its window is open: without a queue, the frames its rate needs during one ping (2 on a LAN, up to 8 far away); with a queue, only what the path holds (bandwidth × ping) and a lower JPEG quality until it drains, so no lag builds up. A viewer whose link can't follow even at the lowest quality gets a lower resolution (`autoResolution`), raised again once the link is calm. No frame is sent while the viewer shows a terminal.
 :::
 
+## Like Chrome Remote Desktop {#crd}
+
+:::simple
+Chrome Remote Desktop keeps a sharp picture with almost no lag with a few simple rules, and xdesk follows them. What stays still is sent again sharper as soon as the link has room. What moves is sized for the link so it never queues. Your mouse pointer is drawn on your side, so it never lags. And when you zoom, only the part you see is sent, in more detail.
+:::
+
+:::technical
+Read in the sources of Chromium (`remoting/`): its encoder wrapper keeps re-encoding the last frame while nothing changes (*top-off*) until the quantizer reaches its floor (10: near lossless), VP9 / AV1 in profile 1 (4:4:4, *lossless color*), only the changed 16 × 16 blocks encoded (*active map*), CBR at the bandwidth WebRTC estimates with no frame dropped by the encoder, a big update encoded at lower quality when it would take longer than a frame interval to send, one encode at a time (a newer frame replaces the waiting one), the cursor shape sent as a bitmap when it changes and drawn by the client at its own mouse. In xdesk: a tile still for 150 ms goes back to the stream quality, after 500 ms up to 90-95 in 4:4:4, within a budget of half the measured bandwidth of a frame interval and only without a queue; only the changed 64 × 64 tiles are encoded; the GPU video runs in CBR at 80 % of the measured bandwidth once the link is the bottleneck (2 frames of buffer); an update larger than two frame intervals of the link is sent lighter at once; the latest capture only, frames in flight bounded by the ping; the portal cursor as metadata, its shape (`CursorShape`) drawn by the viewer at its own mouse while controlling. A zoomed viewer tells the part it shows (`view`): only those tiles are sent, at the resolution its display shows.
+:::
+
 ## Video on the GPU and the bench {#gpu}
 
 :::simple
