@@ -32,6 +32,7 @@ File Description:
     #include "../security/PairingCode.hpp"              // xdesk::security::PairingCode
     #include "../security/Certificate.hpp"              // xdesk::security::Certificate
     #include "../platform/ITerminal.hpp"                // xdesk::platform::ITerminal
+    #include "../platform/Clipboard.hpp"                // xdesk::platform::Clipboard
     #include "../core/AuditLog.hpp"                     // xdesk::core::AuditLog
     #include "../net/Exposure.hpp"                      // xdesk::net::Exposure
     #include "../core/Config.hpp"                       // xdesk::core::Config
@@ -90,6 +91,8 @@ class Host: public QObject {
         Stream* _stream = nullptr; // lives in _streamThread
         QThread _streamThread;
         std::unique_ptr<platform::IInputInjector> _injector; // created when the screen size is known
+        platform::Clipboard* _clipboard = nullptr; // text clipboard of this computer (child of the host)
+        QSet<QString> _clipSync; // sessions that take every copy of this computer ("clip_sync" on)
         QSize _screen; // captured size
         QString _captureBackend = ""; // name, or the error ("" = idle: starts with the first viewer)
         QString _inputError = ""; // why no input backend could start
@@ -130,6 +133,7 @@ class Host: public QObject {
         void requestFocus_(Session* session); // "focus_request" of a viewer: granted after the delay of the settings (focusRequestDelay)
         void grantFocus_(void); // the delay of the request is over
         void endFocus_(const QString& why); // pending request and override dropped (logged with why, "" = silent)
+        void sendClipboard_(const QString& text, const QString& except = ""); // to the sessions with the clipboard right and the sync on (except the one that gave it)
         void sendInputState_(Session* session = nullptr) const; // {"t": "input", "state": ready|loading|paused|none, "error"} to one session (nullptr = every active one)
         void startStream_(void); // capture thread (a new stream for each sharing)
         void stopStream_(void);

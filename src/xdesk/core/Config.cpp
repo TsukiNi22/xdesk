@@ -156,6 +156,7 @@ void xdesk::core::Config::load(void)
     s.idleTimeout = std::max(0, o.value("idleTimeout").toInt(s.idleTimeout));
     s.allowControl = o.value("allowControl").toBool(s.allowControl);
     s.allowTerminal = o.value("allowTerminal").toBool(s.allowTerminal);
+    s.allowClipboard = o.value("allowClipboard").toBool(s.allowClipboard);
     s.allowWeb = o.value("allowWeb").toBool(s.allowWeb);
     s.viewOnlyDefault = o.value("viewOnlyDefault").toBool(s.viewOnlyDefault);
     s.banOnTamper = o.value("banOnTamper").toBool(s.banOnTamper);
@@ -198,6 +199,7 @@ void xdesk::core::Config::save(void) const
     o["idleTimeout"] = s.idleTimeout;
     o["allowControl"] = s.allowControl;
     o["allowTerminal"] = s.allowTerminal;
+    o["allowClipboard"] = s.allowClipboard;
     o["allowWeb"] = s.allowWeb;
     o["viewOnlyDefault"] = s.viewOnlyDefault;
     o["banOnTamper"] = s.banOnTamper;

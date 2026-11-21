@@ -60,6 +60,10 @@
             helpTrackpad: "Pavé tactile : glissez pour bouger le pointeur, touchez pour cliquer, touchez deux fois = double clic (maintenu au second : sélection par mots), touchez puis glissez ou maintenez puis glissez = déplacer, deux doigts = clic droit, glisser à deux doigts = défiler, pincer = zoomer, trois doigts = clavier",
             helpDirect: "Toucher direct : touchez là où cliquer, touchez deux fois = double clic (maintenu au second : sélection par mots), glisser = déplacer, maintenir puis lâcher = clic droit, glisser à deux doigts = défiler, pincer = zoomer, trois doigts = clavier",
             pastePrompt: "Texte à coller sur l'ordinateur distant",
+            clipGet: "Copier du PC", clipSend: "Envoyer le presse-papier", clipAuto: "Presse-papier auto",
+            clipGetTitle: "Copier ici le presse-papier de l'ordinateur", clipSendTitle: "Envoyer le presse-papier de cet appareil à l'ordinateur",
+            clipAutoTitle: "Copier d'un côté, coller de l'autre", clipGot: "Presse-papier de l'ordinateur copié", clipSent: "Presse-papier envoyé à l'ordinateur",
+            clipEmpty: "Presse-papier vide", clipCopyPrompt: "Presse-papier de l'ordinateur (copiez-le)", clipDenied: "L'hôte n'a pas donné le droit au presse-papier.",
             send: "Envoyer", erase: "Effacer", linePlaceholder: "Tapez, puis envoyez (vide = Entrée)",
             states: {idle: "hors ligne", connecting: "connexion", pending: "en attente", active: "connecté", closed: "fermé", banned: "banni"},
         },
@@ -82,6 +86,10 @@
         helpTrackpad: "Trackpad: slide to move the pointer, tap to click, double tap = double click (held on the second: select by words), tap then slide or hold then slide = drag, two fingers tap = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard",
         helpDirect: "Direct touch: tap where to click, double tap = double click (held on the second: select by words), slide = drag, hold then lift = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard",
         pastePrompt: "Text to paste on the remote computer",
+        clipGet: "Copy from PC", clipSend: "Send clipboard", clipAuto: "Auto clipboard",
+        clipGetTitle: "Copy the clipboard of the computer here", clipSendTitle: "Send the clipboard of this device to the computer",
+        clipAutoTitle: "Copy on one side, paste on the other", clipGot: "Clipboard of the computer copied", clipSent: "Clipboard sent to the computer",
+        clipEmpty: "Clipboard empty", clipCopyPrompt: "Clipboard of the computer (copy it)", clipDenied: "The host did not give the clipboard right.",
         send: "Send", erase: "Erase", linePlaceholder: "Type, then send (empty = Enter)",
     };
     let lang = load("lang") || ((navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en");
@@ -441,6 +449,7 @@
         setStatus("active");
         showView("sessionView");
         applyPerms();
+        syncClip();
         setMode(state.perms.control ? "control" : "view", true);
         updateScreenState();
         sendQuality();
@@ -587,6 +596,8 @@
             if (!msg.active && state.status === "active") sendJson({t: "udp_off"}); // unreachable or silent: the video stays on tcp
         }
         if (msg.gaveUp && state.status === "active") sendJson({t: "refresh"}); // a frame lost for good
+        if (typeof msg.clip === "string" && clip.waiting) {const done = clip.waiting; clip.waiting = null; done(msg.clip);}
+        if (typeof msg.localClip === "string") onLocalClip(msg.localClip); // copied on the phone (the app sees it while in front)
     }
 
     if (IN_APP) {
@@ -608,13 +619,13 @@
             case "bye": state.gotBye = true; closeSocket(); showClosed(msg.banned ? t("bannedTitle") : t("closedTitle"), msg.banned ? (msg.reason ? msg.reason + " - " : "") + t("bannedText") : (msg.reason || ""), !!msg.banned); break;
             case "ping": sendJson({t: "pong", ts: msg.ts}); break;
             case "pong": state.latency = Math.max(0, Math.round(performance.now() - msg.ts)); break;
-            case "perms": state.perms = Object.assign(state.perms, msg.perms || {}); applyPerms(); break;
+            case "perms": state.perms = Object.assign(state.perms, msg.perms || {}); applyPerms(); syncClip(); break;
             case "screen": state.hostW = msg.w || 0; state.hostH = msg.h || 0; sendQuality(); break; // the frames follow with the size asked
             case "info": toast(msg.text || ""); break;
             case "input": onInputState(msg); break;
             case "lanes": setLanes(msg.n); break;
             case "term_exit": onTermExit(msg.id, msg.code); break;
-            case "clip": if (msg.text && navigator.clipboard && document.hasFocus()) navigator.clipboard.writeText(msg.text).catch(() => {}); break;
+            case "clip": onHostClip(msg); break;
             default: break;
         }
     }
@@ -1121,6 +1132,7 @@
         $("cadBtn").disabled = !state.perms.control;
         $("kbdBtn").disabled = !state.perms.control;
         $("newTermBtn").hidden = !state.perms.terminal;
+        $("clipTools").hidden = !state.perms.clipboard;
         $("noView").hidden = !!state.perms.view;
         $("viewport").hidden = !state.perms.view;
         if (!state.perms.control && state.mode === "control") setMode("view", false);
@@ -1591,6 +1603,7 @@
         if (!canControl() || e.target === kbdInput || e.target === $("lineInput")) return;
         if (document.activeElement && document.activeElement !== canvas && document.activeElement !== document.body && document.activeElement.closest(".toolbar")) return;
         if (!e.code) return; // soft keyboards: handled by the hidden input
+        if (pasteShortcut(e)) return; // the paste event of the browser carries the text, the keys follow it
         e.preventDefault();
         sendKey(e.code, true);
     });
@@ -2017,6 +2030,126 @@
     $("keysBtn").addEventListener("click", () => {
         save("keys", keysWanted() ? "0" : "1");
         updateKeybar();
+    });
+
+    // ---------------------------------------------------------------- //
+    // Shared clipboard (the clipboard right of the host)
+    //  auto (default, can be turned off): a copy on the computer lands in this clipboard, a copy here lands on the computer
+    //  (read when the page gets the focus back, at a Ctrl+V on the screen, or by the app); the buttons force one way
+
+    const clip = {auto: load("clipAuto") !== "0", shared: "", waiting: null, pasteTimer: 0};
+
+    function clipAllowed() {return state.status === "active" && !!state.perms.clipboard;}
+
+    function syncClip() {
+        $("clipAuto").checked = clip.auto;
+        if (state.status === "active") sendJson({t: "clip_sync", on: clip.auto && !!state.perms.clipboard});
+    }
+
+    // The clipboard of this device: the app (android clipboard) or the browser (asks its permission)
+    async function writeLocal(text) {
+        if (bridge.port) {bridgeSend({t: "clip_set", text: text}); return true;}
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    async function readLocal() {
+        if (bridge.port) {
+            return new Promise((resolve) => {
+                clip.waiting = resolve;
+                bridgeSend({t: "clip_get"});
+                setTimeout(() => {if (clip.waiting === resolve) {clip.waiting = null; resolve(null);}}, 1000);
+            });
+        }
+        try {
+            return await navigator.clipboard.readText();
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function sendClip(text) {
+        if (!clipAllowed() || !text || text === clip.shared) return false;
+        clip.shared = text;
+        sendJson({t: "clip", text: text});
+        return true;
+    }
+
+    async function onHostClip(msg) {
+        if (typeof msg.text !== "string") return;
+        if (!msg.text) {if (msg.asked) toast(t("clipEmpty")); return;}
+        clip.shared = msg.text;
+        if (!clip.auto && !msg.asked) return;
+        const ok = await writeLocal(msg.text);
+        if (msg.asked && ok) toast(t("clipGot"));
+        else if (msg.asked) window.prompt(t("clipCopyPrompt"), msg.text); // the browser refused: copied by hand
+    }
+
+    function onLocalClip(text) {
+        if (clip.auto) sendClip(text);
+    }
+
+    // Back on the page: what was copied meanwhile goes to the computer (only when the browser lets it read without asking)
+    async function pullLocal() {
+        if (!clip.auto || !clipAllowed() || !document.hasFocus()) return;
+        if (!bridge.port) {
+            try {
+                const status = await navigator.permissions.query({name: "clipboard-read"});
+                if (status.state !== "granted") return;
+            } catch (e) {
+                return; // no such permission (firefox, safari): the paste event of Ctrl+V does it
+            }
+        }
+        const text = await readLocal();
+        if (text) sendClip(text);
+    }
+
+    window.addEventListener("focus", pullLocal);
+    document.addEventListener("visibilitychange", () => {if (!document.hidden) pullLocal();});
+
+    /* Ctrl+V (Cmd+V) on the screen: the browser gives the text of its paste event (no permission), sent first, then the
+     * keys; without a paste event in 150 ms the keys go alone
+    */
+    function pasteShortcut(e) {
+        if (!clip.auto || !clipAllowed() || e.code !== "KeyV" || !(e.ctrlKey || e.metaKey) || e.altKey) return false;
+        clearTimeout(clip.pasteTimer);
+        clip.pasteTimer = setTimeout(() => {clip.pasteTimer = 0; sendKey("KeyV", true); sendKey("KeyV", false);}, 150);
+        return true;
+    }
+
+    document.addEventListener("paste", (e) => {
+        if (!clip.pasteTimer) return;
+        clearTimeout(clip.pasteTimer);
+        clip.pasteTimer = 0;
+        const text = e.clipboardData ? e.clipboardData.getData("text/plain") : "";
+        e.preventDefault();
+        if (text) sendClip(text);
+        sendKey("KeyV", true);
+        sendKey("KeyV", false);
+    });
+
+    $("clipAuto").addEventListener("change", () => {
+        clip.auto = $("clipAuto").checked;
+        save("clipAuto", clip.auto ? "1" : "0");
+        syncClip();
+        if (clip.auto) pullLocal();
+    });
+    $("clipGetBtn").addEventListener("click", () => {
+        if (!clipAllowed()) {toast(t("clipDenied")); return;}
+        sendJson({t: "clip_get"});
+    });
+    $("clipSendBtn").addEventListener("click", async () => {
+        if (!clipAllowed()) {toast(t("clipDenied")); return;}
+        let text = await readLocal();
+        if (text === null) text = window.prompt(t("pastePrompt"), "") || ""; // the browser refused: pasted by hand
+        if (!text) {toast(t("clipEmpty")); return;}
+        clip.shared = "";
+        sendClip(text);
+        toast(t("clipSent"));
     });
 
     // ---------------------------------------------------------------- //

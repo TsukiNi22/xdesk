@@ -266,7 +266,8 @@ void xdesk::client::Client::onText_(const QString& text)
         emit this->latencyChanged(this->_latency);
     } else if (type == "term_exit") {
         emit this->terminalClosed(static_cast<std::uint8_t>(m.value("id").toInt()), m.value("code").toInt());
-    } else if (type == "info") emit this->message(m.value("text").toString());
+    } else if (type == "clip") emit this->clipboard(m.value("text").toString(), m.value("asked").toBool());
+    else if (type == "info") emit this->message(m.value("text").toString());
     else if (type == "screen") {
         this->_hostScreen = QSize(m.value("w").toInt(), m.value("h").toInt());
         emit this->hostScreenChanged(this->_hostScreen);
@@ -506,6 +507,24 @@ void xdesk::client::Client::requestMode(const QString& mode)
 {
     if (this->_ws && this->_state == State::Active)
         this->_ws->sendText(QString::fromUtf8(QJsonDocument(QJsonObject{{"t", "mode"}, {"mode", mode}}).toJson(QJsonDocument::Compact)));
+}
+
+void xdesk::client::Client::sendClipboard(const QString& text)
+{
+    if (this->_ws && this->_state == State::Active && !text.isEmpty())
+        this->_ws->sendText(QString::fromUtf8(QJsonDocument(QJsonObject{{"t", "clip"}, {"text", text.left(1 << 20)}}).toJson(QJsonDocument::Compact)));
+}
+
+void xdesk::client::Client::setClipboardSync(const bool on)
+{
+    if (this->_ws && this->_state == State::Active)
+        this->_ws->sendText(QString::fromUtf8(QJsonDocument(QJsonObject{{"t", "clip_sync"}, {"on", on}}).toJson(QJsonDocument::Compact)));
+}
+
+void xdesk::client::Client::requestClipboard(void)
+{
+    if (!this->_ws || this->_state != State::Active) return;
+    this->_ws->sendText(R"({"t":"clip_get"})");
 }
 
 void xdesk::client::Client::setPaused(const bool paused)

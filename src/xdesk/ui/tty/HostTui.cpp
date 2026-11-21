@@ -139,6 +139,7 @@ static const QList<SettingField>& settings_fields(void)
         {"Access & security", "Idle kick", FieldKind::Number, 0, 86400, 60, " s", {}, [](const S& s) {return QVariant(s.idleTimeout);}, [](S& s, const QVariant& v) {s.idleTimeout = v.toInt();}},
         {"Access & security", "Allow keyboard & mouse control", FieldKind::Toggle, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.allowControl);}, [](S& s, const QVariant& v) {s.allowControl = v.toBool();}},
         {"Access & security", "Allow remote terminals", FieldKind::Toggle, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.allowTerminal);}, [](S& s, const QVariant& v) {s.allowTerminal = v.toBool();}},
+        {"Access & security", "Allow the shared clipboard", FieldKind::Toggle, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.allowClipboard);}, [](S& s, const QVariant& v) {s.allowClipboard = v.toBool();}},
         {"Access & security", "Allow browsers and the android app", FieldKind::Toggle, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.allowWeb);}, [](S& s, const QVariant& v) {s.allowWeb = v.toBool();}},
         {"Access & security", "New sessions start view only", FieldKind::Toggle, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.viewOnlyDefault);}, [](S& s, const QVariant& v) {s.viewOnlyDefault = v.toBool();}},
         {"Access & security", "Automatic bans (tamper, unclean stop, wrong codes)", FieldKind::Toggle, 0, 0, 0, "", {}, [](const S& s) {return QVariant(s.banOnTamper);}, [](S& s, const QVariant& v) {s.banOnTamper = v.toBool();}},

@@ -201,6 +201,7 @@ input.code { font-family: var(--mono); font-size: 26px !important; letter-spacin
 }
 .toolbar { position: relative; }
 .toolbar .group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.inline-check { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; white-space: nowrap; }
 .tools { display: contents; } /* in the toolbar on wide screens, a menu on small ones */
 #menuBtn { display: none; }
 #keysBtn.on { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }

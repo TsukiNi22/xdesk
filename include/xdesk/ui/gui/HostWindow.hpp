@@ -133,6 +133,7 @@ class HostWindow: public QMainWindow {
         QSpinBox* _setIdle = nullptr;
         QCheckBox* _setAllowControl = nullptr;
         QCheckBox* _setAllowTerminal = nullptr;
+        QCheckBox* _setAllowClipboard = nullptr;
         QCheckBox* _setAllowWeb = nullptr;
         QCheckBox* _setViewOnly = nullptr;
         QCheckBox* _setBanOnTamper = nullptr;

@@ -1449,6 +1449,7 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     this->_setIdle->setSuffix(" s");
     this->_setAllowControl = new QCheckBox("Allow keyboard && mouse control");
     this->_setAllowTerminal = new QCheckBox("Allow remote terminals");
+    this->_setAllowClipboard = new QCheckBox("Allow the shared clipboard");
     this->_setAllowWeb = new QCheckBox("Allow browsers and the android app");
     this->_setViewOnly = new QCheckBox("New sessions start view only");
     this->_setBanOnTamper = new QCheckBox("Automatic bans (tamper, unclean stop, wrong codes)");
@@ -1469,6 +1470,7 @@ QWidget* xdesk::ui::gui::HostWindow::buildSettings_(void)
     access->addRow(make_label("Idle kick", "muted"), this->_setIdle);
     access->addRow("", this->_setAllowControl);
     access->addRow("", this->_setAllowTerminal);
+    access->addRow("", this->_setAllowClipboard);
     access->addRow("", this->_setAllowWeb);
     access->addRow("", this->_setViewOnly);
     access->addRow("", this->_setBanOnTamper);
@@ -1518,6 +1520,7 @@ void xdesk::ui::gui::HostWindow::loadSettings_(void)
     this->_setIdle->setValue(s.idleTimeout);
     this->_setAllowControl->setChecked(s.allowControl);
     this->_setAllowTerminal->setChecked(s.allowTerminal);
+    this->_setAllowClipboard->setChecked(s.allowClipboard);
     this->_setAllowWeb->setChecked(s.allowWeb);
     this->_setViewOnly->setChecked(s.viewOnlyDefault);
     this->_setBanOnTamper->setChecked(s.banOnTamper);
@@ -1557,6 +1560,7 @@ void xdesk::ui::gui::HostWindow::saveSettings_(void)
     s.idleTimeout = this->_setIdle->value();
     s.allowControl = this->_setAllowControl->isChecked();
     s.allowTerminal = this->_setAllowTerminal->isChecked();
+    s.allowClipboard = this->_setAllowClipboard->isChecked();
     s.allowWeb = this->_setAllowWeb->isChecked();
     s.viewOnlyDefault = this->_setViewOnly->isChecked();
     s.banOnTamper = this->_setBanOnTamper->isChecked();

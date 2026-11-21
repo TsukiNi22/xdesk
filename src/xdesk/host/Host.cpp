@@ -61,6 +61,8 @@ xdesk::host::Host::Host(core::Config& config, QObject* parent)
     QObject::connect(&this->_guard, &security::IntegrityGuard::tamper, this, &Host::onTamper_);
     this->_focusTimer.setSingleShot(true);
     QObject::connect(&this->_focusTimer, &QTimer::timeout, this, &Host::grantFocus_);
+    this->_clipboard = new platform::Clipboard(this);
+    QObject::connect(this->_clipboard, &platform::Clipboard::changed, this, [this](const QString& text) {this->sendClipboard_(text);});
     QObject::connect(&this->_exposure, &net::Exposure::changed, this, &Host::stateChanged);
     QObject::connect(&this->_exposure, &net::Exposure::certificateChanged, this, [this]() {
         const QString name = this->_exposure.certificateName();
@@ -322,7 +324,7 @@ xdesk::host::Permissions xdesk::host::Host::defaultPermissions_(const Session* s
     p.view = true;
     p.control = s.allowControl && !s.viewOnlyDefault;
     p.terminal = s.allowTerminal;
-    p.clipboard = false;
+    p.clipboard = s.allowClipboard;
     return p;
 }
 
@@ -550,10 +552,31 @@ void xdesk::host::Host::onControl_(Session* session, const QJsonObject& message)
     } else if (type == "term_close") {
         this->closeTerminal_(session->id(), static_cast<std::uint8_t>(message.value("id").toInt()));
     } else if (type == "clip") {
-        if (!perms.clipboard || !qobject_cast<QGuiApplication*>(QCoreApplication::instance())) return;
-        QGuiApplication::clipboard()->setText(message.value("text").toString().left(1 << 20));
-        session->setActivity("clipboard set (" + QString::number(message.value("text").toString().size()) + " chars)");
+        const QString text = message.value("text").toString().left(1 << 20);
+        if (!perms.clipboard || !this->_clipboard->available() || text.isEmpty() || text == this->_clipboard->text()) return;
+        this->_clipboard->setText(text);
+        this->sendClipboard_(text, session->id()); // the other viewers get it too
+        session->setActivity("clipboard set (" + QString::number(text.size()) + " chars)");
         this->_log.info("input", session->id(), "Clipboard set by the session");
+    } else if (type == "clip_sync") {
+        if (message.value("on").toBool()) this->_clipSync.insert(session->id());
+        else this->_clipSync.remove(session->id());
+    } else if (type == "clip_get") {
+        const QString text = perms.clipboard ? this->_clipboard->text() : QString();
+        if (!perms.clipboard) return;
+        session->sendJson({{"t", "clip"}, {"text", text}, {"asked", true}});
+        session->setActivity("clipboard read (" + QString::number(text.size()) + " chars)");
+        this->_log.info("input", session->id(), "Clipboard read by the session");
+    }
+}
+
+// Copied on this computer (or given by a viewer): every other viewer allowed to and asking for it gets the text
+void xdesk::host::Host::sendClipboard_(const QString& text, const QString& except)
+{
+    for (Session* s: std::as_const(this->_sessions)) {
+        if (s->id() == except || s->state() != State::Active || !s->permissions().clipboard || !this->_clipSync.contains(s->id())) continue;
+        s->sendJson({{"t", "clip"}, {"text", text}});
+        this->_log.info("input", s->id(), "Clipboard sent to the session (" + QString::number(text.size()) + " chars)");
     }
 }
 
@@ -739,6 +762,7 @@ void xdesk::host::Host::onClosed_(Session* session)
     this->_udp.remove(id);
     this->_lanes.remove(id);
     this->_udpViewers.remove(id);
+    this->_clipSync.remove(id);
     this->_sessions.remove(id);
     // Its request ends with it (never granted to nobody), the panel keeps the focus
     if (this->_focusRequest == id || this->_focusOverride == id) this->endFocus_(session->name() + " left: the remote control stays paused while the panel has the focus");
@@ -867,6 +891,7 @@ void xdesk::host::Host::setPermissions(const QString& id, const Permissions& per
     if (!session) return;
     p.control = p.control && s.allowControl;
     p.terminal = p.terminal && s.allowTerminal;
+    p.clipboard = p.clipboard && s.allowClipboard;
     if (!p.control && session->permissions().control && this->_injector) this->_injector->releaseAll();
     if (!p.terminal) this->closeTerminals_(id);
     session->setPermissions(p);

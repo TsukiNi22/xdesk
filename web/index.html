@@ -143,6 +143,11 @@
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
                     </button>
                 </div>
+                <div class="group" id="clipTools" role="group" aria-label="Clipboard" hidden>
+                    <button class="btn" type="button" id="clipGetBtn" title="Copy the clipboard of the computer here" data-i18n="clipGet" data-i18n-title="clipGetTitle">Copy from PC</button>
+                    <button class="btn" type="button" id="clipSendBtn" title="Send the clipboard of this device to the computer" data-i18n="clipSend" data-i18n-title="clipSendTitle">Send clipboard</button>
+                    <label class="inline-check" title="Copy on one side, paste on the other" data-i18n-title="clipAutoTitle"><input type="checkbox" id="clipAuto"> <span data-i18n="clipAuto">Auto clipboard</span></label>
+                </div>
                 <div class="stats" id="stats" aria-live="off"><span id="statLatency">-- ms</span><span id="statFps">0 fps</span><span id="statKbps">0 kb/s</span></div>
                 <button class="btn danger" type="button" id="disconnectBtn" data-i18n="disconnect">Disconnect</button>
                 </div>

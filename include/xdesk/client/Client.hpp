@@ -124,6 +124,9 @@ class Client: public QObject {
         _hot void text(const QString& text);
         void setQuality(const int quality, const double scale, const int fps);
         void requestMode(const QString& mode); // view | control
+        void sendClipboard(const QString& text); // the clipboard of the host gets this text (clipboard right)
+        void setClipboardSync(const bool on); // every copy made on the host is sent here (clipboard signal)
+        void requestClipboard(void); // the text of the host clipboard, once (clipboard signal, asked = true)
         void setPaused(const bool paused); // no frame while the screen is not shown (terminal tab): the terminal bytes never wait behind frames
 
         /* terminal */
@@ -164,6 +167,7 @@ class Client: public QObject {
         void latencyChanged(const int milliseconds);
         void hostScreenChanged(const QSize& size); // captured size of the host (0 x 0 until its capture starts)
         void message(const QString& text); // info for the user
+        void clipboard(const QString& text, const bool asked); // the clipboard of the host (a copy made there, or asked)
         void closed(const QString& reason, const bool banned);
 };
 

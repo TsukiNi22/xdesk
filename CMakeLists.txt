@@ -171,6 +171,7 @@ set(SRC_SHARED
     src/xdesk/platform/InputInjector.cpp
     src/xdesk/platform/Keymap.cpp
     src/xdesk/platform/Terminal.cpp
+    src/xdesk/platform/Clipboard.cpp
 
     ## Interface (sub-part: ui)
     src/xdesk/ui/Ui.cpp
@@ -236,6 +237,7 @@ set(HDR_MOC
     ${CMAKE_SOURCE_DIR}/include/xdesk/net/Server.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/net/WebSocket.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/platform/ITerminal.hpp
+    ${CMAKE_SOURCE_DIR}/include/xdesk/platform/Clipboard.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/security/DeviceRegistry.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/security/IntegrityGuard.hpp
     ${CMAKE_SOURCE_DIR}/include/xdesk/security/PairingCode.hpp

@@ -38,7 +38,9 @@ File Description:
 #include <QPainter>
 #include <QPointer>
 #include <QThread>
+#include <QToolButton>
 #include <QAction>
+#include <QMenu>
 #include <QFile>
 #include <QDir>
 
@@ -345,6 +347,7 @@ xdesk::ui::gui::ViewerWindow::ViewerWindow(QWidget* parent)
         if (!control) this->_controlAction->setChecked(false);
         else if (!this->_controlAction->isChecked() && this->_client.state() == client::State::Active) this->_controlAction->setChecked(true);
         this->_screen->setControl(this->_controlAction->isChecked());
+        if (this->_clipAuto) this->_client.setClipboardSync(this->_clipAuto->isChecked() && perms.value("clipboard").toBool());
     });
     QObject::connect(&this->_client, &client::Client::terminalOutput, this, [this](const std::uint8_t id, const QByteArray& data) {
         if (this->_terminals.contains(id)) this->_terminals.value(id)->feed(data);
@@ -354,6 +357,37 @@ xdesk::ui::gui::ViewerWindow::ViewerWindow(QWidget* parent)
         if (t) t->feed(QString("\r\n\x1b[2m[terminal closed, code %1]\x1b[0m\r\n").arg(code).toUtf8());
     });
     this->loadRecent_();
+}
+
+// Shared clipboard: automatic (default, can be turned off) both ways, or forced one way from the menu
+void xdesk::ui::gui::ViewerWindow::addClipboard_(void)
+{
+    QMenu* menu = new QMenu(this);
+    QAction* clip = this->_toolbar->addAction(Theme::icon("clipboard"), "Clipboard");
+    QToolButton* button = qobject_cast<QToolButton*>(this->_toolbar->widgetForAction(clip));
+
+    this->_clipboard = new platform::Clipboard(this);
+    this->_clipAuto = menu->addAction("Automatic (copy on one side, paste on the other)");
+    this->_clipAuto->setCheckable(true);
+    this->_clipAuto->setChecked(true);
+    menu->addSeparator();
+    menu->addAction("Copy the clipboard of the PC here", this, [this]() {this->_client.requestClipboard();});
+    menu->addAction("Send my clipboard to the PC", this, [this]() {this->_client.sendClipboard(this->_clipboard->text());});
+    clip->setMenu(menu);
+    clip->setProperty("icon", "clipboard");
+    if (button) button->setPopupMode(QToolButton::InstantPopup);
+    QObject::connect(this->_clipAuto, &QAction::toggled, this, [this](const bool on) {
+        this->_client.setClipboardSync(on && this->_client.permissions().value("clipboard").toBool());
+    });
+    QObject::connect(this->_clipboard, &platform::Clipboard::changed, this, [this](const QString& text) {
+        if (this->_clipAuto->isChecked() && this->_client.permissions().value("clipboard").toBool()) this->_client.sendClipboard(text);
+    });
+    QObject::connect(&this->_client, &client::Client::clipboard, this, [this](const QString& text, const bool asked) {
+        if (text.isEmpty()) {if (asked) this->statusBar()->showMessage("The clipboard of the PC is empty", 3000); return;}
+        if (!asked && !this->_clipAuto->isChecked()) return;
+        this->_clipboard->setText(text);
+        if (asked) this->statusBar()->showMessage("Clipboard of the PC copied", 3000);
+    });
 }
 
 QWidget* xdesk::ui::gui::ViewerWindow::buildConnect_(void)
@@ -506,6 +540,7 @@ QWidget* xdesk::ui::gui::ViewerWindow::buildViewer_(void)
             this->_client.key(code, false);
     });
     this->_toolbar->addAction(Theme::icon("terminal"), "Terminal", this, &ViewerWindow::openTerminal_);
+    this->addClipboard_();
     this->_toolbar->addWidget(qualityLabel);
     this->_quality = new QSlider(Qt::Horizontal);
     this->_quality->setRange(20, 95);

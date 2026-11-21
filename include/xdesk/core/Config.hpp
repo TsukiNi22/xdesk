@@ -74,6 +74,7 @@ struct Settings {
     int idleTimeout = 0; // seconds without input before a kick (0 = never)
     bool allowControl = true; // keyboard / mouse of the clients
     bool allowTerminal = true; // remote terminals
+    bool allowClipboard = true; // the clipboard shared with the clients (copy on one side, paste on the other)
     bool allowWeb = true; // browsers and the android app
     bool viewOnlyDefault = false; // new sessions start in view only mode
     bool banOnTamper = true; // automatic bans (a session caught touching xdesk, an unclean stop during a remote session, too many wrong codes); off = kicked / refused only

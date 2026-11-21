@@ -16,6 +16,9 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.PendingIntent;
 import android.Manifest;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
@@ -115,6 +118,7 @@ public class MainActivity extends Activity {
     private Runnable _cameraDenied;
     private UdpVideo _udp; // video over udp of the current page
     private WebMessagePort _udpPort; // its side of the channel with the page
+    private ClipboardManager.OnPrimaryClipChangedListener _clipListener; // copies made on the phone, posted to the page
 
     // ---------------------------------------------------------------- //
     // Life cycle
@@ -657,13 +661,37 @@ public class MainActivity extends Activity {
     // Video over udp
 
     private void closeUdp() {
+        if (this._clipListener != null) this.clipboard().removePrimaryClipChangedListener(this._clipListener);
+        this._clipListener = null;
         if (this._udp != null) this._udp.stop();
         if (this._udpPort != null) this._udpPort.close();
         this._udp = null;
         this._udpPort = null;
     }
 
-    // A message port for the page of the pinned host only: it starts / stops the udp video with the keys of its welcome
+    private ClipboardManager clipboard() {
+        return (ClipboardManager) this.getSystemService(Context.CLIPBOARD_SERVICE);
+    }
+
+    // Text of the android clipboard ("" = none; android 10+ only lets the app in front read it)
+    private String clipText() {
+        ClipData data = this.clipboard().getPrimaryClip();
+        if (data == null || data.getItemCount() == 0) return "";
+        CharSequence text = data.getItemAt(0).coerceToText(this);
+        return text == null ? "" : text.toString();
+    }
+
+    private static String clipMessage(String key, String text) {
+        try {
+            return "S" + new JSONObject().put(key, text).toString();
+        } catch (Exception e) {
+            return "S{}";
+        }
+    }
+
+    /* A message port for the page of the pinned host only: it starts / stops the udp video with the keys of its welcome,
+     * and shares the android clipboard (set / read on demand, a copy made on the phone posted to the page)
+    */
     private void offerUdp(WebView web, String origin) {
         if (Build.VERSION.SDK_INT < 23) return;
         this.closeUdp();
@@ -704,11 +732,17 @@ public class MainActivity extends Activity {
                         }
                         case "stop": udp.stop(); break;
                         case "rtt": udp.setRtt(m.optInt("ms", 50)); break;
+                        case "clip_set": MainActivity.this.clipboard().setPrimaryClip(ClipData.newPlainText("xdesk", m.optString("text"))); break;
+                        case "clip_get": mine.postMessage(new WebMessage(clipMessage("clip", MainActivity.this.clipText()))); break;
                         default: break;
                     }
                 } catch (Exception e) { /* malformed: ignored */ }
             }
         });
+        this._clipListener = () -> {
+            if (MainActivity.this._udpPort == mine) mine.postMessage(new WebMessage(clipMessage("localClip", MainActivity.this.clipText())));
+        };
+        this.clipboard().addPrimaryClipChangedListener(this._clipListener);
         web.postWebMessage(new WebMessage("xdesk-udp", new WebMessagePort[]{ports[1]}), Uri.parse(origin));
     }
 

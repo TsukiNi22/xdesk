@@ -532,6 +532,11 @@ QIcon xdesk::ui::gui::Theme::icon(const QString& name, const QColor& color)
         for (int x = 14; x <= 50; x += 9)
             p.drawPoint(QPointF(x, 26));
         p.drawLine(QPointF(20, 38), QPointF(44, 38));
+    } else if (name == "clipboard") {
+        p.drawRect(QRectF(12, 12, 40, 46));
+        p.drawRect(QRectF(22, 6, 20, 10));
+        p.drawLine(QPointF(20, 30), QPointF(44, 30));
+        p.drawLine(QPointF(20, 40), QPointF(44, 40));
     } else if (name == "lock") {
         p.drawRect(QRectF(14, 28, 36, 28));
         p.drawArc(QRectF(20, 8, 24, 30), 0, 180 * 16);

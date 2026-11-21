@@ -27,6 +27,7 @@ File Description:
     #define _Attribute
     #include <utils/utils.hpp>              // _cold, _nodiscard
     #include "../../client/Client.hpp"      // xdesk::client::Client, Options
+    #include "../../platform/Clipboard.hpp" // xdesk::platform::Clipboard
     #include "TerminalWidget.hpp"           // xdesk::ui::gui::TerminalWidget
     #include <QStackedWidget>               // QStackedWidget
     #include <QListWidget>                  // QListWidget
@@ -115,6 +116,8 @@ class ViewerWindow: public QMainWindow {
         ScreenView* _screen = nullptr;
         QToolBar* _toolbar = nullptr;
         QAction* _controlAction = nullptr;
+        QAction* _clipAuto = nullptr; // shared clipboard on (default): a copy on one side lands on the other
+        platform::Clipboard* _clipboard = nullptr; // clipboard of this computer
         QLabel* _latency = nullptr;
         QSlider* _quality = nullptr;
         QComboBox* _resolution = nullptr; // native, 1080p ... 144p (height asked to the host)
@@ -122,6 +125,7 @@ class ViewerWindow: public QMainWindow {
         QHash<std::uint8_t, TerminalWidget*> _terminals;
 
         // ---------- Pre-Function -------- //
+        void addClipboard_(void); // clipboard button of the toolbar (automatic sync + one way actions)
         _nodiscard QWidget* buildConnect_(void);
         _nodiscard QWidget* buildViewer_(void);
         void scan_(void);

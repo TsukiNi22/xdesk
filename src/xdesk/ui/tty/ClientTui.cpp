@@ -124,7 +124,13 @@ xdesk::ui::tty::ClientTui::ClientTui(QObject* parent)
         }
         this->_dirty = true;
     });
+    // Copied on the host: given to this terminal emulator (OSC 52, kitty / foot / wezterm / alacritty / tmux with set-clipboard)
+    QObject::connect(&this->_client, &client::Client::clipboard, this, [this](const QString& text, const bool) {
+        if (text.isEmpty() || text.size() > 100000) return;
+        this->_term.write("\x1b]52;c;" + text.toUtf8().toBase64() + "\x07");
+    });
     QObject::connect(&this->_client, &client::Client::permissionsChanged, this, [this](const QJsonObject& perms) {
+        this->_client.setClipboardSync(perms.value("clipboard").toBool());
         if (!perms.value("control").toBool() && this->_control) {this->_control = false; this->note_("The host took the control back");}
         this->_dirty = true;
     });
