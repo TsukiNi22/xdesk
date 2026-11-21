@@ -33,6 +33,7 @@ File Description:
     #include <QListWidget>                  // QListWidget
     #include <QMainWindow>                  // QMainWindow
     #include <QPushButton>                  // QPushButton
+    #include <QScrollArea>                  // QScrollArea
     #include <QTabWidget>                   // QTabWidget
     #include <QLineEdit>                    // QLineEdit
     #include <QComboBox>                    // QComboBox
@@ -62,6 +63,7 @@ class ScreenView: public QWidget {
 
         // ---------- Pre-Function -------- //
         _nodiscard QRect target_(void) const; // where the canvas is drawn
+        void place_(void); // size of the view in its scroll area (fit: fills it, 1:1: the host screen)
         _nodiscard QPoint toFrame_(const QPointF& pos) const;
 
     protected:
@@ -116,6 +118,7 @@ class ViewerWindow: public QMainWindow {
         QLabel* _closedText = nullptr;
         QTabWidget* _tabs = nullptr; // screen + terminals
         ScreenView* _screen = nullptr;
+        QScrollArea* _screenArea = nullptr; // the screen tab: scrolls the 1:1 view
         QToolBar* _toolbar = nullptr;
         QAction* _controlAction = nullptr;
         QAction* _clipAuto = nullptr; // shared clipboard on (default): a copy on one side lands on the other

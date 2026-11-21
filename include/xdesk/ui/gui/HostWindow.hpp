@@ -151,6 +151,7 @@ class HostWindow: public QMainWindow {
         QCheckBox* _setMinimized = nullptr;
         QPushButton* _settingsSave = nullptr;
         QScrollArea* _settingsScroll = nullptr;
+        bool _fitted = false; // sized once at the first show (a page change never resizes the window)
         QBoxLayout* _settingsColumns = nullptr; // side by side while they fit, else one under the other
 
         // ---------- Pre-Function -------- //
@@ -180,7 +181,7 @@ class HostWindow: public QMainWindow {
         void showTamper_(const QString& session, const QString& reason);
         void refreshFocusRequest_(void); // banner of the request (countdown) or of the control given back
         void quit_(void);
-        void fitPage_(void); // window grown to show the whole page (never past the screen: the page scrolls then)
+        void fitPage_(void); // first show: the window grown to show the largest page (never past the screen: the pages scroll then)
         void flowSettings_(void); // settings columns side by side or stacked for the width
         _nodiscard int sessionRow_(const QString& id) const;
         _nodiscard TerminalWidget* mirror_(const QString& session, const std::uint8_t id);

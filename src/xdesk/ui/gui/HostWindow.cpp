@@ -245,6 +245,17 @@ static QString endpoint_command(const xdesk::net::Endpoint& e)
 //----------------------------------------------------------------//
 // Window
 
+// A page inside a frameless scroll area: its minimum size never forces the window (it scrolls instead)
+static QWidget* scrolled_page(QWidget* page)
+{
+    QScrollArea* scroll = new QScrollArea();
+
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidget(page);
+    return scroll;
+}
+
 xdesk::ui::gui::HostWindow::HostWindow(host::Host& host, QWidget* parent)
 : QMainWindow(parent), _host{host}
 {
@@ -335,16 +346,17 @@ xdesk::ui::gui::HostWindow::HostWindow(host::Host& host, QWidget* parent)
     this->_focusBanner->hide();
     QObject::connect(focusRefuse, &QPushButton::clicked, this, [this]() {this->_host.refuseFocusRequest();});
     mainLayout->addWidget(this->_focusBanner);
+    // Every page scrolls inside the window: a page change never resizes it (the size is the one of the user)
     this->_pages = new QStackedWidget(main);
-    this->_pages->addWidget(this->buildOverview_());
-    this->_pages->addWidget(this->buildSessions_());
-    this->_pages->addWidget(this->buildDevices_());
-    this->_pages->addWidget(this->buildLogs_());
+    this->_pages->addWidget(scrolled_page(this->buildOverview_()));
+    this->_pages->addWidget(scrolled_page(this->buildSessions_()));
+    this->_pages->addWidget(scrolled_page(this->buildDevices_()));
+    this->_pages->addWidget(scrolled_page(this->buildLogs_()));
     this->_pages->addWidget(this->buildSettings_());
     mainLayout->addWidget(this->_pages, 1);
     QObject::connect(this->_nav, &QListWidget::currentRowChanged, this, [this](const int row) {
         this->_pages->setCurrentIndex(row);
-        QTimer::singleShot(0, this, &HostWindow::fitPage_); // once the page is laid out
+        QTimer::singleShot(0, this, &HostWindow::flowSettings_); // once the page is laid out
     });
     this->_nav->setCurrentRow(0);
     rootLayout->addWidget(sidebar);
@@ -401,7 +413,7 @@ xdesk::ui::gui::HostWindow::HostWindow(host::Host& host, QWidget* parent)
 void xdesk::ui::gui::HostWindow::showEvent(QShowEvent* event)
 {
     QMainWindow::showEvent(event);
-    QTimer::singleShot(0, this, &HostWindow::fitPage_);
+    if (!this->_fitted) QTimer::singleShot(0, this, &HostWindow::fitPage_); // the first show only: later the size is the one of the user
     #ifdef _WIN32
         // The remote sessions never see the panel (Windows 10 2004+)
         SetWindowDisplayAffinity(reinterpret_cast<HWND>(this->winId()), 0x00000011); // WDA_EXCLUDEFROMCAPTURE
@@ -419,27 +431,32 @@ bool xdesk::ui::gui::HostWindow::eventFilter(QObject* watched, QEvent* event)
     return QMainWindow::eventFilter(watched, event);
 }
 
+// First show: the window big enough for the largest page (never past the screen: the pages scroll then), placed on the screen
 void xdesk::ui::gui::HostWindow::fitPage_(void)
 {
-    QWidget* page = this->_pages->currentWidget();
-    QScrollArea* scroll = qobject_cast<QScrollArea*>(page);
+    QWidget* current = this->_pages->currentWidget();
     const QRect screen = this->screen() ? this->screen()->availableGeometry() : QRect();
-    const QSize frame = this->frameGeometry().size() - this->geometry().size(); // title bar + borders
+    const QSize frame = this->frameGeometry().size() - this->geometry().size(); // title bar + borders (0 on Wayland)
     QSize want;
     QRect placed;
 
-    if (!page || !this->isVisible() || screen.isEmpty() || this->isMaximized() || this->isFullScreen()) return;
+    if (!current || !this->isVisible() || screen.isEmpty() || this->isMaximized() || this->isFullScreen()) return;
+    this->_fitted = true;
 
-    // Size the page asks for (a scrolled page: its content, the settings with their columns side by side)
-    if (scroll == this->_settingsScroll && this->_settingsColumns) {
+    // Size each page asks for (its content, the settings with their columns side by side)
+    if (this->_settingsColumns) {
         this->_settingsColumns->setDirection(QBoxLayout::LeftToRight);
-        scroll->widget()->layout()->invalidate(); // the page hint is cached: computed again with the new direction
+        this->_settingsScroll->widget()->layout()->invalidate(); // the page hint is cached: computed again with the new direction
     }
-    want = scroll && scroll->widget() ? scroll->widget()->sizeHint() + QSize(scroll->verticalScrollBar()->sizeHint().width() + 2, 2) : page->sizeHint();
-    want += this->size() - page->size(); // sidebar, margins, banner
+    for (int i = 0; i < this->_pages->count(); ++i) {
+        const QScrollArea* scroll = qobject_cast<QScrollArea*>(this->_pages->widget(i));
+        const QSize hint = scroll && scroll->widget() ? scroll->widget()->sizeHint() + QSize(scroll->verticalScrollBar()->sizeHint().width() + 2, 2) : this->_pages->widget(i)->sizeHint();
+        want = want.expandedTo(hint);
+    }
+    want += this->size() - current->size(); // sidebar, margins, banner
 
-    // Only grows, never past the screen (the page scrolls then)
-    want = want.boundedTo(screen.size() - frame).expandedTo(this->size());
+    // Only grows, never past 90 % of the screen (it opens as a window, not as a maximized one), then kept on the screen
+    want = want.boundedTo((screen.size() - frame) * 9 / 10).expandedTo(this->size());
     if (want != this->size()) {
         this->resize(want);
         placed = QRect(this->frameGeometry().topLeft(), want + frame);

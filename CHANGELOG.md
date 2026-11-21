@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The hardware H.264 is constrained baseline like openh264 (the native viewers decode it with openh264)
 - The automatic resolution never goes under 1080p (native first: the quality goes down, then the frame rate, 1080p last), unless the viewer asked less
 - Faster BGRX -> YUV conversion (no bound check inside the rows): 4K in 5 ms on every core
+### Fixed
+- Qt host panel: a page change no longer resizes / moves the window (it was grown to each page, never shrunk back, and grown again after the user made it smaller); the window is sized once at its first show for the largest page (90 % of the screen at most), the pages scroll inside it
+- Qt viewer: the 1:1 mode no longer forces the window to the size of the remote screen (a 4K host made it larger than the screen, kept on the terminal tabs): the screen scrolls inside its tab (the wheel scrolls it while viewing only)
 - Documentation site in the better-html-doc style ([tsukini22.github.io/xdesk/docs](https://tsukini22.github.io/xdesk/docs/)): user guide, concepts (pairing, screen stream), commands and settings generated from the sources, protocol, files, security and tamper protection, EN / FR with search; sources in `docs/site/`
 
 ## v1.0.0 - 2026-11-09

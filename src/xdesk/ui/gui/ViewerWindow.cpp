@@ -38,6 +38,7 @@ File Description:
 #include <QPainter>
 #include <QPointer>
 #include <QThread>
+#include <QScrollArea>
 #include <QToolButton>
 #include <QAction>
 #include <QMenu>
@@ -54,15 +55,30 @@ xdesk::ui::gui::ScreenView::ScreenView(client::Client& client, QWidget* parent)
     this->setMouseTracking(true);
     this->setAttribute(Qt::WA_OpaquePaintEvent);
     this->setAttribute(Qt::WA_InputMethodEnabled, false);
-    QObject::connect(&client, &client::Client::frameUpdated, this, [this](const QRect&) {this->update();});
+    QObject::connect(&client, &client::Client::frameUpdated, this, [this](const QRect&) {
+        if (!this->_fit && this->size() != this->_client.canvas().size()) this->place_(); // 1:1: the view follows the size of the host screen
+        this->update();
+    });
     QObject::connect(&client, &client::Client::cursorMoved, this, &ScreenView::setCursor);
 }
 
 void xdesk::ui::gui::ScreenView::setFit(const bool fit)
 {
     this->_fit = fit;
-    this->setMinimumSize(fit ? QSize(160, 90) : this->_client.canvas().size());
+    this->place_();
     this->update();
+}
+
+// Fit: the view fills its scroll area; 1:1: the size of the host screen, the scroll area scrolls (never the window that grows)
+void xdesk::ui::gui::ScreenView::place_(void)
+{
+    QScrollArea* area = qobject_cast<QScrollArea*>(this->parentWidget() ? this->parentWidget()->parentWidget() : nullptr);
+    const QSize canvas = this->_client.canvas().size();
+
+    this->setMinimumSize(160, 90);
+    if (!area) return;
+    area->setWidgetResizable(this->_fit);
+    if (!this->_fit) this->resize(canvas.isEmpty() ? QSize(160, 90) : canvas);
 }
 
 void xdesk::ui::gui::ScreenView::setControl(const bool control)
@@ -161,7 +177,8 @@ void xdesk::ui::gui::ScreenView::mouseReleaseEvent(QMouseEvent* event)
 
 void xdesk::ui::gui::ScreenView::wheelEvent(QWheelEvent* event)
 {
-    if (this->_control) this->_client.mouseWheel(event->angleDelta().x(), event->angleDelta().y());
+    if (!this->_control) {event->ignore(); return;} // view only: the wheel scrolls the 1:1 view
+    this->_client.mouseWheel(event->angleDelta().x(), event->angleDelta().y());
     event->accept();
 }
 
@@ -597,7 +614,15 @@ QWidget* xdesk::ui::gui::ViewerWindow::buildViewer_(void)
     this->_tabs->setDocumentMode(true);
     this->_tabs->setTabsClosable(true);
     this->_screen = new ScreenView(this->_client);
-    this->_tabs->addTab(this->_screen, Theme::icon("screen"), "Screen");
+    this->_screenArea = new QScrollArea();
+    this->_screenArea->setObjectName("screenArea");
+    this->_screenArea->setFrameShape(QFrame::NoFrame);
+    this->_screenArea->setAlignment(Qt::AlignCenter);
+    this->_screenArea->setFocusPolicy(Qt::NoFocus); // the keys go to the view
+    this->_screenArea->setStyleSheet("QScrollArea#screenArea, QScrollArea#screenArea > QWidget {background: rgb(12, 13, 16);}"); // around a 1:1 view smaller than the window
+    this->_screenArea->setWidget(this->_screen);
+    this->_screenArea->setWidgetResizable(true);
+    this->_tabs->addTab(this->_screenArea, Theme::icon("screen"), "Screen");
     this->_tabs->tabBar()->setTabButton(0, QTabBar::RightSide, nullptr);
     layout->addWidget(this->_tabs, 1);
     QObject::connect(this->_controlAction, &QAction::toggled, this, [this](const bool on) {
@@ -619,7 +644,7 @@ QWidget* xdesk::ui::gui::ViewerWindow::buildViewer_(void)
         const QString text = " " + QString::number(size.width()) + "×" + QString::number(size.height()) + " (" + QString::number(size.height()) + "p) ";
         if (this->_received->text() != text) this->_received->setText(text);
     });
-    QObject::connect(this->_tabs, &QTabWidget::currentChanged, this, [this](const int index) {this->_client.setPaused(this->_tabs->widget(index) != this->_screen);});
+    QObject::connect(this->_tabs, &QTabWidget::currentChanged, this, [this](const int index) {this->_client.setPaused(this->_tabs->widget(index) != this->_screenArea);});
     QObject::connect(this->_tabs, &QTabWidget::tabCloseRequested, this, [this](const int index) {
         for (QHash<std::uint8_t, TerminalWidget*>::iterator it = this->_terminals.begin(); it != this->_terminals.end(); ++it) {
             if (this->_tabs->widget(index) != it.value()) continue;
