@@ -10,7 +10,7 @@
     // Constants
 
     const PROTOCOL = 1;
-    const BIN = {Frame: 0x10, FrameAck: 0x11, Cursor: 0x12, Video: 0x13, MouseMove: 0x20, MouseButton: 0x21, MouseWheel: 0x22, Key: 0x23, Text: 0x24, TermData: 0x31, TermPacked: 0x32};
+    const BIN = {Frame: 0x10, FrameAck: 0x11, Cursor: 0x12, Video: 0x13, CursorShape: 0x14, MouseMove: 0x20, MouseButton: 0x21, MouseWheel: 0x22, Key: 0x23, Text: 0x24, TermData: 0x31, TermPacked: 0x32};
     const TILE = {Jpeg: 1, Solid: 2, Palette: 3, Copy: 4};
     const PALETTE = typeof DecompressionStream === "function"; // lossless palette tiles (text / ui) need the zlib inflater of the browser
     const VIDEO_WAIT = 150; // ms a decoder may hold a video frame before it is flushed out (the next move then starts from a key frame)
@@ -425,6 +425,7 @@
 
     async function onWelcome(msg) {
         qualitySent = ""; // a new session: the host knows nothing of the last one
+        onCursorMode(!(msg.cursor && msg.cursor.embedded === false)); // old hosts: in the frames
         viewSent = {x: 0, y: 0, w: 1, h: 1};
         scheduleView();
         if (state.method === "device" && msg.proof && state.secret && crypto.subtle) {
@@ -631,6 +632,7 @@
             case "info": toast(msg.text || ""); break;
             case "input": onInputState(msg); break;
             case "lanes": setLanes(msg.n); break;
+            case "cursor": onCursorMode(msg.embedded); break;
             case "term_exit": onTermExit(msg.id, msg.code); break;
             case "clip": onHostClip(msg); break;
             default: break;
@@ -644,6 +646,7 @@
             case BIN.Frame: onFrame(data, state.ws); break;
             case BIN.Video: onVideo(data, state.ws); break;
             case BIN.Cursor: onCursor(data); break;
+            case BIN.CursorShape: onCursorShape(data); break;
             case BIN.TermData: onTermData(data); break;
             case BIN.TermPacked: onTermPacked(data); break;
             default: break;
@@ -1083,6 +1086,50 @@
         return {all: all, kept: kept};
     }
 
+    /* Cursor of the host: drawn in its frames (embedded: old hosts, portals without metadata), or by this viewer with
+     * the shape the host sends when it changes; while controlling with a mouse it is the own cursor of this device with
+     * that shape, at the local mouse (no round trip, like Chrome Remote Desktop), else drawn at the host position
+    */
+    const hostCursor = {embedded: true, url: "", w: 0, h: 0, x: 0, y: 0};
+
+    function applyCursor() {
+        const local = state.mode === "control" && !touchMode;
+        if (!local) canvas.style.cursor = "";
+        else if (hostCursor.embedded) canvas.style.cursor = "none";
+        else canvas.style.cursor = hostCursor.url ? "url(\"" + hostCursor.url + "\") " + hostCursor.x + " " + hostCursor.y + ", default" : "default";
+        cursorEl.classList.toggle("shape", !!hostCursor.url);
+        cursorEl.style.backgroundImage = hostCursor.url ? "url(\"" + hostCursor.url + "\")" : "";
+        cursorEl.style.width = hostCursor.url ? hostCursor.w + "px" : "";
+        cursorEl.style.height = hostCursor.url ? hostCursor.h + "px" : "";
+        cursorEl.style.marginLeft = hostCursor.url ? -hostCursor.x + "px" : "";
+        cursorEl.style.marginTop = hostCursor.url ? -hostCursor.y + "px" : "";
+    }
+
+    function onCursorShape(data) {
+        if (data.length < 6) return;
+        const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+        const png = data.subarray(5);
+        hostCursor.x = view.getUint16(1);
+        hostCursor.y = view.getUint16(3);
+        hostCursor.embedded = false;
+        hostCursor.url = "data:image/png;base64," + b64encode(png);
+        // Size of the picture (PNG IHDR): the drawn cursor of the view mode
+        if (png.length > 24) {
+            const ihdr = new DataView(png.buffer, png.byteOffset, png.byteLength);
+            hostCursor.w = ihdr.getUint32(16);
+            hostCursor.h = ihdr.getUint32(20);
+        }
+        applyCursor();
+        placeCursor();
+    }
+
+    function onCursorMode(embedded) {
+        hostCursor.embedded = embedded !== false;
+        if (hostCursor.embedded) hostCursor.url = "";
+        applyCursor();
+        placeCursor();
+    }
+
     function onCursor(data) {
         if (data.length < 6) return;
         const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
@@ -1220,6 +1267,7 @@
         $("modeControl").classList.toggle("on", mode === "control");
         $("screenPane").classList.toggle("control", mode === "control");
         if (send) sendJson({t: "mode", mode: mode});
+        applyCursor();
         placeCursor();
     }
 
@@ -1385,7 +1433,7 @@
     canvas.addEventListener("pointerdown", (e) => {
         canvas.focus({preventScroll: true});
         if (e.pointerType === "touch") {onTouchDown(e); return;}
-        touchMode = false;
+        if (touchMode) {touchMode = false; applyCursor();} // a mouse again: its own cursor
         if (!canControl()) return;
         e.preventDefault();
         canvas.setPointerCapture(e.pointerId);
@@ -1524,6 +1572,7 @@
         if (touchMode && document.documentElement.classList.contains("touch")) return;
         touchMode = true;
         document.documentElement.classList.add("touch");
+        applyCursor();
         updateKeybar();
     }
 

@@ -36,6 +36,8 @@ File Description:
 #include <algorithm>
 #include <QKeyEvent>
 #include <QPainter>
+#include <QCursor>
+#include <QPixmap>
 #include <QPointer>
 #include <QThread>
 #include <QScrollArea>
@@ -62,6 +64,8 @@ xdesk::ui::gui::ScreenView::ScreenView(client::Client& client, QWidget* parent)
         this->update();
     });
     QObject::connect(&client, &client::Client::cursorMoved, this, &ScreenView::setCursor);
+    QObject::connect(&client, &client::Client::cursorShape, this, &ScreenView::setCursorShape);
+    QObject::connect(&client, &client::Client::cursorMode, this, &ScreenView::setCursorEmbedded);
 }
 
 void xdesk::ui::gui::ScreenView::setFit(const bool fit)
@@ -87,7 +91,47 @@ void xdesk::ui::gui::ScreenView::setControl(const bool control)
 {
     this->_control = control;
     this->setCursor(this->_cursor, this->_cursorVisible);
-    QWidget::setCursor(control ? Qt::BlankCursor : Qt::ArrowCursor);
+    this->applyCursor_();
+}
+
+// Controlling: the cursor of this computer with the shape of the host one, at the local mouse (no round trip, like Chrome
+// Remote Desktop); the host draws it in its frames (old hosts, portals without metadata): none here
+void xdesk::ui::gui::ScreenView::applyCursor_(void)
+{
+    if (!this->_control) QWidget::setCursor(Qt::ArrowCursor);
+    else if (this->_embedded) QWidget::setCursor(Qt::BlankCursor);
+    else if (this->_shape.isNull()) QWidget::setCursor(Qt::ArrowCursor);
+    else QWidget::setCursor(QCursor(QPixmap::fromImage(this->_shape), this->_hotspot.x(), this->_hotspot.y()));
+    this->update();
+}
+
+void xdesk::ui::gui::ScreenView::setCursorShape(const QImage& shape, const QPoint& hotspot)
+{
+    this->_shape = shape;
+    this->_hotspot = hotspot;
+    this->_embedded = false;
+    this->applyCursor_();
+}
+
+void xdesk::ui::gui::ScreenView::setCursorEmbedded(const bool embedded)
+{
+    this->_embedded = embedded;
+    if (embedded) this->_shape = QImage();
+    this->applyCursor_();
+}
+
+void xdesk::ui::gui::ScreenView::enterEvent(QEnterEvent* event)
+{
+    this->_hover = true;
+    this->update();
+    QWidget::enterEvent(event);
+}
+
+void xdesk::ui::gui::ScreenView::leaveEvent(QEvent* event)
+{
+    this->_hover = false;
+    this->update();
+    QWidget::leaveEvent(event);
 }
 
 void xdesk::ui::gui::ScreenView::setCursor(const QPoint& position, const bool visible)
@@ -132,10 +176,14 @@ void xdesk::ui::gui::ScreenView::paintEvent(QPaintEvent*)
     painter.setRenderHint(QPainter::SmoothPixmapTransform, target.size() != canvas.size());
     painter.drawImage(target, canvas);
 
-    // Remote cursor (drawn here: the frames do not contain it)
-    if (this->_cursorVisible && this->_cursor.x() >= 0) {
+    // Remote cursor (drawn here: the frames do not contain it), except under the own cursor while controlling
+    if (this->_cursorVisible && this->_cursor.x() >= 0 && !(this->_control && !this->_embedded && this->_hover)) {
         const QPointF p(target.x() + this->_cursor.x() * static_cast<double>(target.width()) / canvas.width(),
             target.y() + this->_cursor.y() * static_cast<double>(target.height()) / canvas.height());
+        if (!this->_shape.isNull()) {
+            painter.drawImage(p - QPointF(this->_hotspot), this->_shape);
+            return;
+        }
         QPolygonF arrow({p, p + QPointF(0, 17), p + QPointF(4.5, 13), p + QPointF(8, 20), p + QPointF(10.5, 19), p + QPointF(7.5, 12), p + QPointF(13, 12)});
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setPen(QPen(Qt::black, 1.2));

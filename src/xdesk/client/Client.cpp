@@ -245,6 +245,7 @@ void xdesk::client::Client::onText_(const QString& text)
         this->_sessionId = m.value("session").toString();
         this->_perms = m.value("perms").toObject();
         this->_hostScreen = QSize(m.value("screen").toObject().value("w").toInt(), m.value("screen").toObject().value("h").toInt());
+        emit this->cursorMode(!m.contains("cursor") || m.value("cursor").toObject().value("embedded").toBool(true)); // old hosts: in the frames
         this->setState_(State::Active);
         this->_ping.start(1000);
         if (m.contains("udp")) (void)this->_udp.start(this->_ws->peerAddress(), m.value("udp").toObject()); // tcp until the host answers there
@@ -268,6 +269,7 @@ void xdesk::client::Client::onText_(const QString& text)
     } else if (type == "term_exit") {
         emit this->terminalClosed(static_cast<std::uint8_t>(m.value("id").toInt()), m.value("code").toInt());
     } else if (type == "clip") emit this->clipboard(m.value("text").toString(), m.value("asked").toBool());
+    else if (type == "cursor") emit this->cursorMode(m.value("embedded").toBool(true));
     else if (type == "info") emit this->message(m.value("text").toString());
     else if (type == "screen") {
         this->_hostScreen = QSize(m.value("w").toInt(), m.value("h").toInt());
@@ -289,6 +291,13 @@ void xdesk::client::Client::onBinary_(const QByteArray& data)
             const int y = r.i16();
             const bool visible = r.u8() != 0;
             if (r.ok()) emit this->cursorMoved(QPoint(x, y), visible);
+            break;
+        }
+        case net::Binary::CursorShape: {
+            const int x = r.u16();
+            const int y = r.u16();
+            const QImage shape = r.ok() ? QImage::fromData(r.rest(), "PNG") : QImage();
+            if (!shape.isNull() && shape.width() <= 512 && shape.height() <= 512) emit this->cursorShape(shape, QPoint(x, y));
             break;
         }
         case net::Binary::TermData: {

@@ -77,6 +77,7 @@ class H264Encoder: public IVideoEncoder {
 
         /* setter */
         _cold inline void forceKey(void) override {this->_key = true;}; // the next frame starts a new stream (new decoder on the client)
+        _cold inline void setBitrate(const int) override {}; // constant quantizer only: the rate control of openh264 does not hold a low target on screen content (4x over 500 kbit/s, measured), the quality of the flow control sizes its frames
 
         // ------------ Operator ---------- //
         H264Encoder& operator=(const H264Encoder&) = delete;

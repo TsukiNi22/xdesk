@@ -71,6 +71,8 @@ File Description:
 #define PORTAL_REQUEST "org.freedesktop.portal.Request"
 #define PORTAL_SESSION "org.freedesktop.portal.Session"
 #define USER_TIMEOUT 120000 // ms to answer the "share your screen" dialog
+#define CURSOR_MAX 256 // pixels of a cursor bitmap at most
+#define CURSOR_META_SIZE(w, h) (static_cast<int>(sizeof(spa_meta_cursor) + sizeof(spa_meta_bitmap)) + (w) * (h) * 4) // bytes of the cursor metadata of a w x h bitmap
 #define FIRST_FRAME_TIMEOUT 5000 // ms
 #define FRAME_WAIT 8 // ms waited in grab for a fresh frame
 #define SCREENSHOT_INTERVAL 1000 // ms between two screenshots (fallback)
@@ -131,6 +133,10 @@ class PortalRequest: public QObject {
         std::condition_variable fresh;
         QImage latest;
         QImage spare; // previous frame: written again when nobody holds it anymore (no 30 MB allocation per frame)
+        QImage cursorShape; // bitmap of the cursor metadata (ARGB32)
+        QPoint cursorHotspot;
+        QPoint cursorPosition = {-1, -1}; // frame pixels (-1 = hidden / unknown)
+        quint32 cursorSerial = 0; // bumped at each new bitmap
         bool hasFresh = false;
         bool failed = false;
         QString error = "";
@@ -265,7 +271,7 @@ _cold static QString token_path(void)
         uint32_t mediaSubtype = 0;
         uint8_t buffer[1024];
         spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
-        const spa_pod* params[1];
+        const spa_pod* params[2];
 
         if (!param || id != SPA_PARAM_Format) return;
         if (spa_format_parse(param, &mediaType, &mediaSubtype) < 0) return;
@@ -278,7 +284,47 @@ _cold static QString token_path(void)
             SPA_PARAM_BUFFERS_buffers, SPA_POD_CHOICE_RANGE_Int(4, 2, 8),
             SPA_PARAM_BUFFERS_blocks, SPA_POD_Int(1),
             SPA_PARAM_BUFFERS_dataType, SPA_POD_CHOICE_FLAGS_Int((1 << SPA_DATA_MemPtr) | (1 << SPA_DATA_MemFd))));
-        (void)pipewire().streamUpdateParams(pw->stream, params, 1);
+        // The cursor as metadata (cursor_mode 4): its position and bitmap beside the frames, never drawn in them
+        params[1] = static_cast<const spa_pod*>(spa_pod_builder_add_object(&builder,
+            SPA_TYPE_OBJECT_ParamMeta, SPA_PARAM_Meta,
+            SPA_PARAM_META_type, SPA_POD_Id(SPA_META_Cursor),
+            SPA_PARAM_META_size, SPA_POD_CHOICE_RANGE_Int(CURSOR_META_SIZE(64, 64), CURSOR_META_SIZE(1, 1), CURSOR_META_SIZE(CURSOR_MAX, CURSOR_MAX))));
+        (void)pipewire().streamUpdateParams(pw->stream, params, 2);
+    }
+
+    // Cursor metadata of a buffer (it may come alone, without a new frame): position, and the bitmap when it changed
+    static void read_cursor(xdesk::platform::PipeWireState* pw, spa_buffer* buffer)
+    {
+        const spa_meta_cursor* meta = static_cast<const spa_meta_cursor*>(spa_buffer_find_meta_data(buffer, SPA_META_Cursor, sizeof(spa_meta_cursor)));
+        QImage shape;
+
+        if (!meta) return;
+        if (!spa_meta_cursor_is_valid(meta)) {
+            std::lock_guard lock(pw->lock);
+            pw->cursorPosition = {-1, -1};
+            return;
+        }
+        if (meta->bitmap_offset >= sizeof(spa_meta_cursor)) {
+            const spa_meta_bitmap* bitmap = SPA_PTROFF(meta, meta->bitmap_offset, const spa_meta_bitmap);
+            const uint32_t w = bitmap->size.width;
+            const uint32_t h = bitmap->size.height;
+            const bool bgra = bitmap->format == SPA_VIDEO_FORMAT_BGRA;
+            const bool rgba = bitmap->format == SPA_VIDEO_FORMAT_RGBA;
+            if (w > 0 && h > 0 && w <= CURSOR_MAX && h <= CURSOR_MAX && bitmap->stride >= static_cast<int32_t>(w * 4) && (bgra || rgba)) {
+                const uint8_t* pixels = SPA_PTROFF(bitmap, bitmap->offset, const uint8_t);
+                shape = QImage(static_cast<int>(w), static_cast<int>(h), bgra ? QImage::Format_ARGB32 : QImage::Format_RGBA8888);
+                for (uint32_t y = 0; y < h; ++y)
+                    std::memcpy(shape.scanLine(static_cast<int>(y)), pixels + static_cast<std::size_t>(y) * static_cast<std::size_t>(bitmap->stride), static_cast<std::size_t>(w) * 4);
+                if (!bgra) shape.convertTo(QImage::Format_ARGB32);
+            }
+        }
+        std::lock_guard lock(pw->lock);
+        pw->cursorPosition = {meta->position.x, meta->position.y};
+        if (!shape.isNull()) {
+            pw->cursorShape = shape;
+            pw->cursorHotspot = {meta->hotspot.x, meta->hotspot.y};
+            ++pw->cursorSerial;
+        }
     }
 
     static void on_process(void* data)
@@ -294,6 +340,7 @@ _cold static QString token_path(void)
             buffer = next;
         }
         if (!buffer) return;
+        read_cursor(pw, buffer->buffer);
         const spa_data& plane = buffer->buffer->datas[0];
         const int width = static_cast<int>(pw->format.size.width);
         const int height = static_cast<int>(pw->format.size.height);
@@ -389,7 +436,13 @@ bool xdesk::platform::PortalCapture::startScreenCast_(void)
     options.clear();
     options.insert("types", static_cast<uint>(1));
     options.insert("multiple", false);
-    options.insert("cursor_mode", static_cast<uint>((cursorModes & 2) ? 2 : 1));
+    // Cursor as metadata when offered (4: drawn by the viewers at their own mouse, no lag), else in the frames (2)
+    #ifdef XDESK_HAS_PIPEWIRE
+        this->_cursorMode = (cursorModes & 4) ? 4 : ((cursorModes & 2) ? 2 : 1);
+    #else
+        this->_cursorMode = (cursorModes & 2) ? 2 : 1;
+    #endif
+    options.insert("cursor_mode", static_cast<uint>(this->_cursorMode));
     if (version >= 4) {
         options.insert("persist_mode", static_cast<uint>(2));
         if (tokenFile.open(QIODevice::ReadOnly)) {
@@ -586,3 +639,29 @@ void xdesk::platform::PortalCapture::closeSession_(void)
 }
 
 #include "PortalCapture.moc"
+
+QPoint xdesk::platform::PortalCapture::cursor(void) const
+{
+    #ifdef XDESK_HAS_PIPEWIRE
+        if (this->_pw && this->_cursorMode == 4) {
+            std::lock_guard lock(this->_pw->lock);
+            return this->_pw->cursorPosition;
+        }
+    #endif
+    return {-1, -1};
+}
+
+quint32 xdesk::platform::PortalCapture::cursorShape(QImage& shape, QPoint& hotspot) const
+{
+    #ifdef XDESK_HAS_PIPEWIRE
+        if (this->_pw && this->_cursorMode == 4) {
+            std::lock_guard lock(this->_pw->lock);
+            shape = this->_pw->cursorShape;
+            hotspot = this->_pw->cursorHotspot;
+            return this->_pw->cursorSerial;
+        }
+    #endif
+    (void)shape;
+    (void)hotspot;
+    return 0;
+}

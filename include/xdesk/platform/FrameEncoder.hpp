@@ -69,7 +69,9 @@ class FrameEncoder {
         QVector<qint64> _changedAt; // ms each tile last changed (its stillness: sent again sharper once still long enough)
         int _refine = 0; // quality of the tiles still for REFINE_MS (0 = off: the link has no room)
         qsizetype _budget = -1; // bytes per frame for the tiles sent again sharper (-1 = no limit)
-        double _tileBytes = 3000.0; // mean bytes of a jpeg tile (how many fit in the budget)
+        double _tileBytes = 3000.0; // mean bytes of a jpeg tile at quality 70 (scaled for the others: jpeg_cost)
+        qsizetype _linkBytes = 0; // bytes the link carries in a frame interval (0 = unknown): a larger update is sent lighter
+        int _videoBitrate = 0; // bits / s of the video frames (0 = constant quantizer from the quality)
         QRectF _view = QRectF(0.0, 0.0, 1.0, 1.0); // part of the screen the client shows (share of the frame): only its tiles are sent
         bool _pending = false; // tiles still waiting to be sent sharper (the stream calls encode again even without a new capture)
 
@@ -99,6 +101,7 @@ class FrameEncoder {
         _cold inline void setCopy(const bool enabled)    {this->_copy = enabled; if (!enabled) this->_previous = QImage();};
         _cold inline void setVideo(const bool enabled)   {this->_video = enabled;};
         _cold inline void setRefine(const int quality, const qsizetype budget) {this->_refine = quality; this->_budget = budget;}; // still tiles sent again at this quality, at most budget bytes per frame (-1 = no limit, 0 = none)
+        _cold inline void setLink(const qsizetype bytes, const int bits) {this->_linkBytes = bytes; this->_videoBitrate = bits;}; // what the link carries in a frame interval (0 = unknown), the bitrate of the video (0 = quantizer)
 
         // ---------- Constructor --------- //
         FrameEncoder() = default;

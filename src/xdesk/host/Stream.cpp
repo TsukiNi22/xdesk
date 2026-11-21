@@ -33,7 +33,8 @@ File Description:
 
 #define OPEN_DELAY 400 // ms waited after a new client before the capture starts (its pause message comes first)
 #define AUTO_MIN_HEIGHT 1080.0 // the automatic resolution never goes under 1080p (native first: the quality goes down, then the frame rate, 1080p last), unless the viewer asked less
-#define REFINE_STEP 20 // the still tiles are sent again this much sharper than the asked quality (70 -> 90), 95 at most
+#define REFINE_STEP 20 // the still tiles are sent again this much sharper than the asked quality (70 -> 90, at least 90, 95 at most)
+#define VIDEO_LINK_SHARE 0.8 // share of the measured bandwidth the video frames are sized for (CBR) once the link is the bottleneck
 #define REFINE_SHARE 0.5 // share of the measured bandwidth of a frame interval the sharper passes may use
 #define REFINE_MIN_BYTES 8192 // budget of a frame at least (one or two tiles) while the link has room
 #define REFINE_START_BYTES 65536 // budget while the bandwidth is not measured yet
@@ -82,6 +83,8 @@ void xdesk::host::Stream::openCapture_(void)
     this->_size = this->_capture->size();
     this->_backend = this->_capture->name();
     this->_cursor = {-1, -1};
+    this->_shapeSerial = 0;
+    emit this->cursorMode(this->_capture->cursorEmbedded());
     if (this->_timer) this->_timer->start(4);
     emit this->ready(this->_size, this->_backend);
 }
@@ -290,9 +293,13 @@ void xdesk::host::Stream::tick_(void)
         {
             const bool calm = client.flow.queue() < FLOW_QUEUE_LOW;
             const double bandwidth = client.flow.bandwidth(); // bytes per ms
-            const int refine = calm && client.flow.ceiling() >= 100 ? std::min(95, std::max(client.quality, client.quality + REFINE_STEP)) : 0;
+            const int refine = calm && client.flow.ceiling() >= 100 ? std::min(95, std::max(90, client.quality + REFINE_STEP)) : 0;
             const qsizetype budget = !calm ? 0 : (bandwidth > 0.0 ? std::max<qsizetype>(REFINE_MIN_BYTES, static_cast<qsizetype>(bandwidth * interval * REFINE_SHARE)) : REFINE_START_BYTES);
             client.encoder.setRefine(refine, budget);
+            // What the link carries per frame (a larger update is sent lighter at once), and the video sized for the link
+            // once it is the bottleneck (CBR at the measured bandwidth, like the rate control of Chrome Remote Desktop)
+            const bool bottleneck = client.flow.queue() >= FLOW_QUEUE_LOW || client.flow.ceiling() < 100;
+            client.encoder.setLink(bandwidth > 0.0 ? static_cast<qsizetype>(bandwidth * interval) : 0, bottleneck && bandwidth > 0.0 ? static_cast<int>(std::min(2.0e9, bandwidth * 8000.0 * VIDEO_LINK_SHARE)) : 0);
         }
         message = client.encoder.encode(scaled.value(key), client.flow.quality(client.quality));
         if (client.encoder.videoEncoder() != client.videoName && !client.encoder.videoEncoder().isEmpty()) {
@@ -310,5 +317,12 @@ void xdesk::host::Stream::tick_(void)
     if (cursor != this->_cursor) {
         this->_cursor = cursor;
         emit this->cursor(cursor);
+    }
+    QImage shape;
+    QPoint hotspot;
+    const quint32 serial = this->_capture->cursorShape(shape, hotspot);
+    if (serial != 0 && serial != this->_shapeSerial && !shape.isNull()) {
+        this->_shapeSerial = serial;
+        emit this->cursorShape(shape, hotspot);
     }
 }

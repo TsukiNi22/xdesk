@@ -34,6 +34,7 @@ File Description:
 #include <QEventLoop>
 #include <QClipboard>
 #include <QHostInfo>
+#include <QBuffer>
 #include <QDateTime>
 #include <algorithm>
 #include <QFile>
@@ -278,6 +279,22 @@ void xdesk::host::Host::startStream_(void)
             s->sendBinary(w.data());
         }
     });
+    // The cursor drawn by the viewers (its shape once per change): their own mouse moves it, no round trip
+    QObject::connect(this->_stream, &Stream::cursorShape, this, [this](const QImage& shape, const QPoint& hotspot) {
+        QByteArray png;
+        QBuffer buffer(&png);
+        if (!buffer.open(QIODevice::WriteOnly) || !shape.save(&buffer, "PNG")) return;
+        net::ByteWriter w(net::Binary::CursorShape, static_cast<std::size_t>(png.size()) + 8);
+        this->_cursorShape = w.u16(static_cast<std::uint16_t>(std::clamp(hotspot.x(), 0, 0xFFFF))).u16(static_cast<std::uint16_t>(std::clamp(hotspot.y(), 0, 0xFFFF))).bytes(png).data();
+        for (Session* s: this->_sessions)
+            if (s->state() == State::Active && s->permissions().view) s->sendBinary(this->_cursorShape);
+    });
+    QObject::connect(this->_stream, &Stream::cursorMode, this, [this](const bool embedded) {
+        this->_cursorEmbedded = embedded;
+        if (embedded) this->_cursorShape.clear();
+        for (Session* s: this->_sessions)
+            if (s->state() == State::Active) s->sendJson({{"t", "cursor"}, {"embedded", embedded}});
+    });
     QObject::connect(this->_stream, &Stream::resized, this, [this](const QSize& size) {
         this->_screen = size;
         this->openInjector_();
@@ -520,7 +537,9 @@ void xdesk::host::Host::admit_(Session* session, const bool remember)
     const bool video = codecs != 0;
     if (s.lanes && !video && (session->kind() == net::ClientKind::Web || session->kind() == net::ClientKind::Apk)) // H.264 needs its frames in order: one socket
         extra["lanes"] = this->_lanes.offer(session->id()); // token of its extra sockets, same channel
+    extra["cursor"] = QJsonObject{{"embedded", this->_cursorEmbedded}}; // drawn in the frames, or by the viewer
     session->accept(this->defaultPermissions_(session), extra);
+    if (!this->_cursorShape.isEmpty() && this->defaultPermissions_(session).view) session->sendBinary(this->_cursorShape);
     this->sendInputState_(session);
     this->_scales[session->id()] = s.scale;
     if (this->_stream)

@@ -22,6 +22,7 @@ File Description:
 #include <utils/utils.hpp>
 #include "xdesk/platform/FrameEncoder.hpp"
 #include "xdesk/platform/AvCodec.hpp"
+#include "xdesk/platform/H264.hpp"
 #include "xdesk/host/Compress.hpp"
 #include "xdesk/host/Bench.hpp"
 #include "xdesk/net/Protocol.hpp"
@@ -33,6 +34,9 @@ File Description:
 #include <QFile>
 #include <QDir>
 #include <QPainter>
+#include <QThread>
+#include <iostream>
+#include <memory>
 #include <cstdlib>
 #include <QImage>
 
@@ -138,4 +142,44 @@ TEST(Bench, BestEncoderFollowsTheLink)
     EXPECT_EQ(xdesk::host::bench_best_encoder(2160, 4.0, 120.0, VIDEO_HEVC | VIDEO_H264), "hevc_vaapi"); // 4 Mb/s: the smallest frames
     EXPECT_EQ(xdesk::host::bench_best_encoder(2160, 500.0, 5.0, VIDEO_H264), "h264_nvenc"); // only what the viewer decodes
     EXPECT_EQ(xdesk::host::bench_best_encoder(2160, 500.0, 5.0, VIDEO_AV1), ""); // nothing measured for it: the default order
+}
+
+// Sized for the link (CBR): the frames of a moving picture stay near bitrate / frame rate, far under the constant quantizer
+TEST(AvCodec, BitrateSizesTheFrames)
+{
+    QList<std::shared_ptr<xdesk::platform::IVideoEncoder>> encoders;
+
+    for (const xdesk::platform::VideoCodec codec: {xdesk::platform::VideoCodec::H264, xdesk::platform::VideoCodec::Hevc}) // the gpu ones (openh264 stays at a quantizer)
+        for (const QString& name: xdesk::platform::av_encoders(codec))
+            encoders << std::make_shared<xdesk::platform::AvEncoder>(name, codec);
+    if (encoders.isEmpty()) GTEST_SKIP() << "no video encoder on this computer";
+    for (const std::shared_ptr<xdesk::platform::IVideoEncoder>& encoder: encoders) {
+        double free = 0.0;
+        double sized = 0.0;
+        bool key = false;
+        for (int i = 0; i < 30; ++i)
+            free += encoder->encode(moving(640, 360, i * 3), 90, &key).size();
+        encoder->setBitrate(500000); // 500 kbit/s: about 1 KB per frame at 60 fps (the mode change reopens the encoder at the next frame paced)
+        QThread::msleep(2100);
+        for (int i = 30; i < 110; ++i) {
+            const qsizetype bytes = encoder->encode(moving(640, 360, i * 3), 90, &key).size();
+            if (i >= 50) sized += static_cast<double>(bytes); // after the key frame of the switch and the convergence of the rate control
+        }
+        std::cout << encoder->name().toStdString() << ": quality 90 " << free / 30.0 << " B/frame, 500 kbit/s " << sized / 60.0 << " B/frame" << std::endl;
+        EXPECT_LT(sized / 60.0, free / 30.0 / 2.0) << encoder->name().toStdString(); // at least twice lighter than quality 90
+        EXPECT_LT(sized / 60.0, 500000.0 / 8.0 / 60.0 * 3.0) << encoder->name().toStdString(); // near the budget of a frame
+    }
+}
+
+// An update the link cannot carry in two frame intervals is sent lighter at once
+TEST(FrameEncoder, LargeUpdateFitsTheLink)
+{
+    xdesk::platform::FrameEncoder free;
+    xdesk::platform::FrameEncoder slow;
+
+    slow.setLink(4000, 0); // 4 KB per frame interval (about 2 Mbit/s at 60 fps)
+    const qsizetype big = free.encode(moving(640, 384, 0), 70).size();
+    const qsizetype light = slow.encode(moving(640, 384, 0), 70).size();
+    EXPECT_LT(light, big * 3 / 4); // a smooth picture: its jpeg headers weigh, the quality less
+    EXPECT_GT(light, 0);
 }

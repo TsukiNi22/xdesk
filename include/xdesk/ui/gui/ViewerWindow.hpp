@@ -59,6 +59,10 @@ class ScreenView: public QWidget {
         bool _fit = true; // scale to fit | 1:1
         bool _control = false; // inputs sent
         QPoint _cursor = {-1, -1}; // remote cursor (frame coordinates)
+        QImage _shape; // shape of the host cursor (null = an arrow)
+        QPoint _hotspot;
+        bool _embedded = true; // the host draws its cursor in the frames
+        bool _hover = false; // the local mouse is over the view
         bool _cursorVisible = false;
         QSet<QString> _pressed; // keys down (released on focus loss)
 
@@ -79,6 +83,9 @@ class ScreenView: public QWidget {
         void focusOutEvent(QFocusEvent* event) override;
         void focusInEvent(QFocusEvent* event) override; // says how to get the keyboard back while controlling
         void releaseKeyboard_(void); // Ctrl+Alt+Shift: remote keys up, the focus to the next widget
+        void applyCursor_(void); // controlling: the own cursor with the host shape (no round trip), embedded: none
+        void enterEvent(QEnterEvent* event) override;
+        void leaveEvent(QEvent* event) override;
         bool focusNextPrevChild(const bool next) override; // tab goes to the remote
         bool event(QEvent* event) override;
 
@@ -87,6 +94,8 @@ class ScreenView: public QWidget {
         void setFit(const bool fit);
         void setControl(const bool control);
         void setCursor(const QPoint& position, const bool visible);
+        void setCursorShape(const QImage& shape, const QPoint& hotspot);
+        void setCursorEmbedded(const bool embedded);
         _cold _nodiscard static QString keyCode(const QKeyEvent* event); // Qt key -> KeyboardEvent.code
 
         // ------------ Function ---------- //

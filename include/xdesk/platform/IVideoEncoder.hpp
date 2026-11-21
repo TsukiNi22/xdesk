@@ -38,6 +38,8 @@ File Description:
     #define VIDEO_H264 1 // bits of the codecs a client decodes ("h264", "hevc", "av1" in the "enc" of its hello)
     #define VIDEO_HEVC 2
     #define VIDEO_AV1 4
+    #define VIDEO_RATE_EVERY 2000 // ms between two changes of the bitrate of an encoder (a change may cost a key frame)
+    #define VIDEO_RATE_STEP 0.3 // share the bitrate asked must move before it is applied
 
 namespace xdesk::platform { // namespace start
 //----------------------------------------------------------------//
@@ -59,6 +61,7 @@ class IVideoEncoder {
         // ---------- Pre-Function -------- //
         _hot _nodiscard virtual QByteArray encode(const QImage& frame, const int quality, bool* key) = 0; // the frame (empty = failed: tiles), key = a key frame
         _cold virtual void forceKey(void) = 0; // the next frame starts a new stream (new decoder on the client)
+        _cold virtual void setBitrate(const int bits) = 0; // > 0: frames sized for this link (bits / s, CBR, ~2 frames of buffer), 0: constant quantizer from the quality
         _cold _nodiscard virtual VideoCodec codec(void) const = 0;
         _cold _nodiscard virtual QString name(void) const = 0; // "openh264", "h264_nvenc", "hevc_vaapi"...
         _cold _nodiscard virtual bool hardware(void) const = 0; // the gpu encodes (4k at 60 fps, almost no cpu)

@@ -167,6 +167,8 @@ class Client: public QObject {
         void fingerprintCheck(const QString& fingerprint, const bool changed); // answer with acceptFingerprint
         void frameUpdated(const QRect& dirty); // canvas changed (dirty = union of the tiles)
         void cursorMoved(const QPoint& position, const bool visible);
+        void cursorShape(const QImage& shape, const QPoint& hotspot); // the host cursor changed of shape (drawn by this viewer)
+        void cursorMode(const bool embedded); // the host cursor is in its frames (true) or drawn by this viewer (false)
         void permissionsChanged(const QJsonObject& perms);
         void terminalOutput(const std::uint8_t id, const QByteArray& data);
         void terminalClosed(const std::uint8_t id, const int code);

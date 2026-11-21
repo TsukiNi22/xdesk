@@ -51,6 +51,11 @@ class IScreenCapture {
         _cold _nodiscard virtual QString name(void) const = 0; // "qt", "x11", "portal-pipewire", "dxgi"...
         _cold _nodiscard virtual QString error(void) const = 0; // last error
 
+        // ------------ Function ---------- //
+        /* getter */
+        _cold _nodiscard virtual inline bool cursorEmbedded(void) const             {return false;}; // the cursor is drawn in the frames (the viewers then hide theirs)
+        _cold _nodiscard virtual inline quint32 cursorShape(QImage&, QPoint&) const {return 0;}; // serial of the cursor shape (0 = none known): ARGB32 image + hotspot
+
         // ----------- Destructor --------- //
         virtual ~IScreenCapture() = default;
 };

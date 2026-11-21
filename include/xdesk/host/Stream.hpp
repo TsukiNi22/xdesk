@@ -82,6 +82,7 @@ class Stream: public QObject {
         QTimer* _timer = nullptr; // 4 ms tick: frame pacing (created in the thread)
         QTimer* _idle = nullptr; // closes the capture a while after the last viewer left
         QPoint _cursor = {-1, -1}; // last cursor sent
+        quint32 _shapeSerial = 0; // last cursor shape sent
         QSize _size; // captured screen size
         QString _backend = ""; // name of the capture backend
         int _maxHeight = 0; // frames at most this tall, the width follows (0 = the screen size)
@@ -128,6 +129,8 @@ class Stream: public QObject {
         void failed(const QString& error);
         void frame(const QString& session, const QByteArray& message); // Binary::Frame for this session
         void cursor(const QPoint& position); // Binary::Cursor for every session
+        void cursorShape(const QImage& shape, const QPoint& hotspot); // the cursor changed of shape (metadata of the capture)
+        void cursorMode(const bool embedded); // the cursor is drawn in the frames (true) or by the viewers (false)
         void resized(const QSize& size);
         void scaled(const QString& session, const double scale); // scale applied to the frames of this session (input / cursor mapping)
         void pressure(const QString& session, const double pressure); // every second: 0 = the path keeps up, 1 = held back the whole time (full window, lowered quality)

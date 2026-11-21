@@ -56,8 +56,10 @@ File Description:
 #define COPY_MIN_VOTES 12 // lines of a column found at the same offset before it is trusted
 #define VIDEO_RETRIES 3 // encoders that fail in a row before the video stops until a reset
 #define VIDEO_QUALITY 1 // quality the tiles are known with after a video frame (sent again sharp once still)
-#define STILL_MS 300 // ms a tile stays unchanged before its light version is sent again at the quality of the stream
-#define REFINE_MS 1000 // ms a tile stays unchanged before it is sent again sharper (refine quality, 4:4:4)
+#define STILL_MS 150 // ms a tile stays unchanged before its light version is sent again at the quality of the stream
+#define REFINE_MS 500 // ms a tile stays unchanged before it is sent again sharper (refine quality, 4:4:4: the top-off of Chrome Remote Desktop)
+#define LINK_FRAMES 2 // frame intervals of the link an update may take: a larger one is sent lighter (no lag behind it)
+#define LIGHT_FLOOR 20 // lowest quality of a large update
 #define REFINE_444 85 // jpeg quality from which the chroma is kept whole (4:4:4: sharp colored text, like a lossless color mode)
 
 //----------------------------------------------------------------//
@@ -89,6 +91,12 @@ static void jpeg_error_exit(j_common_ptr info)
 static void jpeg_silent(j_common_ptr)
 {
     /* Nothing */
+}
+
+// Bytes of a jpeg tile at this quality from its bytes at 70 (about x2 every 30 points of quality)
+_hot static double jpeg_cost(const double at70, const int quality)
+{
+    return at70 * std::exp2((quality - 70) / 30.0);
 }
 
 // Monotonic ms (the stillness of the tiles)
@@ -482,6 +490,7 @@ QByteArray xdesk::platform::FrameEncoder::encodeVideo_(const QImage& image, cons
         this->_encoderPixels = static_cast<qsizetype>(this->_width) * this->_height;
     }
     if (!this->_encoder) {this->_videoFailures = VIDEO_RETRIES; return {};} // nothing can encode this size for this client: tiles
+    this->_encoder->setBitrate(this->_videoBitrate);
     const QByteArray unit = this->_encoder->encode(image, quality, &key);
     if (unit.isEmpty()) {
         // This encoder failed (a gpu session limit, a size it refuses): the next one is tried at the next move
@@ -607,9 +616,24 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
             else this->_pending = this->_budget != 0;
         }
     }
+    // An update the link cannot carry in LINK_FRAMES intervals is sent lighter at once (it would hold the next frames back),
+    // sent again sharp once still
+    if (this->_linkBytes > 0) {
+        double cost = 0.0;
+        for (qsizetype i = 0; i < count; ++i)
+            if (want[i] > 0) cost += jpeg_cost(this->_tileBytes, want[i]);
+        const double room = static_cast<double>(this->_linkBytes) * LINK_FRAMES;
+        if (cost > room) {
+            const int lower = static_cast<int>(std::ceil(-30.0 * std::log2(room / cost)));
+            for (qsizetype i = 0; i < count; ++i)
+                if (want[i] > 0) want[i] = std::max(std::min(want[i], LIGHT_FLOOR), want[i] - lower);
+        }
+    }
+
     // At most the budget of the link (what the flow control lets spare): the rest at the next frames
     std::sort(sharper.begin(), sharper.end());
-    const qsizetype fits = this->_budget < 0 ? sharper.size() : std::max<qsizetype>(this->_budget > 0 ? 1 : 0, static_cast<qsizetype>(static_cast<double>(this->_budget) / this->_tileBytes));
+    const double sharperCost = jpeg_cost(this->_tileBytes, std::max(quiet, this->_refine));
+    const qsizetype fits = this->_budget < 0 ? sharper.size() : std::max<qsizetype>(this->_budget > 0 ? 1 : 0, static_cast<qsizetype>(static_cast<double>(this->_budget) / sharperCost));
     for (qsizetype n = 0; n < sharper.size(); ++n) {
         const qsizetype i = sharper[n].second;
         if (n >= fits) {this->_pending = this->_pending || this->_budget != 0; continue;}
@@ -665,7 +689,7 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
             const int h = std::min(XDESK_TILE_SIZE, this->_height - y);
             const bool sent = jpeg_encode_rect(bits, stride, x, y, w, h, q, &jpeg, &jpegSize);
             if (sent) {
-                tileBytes[ty] += static_cast<double>(jpegSize);
+                tileBytes[ty] += static_cast<double>(jpegSize) / std::exp2((q - 70) / 30.0); // at quality 70
                 tileCount[ty] += end - tx;
                 net::ByteWriter tile(net::Binary::Frame, jpegSize + 16);
                 tile.u16(static_cast<std::uint16_t>(x)).u16(static_cast<std::uint16_t>(y)).u16(static_cast<std::uint16_t>(w)).u16(static_cast<std::uint16_t>(h));
@@ -686,7 +710,7 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
     this->_hashes = hashes;
     if (this->_copy) this->_previous = image;
     {
-        // Mean bytes of a jpeg tile (the budget of the sharper passes in tiles)
+        // Mean bytes of a jpeg tile at quality 70 (the budget of the sharper passes, the size of an update)
         double bytes = 0.0;
         int n = 0;
         for (int ty = 0; ty < this->_rows; ++ty) {

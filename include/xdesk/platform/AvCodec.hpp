@@ -70,6 +70,9 @@ class AvEncoder: public IVideoEncoder {
         int _width = 0; // encoded size (even)
         int _height = 0;
         int _qp = 0; // quantizer of the open encoder (codec scale)
+        int _bitrate = 0; // bits / s asked (0 = constant quantizer)
+        int _rate = 0; // bits / s of the open encoder (0 = constant quantizer)
+        long long _rateAt = 0; // ms of the last change of _rate
         long long _pts = 0;
         bool _key = true; // next frame is a key frame
         bool _broken = false; // failed to open: never tried again
@@ -91,6 +94,7 @@ class AvEncoder: public IVideoEncoder {
 
         /* setter */
         _cold inline void forceKey(void) override {this->_key = true;};
+        _cold inline void setBitrate(const int bits) override {this->_bitrate = bits > 0 ? bits : 0;};
 
         // ------------ Operator ---------- //
         AvEncoder& operator=(const AvEncoder&) = delete;

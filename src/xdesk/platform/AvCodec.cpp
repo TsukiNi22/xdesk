@@ -25,6 +25,7 @@ File Description:
 #include "xdesk/platform/H264.hpp"
 #include <QCoreApplication>
 #include <algorithm>
+#include <QElapsedTimer>
 #include <QLibrary>
 #include <cstring>
 #include <QMutex>
@@ -165,6 +166,24 @@ _cold static const AvLib& av(void)
     return lib;
 }
 
+// Monotonic ms (pace of the bitrate changes)
+_cold static long long monotonic_ms(void)
+{
+    static QElapsedTimer clock;
+
+    if (!clock.isValid()) clock.start();
+    return clock.elapsed();
+}
+
+// Rate control of a link (CBR, about two frames of buffer: the frames never wait behind each other)
+_cold static void set_rate(AVCodecContext* ctx, const int bits)
+{
+    ctx->bit_rate = bits;
+    ctx->rc_max_rate = bits;
+    ctx->rc_buffer_size = std::max(bits / 15, 64000);
+    ctx->rc_initial_buffer_occupancy = ctx->rc_buffer_size;
+}
+
 // Encoder family of a libavcodec name
 _cold static QString backend_of(const QString& name)
 {
@@ -260,15 +279,25 @@ bool xdesk::platform::AvEncoder::open_(const int width, const int height, const 
         this->_ctx->pix_fmt = AV_PIX_FMT_BGR0; // converted by the gpu (BT.709 of the VUI)
         (void)lib.optSet(this->_ctx->priv_data, "preset", "p1", 0);
         (void)lib.optSet(this->_ctx->priv_data, "tune", "ull", 0);
-        (void)lib.optSet(this->_ctx->priv_data, "rc", "constqp", 0);
-        (void)lib.optSetInt(this->_ctx->priv_data, "qp", qp, 0);
+        if (this->_bitrate > 0) {
+            (void)lib.optSet(this->_ctx->priv_data, "rc", "cbr", 0);
+            set_rate(this->_ctx, this->_bitrate);
+        } else {
+            (void)lib.optSet(this->_ctx->priv_data, "rc", "constqp", 0);
+            (void)lib.optSetInt(this->_ctx->priv_data, "qp", qp, 0);
+        }
         (void)lib.optSetInt(this->_ctx->priv_data, "zerolatency", 1, 0);
         (void)lib.optSetInt(this->_ctx->priv_data, "delay", 0, 0);
         (void)lib.optSetInt(this->_ctx->priv_data, "forced-idr", 1, 0);
     } else if (backend == "qsv") {
         this->_ctx->pix_fmt = AV_PIX_FMT_NV12;
-        this->_ctx->flags |= AV_CODEC_FLAG_QSCALE;
-        this->_ctx->global_quality = qp * FF_QP2LAMBDA;
+        if (this->_bitrate > 0) {
+            set_rate(this->_ctx, this->_bitrate); // bit_rate == rc_max_rate: CBR
+            (void)lib.optSetInt(this->_ctx->priv_data, "low_delay_brc", 1, 0);
+        } else {
+            this->_ctx->flags |= AV_CODEC_FLAG_QSCALE;
+            this->_ctx->global_quality = qp * FF_QP2LAMBDA;
+        }
         (void)lib.optSet(this->_ctx->priv_data, "preset", "veryfast", 0);
         (void)lib.optSetInt(this->_ctx->priv_data, "async_depth", 1, 0);
         (void)lib.optSetInt(this->_ctx->priv_data, "forced_idr", 1, 0);
@@ -287,8 +316,13 @@ bool xdesk::platform::AvEncoder::open_(const int width, const int height, const 
         if (lib.framesInit(frames) < 0) {lib.bufferUnref(&frames); this->close_(); return false;}
         this->_ctx->hw_frames_ctx = frames;
         this->_ctx->pix_fmt = AV_PIX_FMT_VAAPI;
-        this->_ctx->global_quality = qp;
-        (void)lib.optSet(this->_ctx->priv_data, "rc_mode", "CQP", 0);
+        if (this->_bitrate > 0) {
+            set_rate(this->_ctx, this->_bitrate);
+            (void)lib.optSet(this->_ctx->priv_data, "rc_mode", "CBR", 0);
+        } else {
+            this->_ctx->global_quality = qp;
+            (void)lib.optSet(this->_ctx->priv_data, "rc_mode", "CQP", 0);
+        }
         (void)lib.optSetInt(this->_ctx->priv_data, "async_depth", 1, 0);
         this->_gpu = lib.frameAlloc();
         if (!this->_gpu) {this->close_(); return false;}
@@ -304,6 +338,8 @@ bool xdesk::platform::AvEncoder::open_(const int width, const int height, const 
     this->_width = width;
     this->_height = height;
     this->_qp = qp;
+    this->_rate = this->_bitrate;
+    this->_rateAt = monotonic_ms();
     this->_key = true;
     return true;
 }
@@ -337,9 +373,18 @@ QByteArray xdesk::platform::AvEncoder::encode(const QImage& frame, const int qua
     if (this->_broken || image.isNull() || width < 16 || height < 16) return {};
     if (image.format() != QImage::Format_RGB32 && image.format() != QImage::Format_ARGB32)
         image = image.convertToFormat(QImage::Format_RGB32);
-    if (!this->_ctx || width != this->_width || height != this->_height || std::abs(qp - this->_qp) >= step) {
+    // Reopened (a key frame) for another size, another mode (bitrate / quantizer, at most every VIDEO_RATE_EVERY), a far
+    // quantizer, or a new bitrate on vaapi; nvenc / qsv take a new bitrate live (FFmpeg reconfigures them)
+    const bool paced = monotonic_ms() - this->_rateAt >= VIDEO_RATE_EVERY;
+    const bool newRate = this->_rate > 0 && this->_bitrate > 0 && std::abs(this->_bitrate - this->_rate) > this->_rate * VIDEO_RATE_STEP && paced;
+    const bool vaapi = backend_of(this->_name) == "vaapi";
+    if (!this->_ctx || width != this->_width || height != this->_height || ((this->_bitrate > 0) != (this->_rate > 0) && paced) || (this->_rate == 0 && std::abs(qp - this->_qp) >= step) || (newRate && vaapi)) {
         this->close_();
         if (!this->open_(width, height, qp)) {this->_broken = true; return {};}
+    } else if (newRate) {
+        set_rate(this->_ctx, this->_bitrate);
+        this->_rate = this->_bitrate;
+        this->_rateAt = monotonic_ms();
     }
 
     // Planes from the cpu (uploaded to the gpu for vaapi), then one packet at once

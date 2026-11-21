@@ -44,7 +44,7 @@ struct PipeWireState; // PipeWire objects + latest frame (PortalCapture.cpp: no 
 /* CLASS */
 
 /*
- * ScreenCast: CreateSession -> SelectSources (monitor, cursor embedded, persist_mode 2 + restore token in
+ * ScreenCast: CreateSession -> SelectSources (monitor, cursor as metadata when offered else embedded, persist_mode 2 + restore token in
  * <data>/portal.token: the user approves once) -> Start -> OpenPipeWireRemote -> PipeWire stream (shared memory
  * buffers, BGRx / RGBx), only the latest frame is kept (no queue = no added latency)
  * Without PipeWire (not compiled in): Screenshot portal, about 1 frame per second
@@ -55,6 +55,7 @@ class PortalCapture final: public IScreenCapture {
         unsigned int _node = 0; // PipeWire node of the monitor
         std::unique_ptr<PipeWireState> _pw; // nullptr in screenshot mode
         bool _screenshot = false; // fallback mode
+        unsigned int _cursorMode = 2; // portal cursor_mode: 4 = metadata (drawn by the viewers), 2 = embedded in the frames, 1 = hidden
         QImage _last; // screenshot mode: last image
         QElapsedTimer _lastShot; // screenshot mode: rate limit
         QSize _size;
@@ -72,11 +73,13 @@ class PortalCapture final: public IScreenCapture {
         _cold bool start(void) override;
         _cold void stop(void) override;
         _hot _nodiscard QImage grab(void) override;
+        _hot _nodiscard QPoint cursor(void) const override; // from the cursor metadata (-1 = embedded in the frames / hidden)
+        _cold _nodiscard quint32 cursorShape(QImage& shape, QPoint& hotspot) const override; // bitmap of the cursor metadata
 
         // ------------ Function ---------- //
         /* getter */
         _cold _nodiscard QSize size(void) const override    {return this->_size;};
-        _hot _nodiscard QPoint cursor(void) const override  {return {-1, -1};}; // cursor embedded in the frames
+        _cold _nodiscard bool cursorEmbedded(void) const override {return this->_screenshot || this->_cursorMode == 2;};
         _cold _nodiscard QString name(void) const override  {return this->_screenshot ? "portal-screenshot" : "portal-pipewire";};
         _cold _nodiscard QString error(void) const override {return this->_error;};
 
