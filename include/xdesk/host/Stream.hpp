@@ -53,6 +53,9 @@ struct StreamClient {
     bool copy = false; // the client applies the copy tiles (scroll)
     int codecs = 0; // video codecs the client decodes (VIDEO_* bits: used for the large moves while its link is the bottleneck)
     QString videoName = ""; // video encoder in use for it (logged when it changes)
+    QString chosen = ""; // encoder chosen from the bench for its link ("" = the default order)
+    double chosenMbits = 0.0; // bandwidth of that choice (chosen again when it moves by 30 %)
+    qint64 chosenAt = 0; // ms of the last look
     bool ordered = true; // its frames arrive in the order they are sent (one tcp socket: no udp, no extra lane)
     bool settling = false; // ordered again, frames of the other paths may still be on their way: no copy until none is in flight
     double effective = 0.0; // scale applied: the asked one, capped by the max height of the host (0 = not computed yet)

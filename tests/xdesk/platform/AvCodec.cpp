@@ -23,8 +23,15 @@ File Description:
 #include "xdesk/platform/FrameEncoder.hpp"
 #include "xdesk/platform/AvCodec.hpp"
 #include "xdesk/host/Compress.hpp"
+#include "xdesk/host/Bench.hpp"
 #include "xdesk/net/Protocol.hpp"
 #include <gtest/gtest.h>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QFileInfo>
+#include <QFile>
+#include <QDir>
 #include <QPainter>
 #include <cstdlib>
 #include <QImage>
@@ -108,4 +115,27 @@ TEST(Compress, RoundTrip)
         EXPECT_EQ(xdesk::host::decompress_with(codec, packed, static_cast<int>(text.size())), text) << codec.toStdString();
     }
     EXPECT_TRUE(xdesk::host::decompress_with("zlib", "not zlib", 100).isEmpty());
+}
+
+// The encoder of the bench: the fastest one while the link has room, the smallest frames once it is the bottleneck
+TEST(Bench, BestEncoderFollowsTheLink)
+{
+    QFile file(xdesk::host::bench_file());
+    const QJsonArray results = {
+        QJsonObject{{"height", 2160}, {"scene", "video"}, {"mode", "hevc_nvenc"}, {"encodeMs", 17.0}, {"bytes", 38000.0}, {"psnr", 35.0}},
+        QJsonObject{{"height", 2160}, {"scene", "drag"}, {"mode", "hevc_nvenc"}, {"encodeMs", 17.0}, {"bytes", 14000.0}, {"psnr", 34.0}},
+        QJsonObject{{"height", 2160}, {"scene", "video"}, {"mode", "hevc_vaapi"}, {"encodeMs", 24.0}, {"bytes", 22000.0}, {"psnr", 35.0}},
+        QJsonObject{{"height", 2160}, {"scene", "drag"}, {"mode", "hevc_vaapi"}, {"encodeMs", 24.0}, {"bytes", 8000.0}, {"psnr", 34.0}},
+        QJsonObject{{"height", 2160}, {"scene", "video"}, {"mode", "tiles"}, {"encodeMs", 9.0}, {"bytes", 380000.0}, {"psnr", 37.0}},
+        QJsonObject{{"height", 2160}, {"scene", "video"}, {"mode", "h264_nvenc"}, {"encodeMs", 17.0}, {"bytes", 34000.0}, {"psnr", 35.0}},
+    };
+
+    ASSERT_TRUE(QDir().mkpath(QFileInfo(file).absolutePath()));
+    ASSERT_TRUE(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    file.write(QJsonDocument(QJsonObject{{"version", 1}, {"results", results}}).toJson());
+    file.close();
+    EXPECT_EQ(xdesk::host::bench_best_encoder(2160, 500.0, 5.0, VIDEO_HEVC | VIDEO_H264), "hevc_nvenc"); // room on the link: the fastest
+    EXPECT_EQ(xdesk::host::bench_best_encoder(2160, 4.0, 120.0, VIDEO_HEVC | VIDEO_H264), "hevc_vaapi"); // 4 Mb/s: the smallest frames
+    EXPECT_EQ(xdesk::host::bench_best_encoder(2160, 500.0, 5.0, VIDEO_H264), "h264_nvenc"); // only what the viewer decodes
+    EXPECT_EQ(xdesk::host::bench_best_encoder(2160, 500.0, 5.0, VIDEO_AV1), ""); // nothing measured for it: the default order
 }

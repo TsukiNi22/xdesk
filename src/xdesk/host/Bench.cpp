@@ -25,7 +25,16 @@ File Description:
 #include "xdesk/platform/H264.hpp"
 #include "xdesk/host/Compress.hpp"
 #include "xdesk/host/Bench.hpp"
+#include "xdesk/core/Config.hpp"
 #include <QCoreApplication>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QDateTime>
+#include <QFile>
+#include <QMutex>
+#include <QHash>
+#include <QPair>
 #include <QElapsedTimer>
 #include <QStringList>
 #include <algorithm>
@@ -283,8 +292,81 @@ _cold static void print_compression(void)
     }
 }
 
+// The codec bit of an encoder name (h264_nvenc -> VIDEO_H264, openh264 -> VIDEO_H264)
+_cold static int codec_bit_of(const QString& mode)
+{
+    if (mode.startsWith("hevc")) return VIDEO_HEVC;
+    if (mode.startsWith("av1")) return VIDEO_AV1;
+    return VIDEO_H264;
+}
+
+_cold static void save_bench(const QList<QPair<int, BenchResult>>& results)
+{
+    QJsonArray list;
+    QFile file(xdesk::host::bench_file());
+
+    for (const QPair<int, BenchResult>& r: results)
+        list.append(QJsonObject{{"height", r.first}, {"scene", r.second.scene}, {"mode", r.second.mode}, {"encodeMs", r.second.encodeMs}, {"bytes", r.second.bytes}, {"psnr", r.second.psnr}});
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {std::printf("\nNot saved (%s)\n", qPrintable(file.errorString())); return;}
+    file.write(QJsonDocument(QJsonObject{{"version", 1}, {"date", QDateTime::currentDateTime().toString(Qt::ISODate)}, {"results", list}}).toJson());
+    std::printf("\nSaved to %s: the host chooses its video encoder per viewer from it (setting videoCodec = auto)\n", qPrintable(file.fileName()));
+}
+
 //----------------------------------------------------------------//
 /* FUNCTION */
+
+QString xdesk::host::bench_file(void)
+{
+    return xdesk::core::Config::dataDir() + "/bench.json";
+}
+
+QString xdesk::host::bench_best_encoder(const int height, const double mbits, const double rtt, const int codecs)
+{
+    static QMutex lock;
+    static QList<QPair<int, BenchResult>> cache;
+    static bool loaded = false;
+    const QMutexLocker guard(&lock);
+    QHash<QString, BenchResult> merged; // mode -> drag and video of the nearest height, averaged
+    QHash<QString, int> counts; // mode -> scenes measured
+    int nearest = 0;
+
+    if (!loaded) {
+        QFile file(bench_file());
+        loaded = true;
+        if (file.open(QIODevice::ReadOnly))
+            for (const QJsonValue& v: QJsonDocument::fromJson(file.readAll()).object().value("results").toArray()) {
+                const QJsonObject o = v.toObject();
+                cache.append(qMakePair(o.value("height").toInt(), BenchResult{o.value("scene").toString(), o.value("mode").toString(), o.value("encodeMs").toDouble(), 0.0, o.value("bytes").toDouble(), o.value("psnr").toDouble()}));
+            }
+    }
+    for (const QPair<int, BenchResult>& r: cache)
+        if (nearest == 0 || std::abs(r.first - height) < std::abs(nearest - height)) nearest = r.first;
+    for (const QPair<int, BenchResult>& r: cache) {
+        if (r.first != nearest || (r.second.scene != "drag" && r.second.scene != "video") || r.second.mode.startsWith("tiles") || r.second.encodeMs <= 0.0) continue;
+        if (!(codecs & codec_bit_of(r.second.mode)) || r.second.psnr < BENCH_GOOD_PSNR) continue;
+        BenchResult& m = merged[r.second.mode];
+        m.mode = r.second.mode;
+        m.encodeMs += r.second.encodeMs;
+        m.bytes += r.second.bytes;
+        m.psnr += r.second.psnr;
+        ++counts[r.second.mode];
+    }
+    for (QHash<QString, BenchResult>::iterator it = merged.begin(); it != merged.end(); ++it) {
+        const double n = static_cast<double>(std::max(1, counts.value(it.key())));
+        it->encodeMs /= n;
+        it->bytes /= n;
+        it->psnr /= n;
+    }
+    const BenchNetwork link{"", std::max(0.1, mbits), std::max(0.0, rtt), 0.0};
+    QString best = "";
+    double bestFps = 0.0;
+    double bestBytes = 0.0;
+    for (const BenchResult& m: std::as_const(merged)) {
+        const double fps = bench_fps(m, link);
+        if (best.isEmpty() || fps > bestFps * 1.05 || (fps > bestFps * 0.95 && m.bytes < bestBytes)) {best = m.mode; bestFps = fps; bestBytes = m.bytes;}
+    }
+    return best;
+}
 
 QList<xdesk::host::BenchNetwork> xdesk::host::bench_networks(void)
 {
@@ -318,9 +400,10 @@ int xdesk::host::run_bench(int& argc, char** argv, const QString& heights, const
 {
     QCoreApplication app(argc, argv);
     QList<int> sizes;
+    const QStringList scenes = {"typing", "scroll", "drag", "video"};
+    QList<QPair<int, BenchResult>> saved;
 
     (void)std::setlocale(LC_NUMERIC, "C"); // 1.57, not 1,57
-    const QStringList scenes = {"typing", "scroll", "drag", "video"};
 
     for (const QString& h: (heights.isEmpty() || heights == "all" ? QString("1080,2160") : heights).split(',', Qt::SkipEmptyParts))
         if (h.toInt() >= 144) sizes << h.toInt();
@@ -360,6 +443,9 @@ int xdesk::host::run_bench(int& argc, char** argv, const QString& heights, const
             std::fflush(stdout);
         }
 
+        for (const BenchResult& r: results)
+            saved.append(qMakePair(height, r));
+
         // The best way of each scene on each network: the most frames per second at a good quality, then the lowest lag
         std::printf("\n  Best way per network (fps capped at 60, PSNR >= %.0f dB):\n", BENCH_GOOD_PSNR);
         std::printf("  %-32s %-8s %-20s %6s %9s %8s\n", "network", "scene", "best", "fps", "lag ms", "PSNR");
@@ -379,5 +465,6 @@ int xdesk::host::run_bench(int& argc, char** argv, const QString& heights, const
         std::fflush(stdout);
     }
     print_compression();
+    save_bench(saved);
     return 0;
 }

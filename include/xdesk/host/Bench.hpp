@@ -57,7 +57,10 @@ struct BenchResult {
 _cold _nodiscard QList<BenchNetwork> bench_networks(void); // lan, wifi, fiber wan, 4g, degraded, very bad
 _cold _nodiscard double bench_fps(const BenchResult& result, const BenchNetwork& network, const int cap = 60); // frames per second this way reaches on this network
 _cold _nodiscard double bench_latency(const BenchResult& result, const BenchNetwork& network); // ms from the capture to the screen of the viewer
-// Runs the bench (heights: "1080", "2160", "1080,2160", "all"; frames per scene), prints the tables, 0 = done
+_cold _nodiscard QString bench_file(void); // <data>/bench.json: the measures of the last xdesk bench on this computer
+// The video encoder of the last bench giving the most frames on this link (its large moves: drag + video scenes), "" = no bench / none fits
+_cold _nodiscard QString bench_best_encoder(const int height, const double mbits, const double rtt, const int codecs);
+// Runs the bench (heights: "1080", "2160", "1080,2160", "all"; frames per scene), prints the tables, saves them (bench_file), 0 = done
 _cold int run_bench(int& argc, char** argv, const QString& heights, const int frames = 60);
 
 } // namespace end

@@ -69,6 +69,10 @@ std::shared_ptr<xdesk::platform::IVideoEncoder> xdesk::platform::create_video_en
 
     if (prefer == "h264") order = {VideoCodec::H264, VideoCodec::Hevc, VideoCodec::Av1};
     else if (prefer == "hevc") order = {VideoCodec::Hevc, VideoCodec::Av1, VideoCodec::H264};
+    // One encoder by its name (chosen from the bench for the link of this client): first, when it fits
+    if (prefer == "openh264" && (codecs & VIDEO_H264) && h264_available() && pixels <= SOFTWARE_MAX_PIXELS) return std::make_shared<H264Encoder>();
+    for (const VideoCodec codec: {VideoCodec::Av1, VideoCodec::Hevc, VideoCodec::H264})
+        if (hardware && pixels <= HARDWARE_MAX_PIXELS && (codecs & video_codec_bit(codec)) && av_encoders(codec).contains(prefer)) return std::make_shared<AvEncoder>(prefer, codec);
     if (hardware && pixels <= HARDWARE_MAX_PIXELS) {
         for (const VideoCodec codec: order) {
             if (!(codecs & video_codec_bit(codec))) continue;

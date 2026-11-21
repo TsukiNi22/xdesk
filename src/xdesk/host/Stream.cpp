@@ -22,6 +22,7 @@ File Description:
 #include <utils/utils.hpp>
 #include "xdesk/net/Protocol.hpp"
 #include "xdesk/host/Stream.hpp"
+#include "xdesk/host/Bench.hpp"
 #include <QDateTime>
 #include <QImage>
 #include <QHash>
@@ -32,6 +33,7 @@ File Description:
 
 #define OPEN_DELAY 400 // ms waited after a new client before the capture starts (its pause message comes first)
 #define AUTO_MIN_HEIGHT 1080.0 // the automatic resolution never goes under 1080p (native first: the quality goes down, then the frame rate, 1080p last), unless the viewer asked less
+#define CHOICE_EVERY 2000 // ms between two looks at the video encoder of a client (from the bench, by its bandwidth)
 #define PALETTE_RTT 20.0 // ms of ping from which a viewer is far (its link, not the cpu, is the bottleneck): palette tiles, H.264 for the large moves
 
 xdesk::host::Stream::Stream(QObject* parent)
@@ -182,8 +184,11 @@ void xdesk::host::Stream::setVideoCodec(const QString& prefer, const bool hardwa
 {
     this->_prefer = prefer;
     this->_hardware = hardware;
-    for (StreamClient& client: this->_clients)
+    for (StreamClient& client: this->_clients) {
+        client.chosen = "";
+        client.chosenMbits = 0.0;
         client.encoder.setCodecs(client.codecs, prefer, hardware);
+    }
 }
 
 void xdesk::host::Stream::tick_(void)
@@ -254,6 +259,19 @@ void xdesk::host::Stream::tick_(void)
         // Copy tiles (scroll) and video frames only while the frames keep their order and every frame of the other paths arrived
         if (client.settling && client.flow.queue() == 0) client.settling = false;
         client.encoder.setCopy(client.copy && client.ordered && !client.settling);
+        // The encoder of the bench that gives this link the most frames, while the link is the bottleneck (its bandwidth is then measured)
+        if (this->_prefer == "auto" && client.codecs != 0 && linkBound && now - client.chosenAt >= CHOICE_EVERY && (client.flow.queue() >= FLOW_QUEUE_LOW || client.flow.ceiling() < 100)) {
+            const double mbits = client.flow.bandwidth() * 8.0 / 1000.0;
+            client.chosenAt = now;
+            if (mbits > 0.0 && (client.chosenMbits <= 0.0 || std::abs(mbits / client.chosenMbits - 1.0) > 0.3)) {
+                const QString name = bench_best_encoder(static_cast<int>(frame.height() * effective), mbits, client.flow.minRtt(), client.codecs);
+                client.chosenMbits = mbits;
+                if (!name.isEmpty() && name != client.chosen) {
+                    client.chosen = name;
+                    client.encoder.setCodecs(client.codecs, name, this->_hardware);
+                }
+            }
+        }
         client.encoder.setVideo(client.codecs != 0 && this->_video && linkBound && client.ordered && !client.settling);
         message = client.encoder.encode(scaled.value(key), client.flow.quality(client.quality));
         if (client.encoder.videoEncoder() != client.videoName && !client.encoder.videoEncoder().isEmpty()) {
