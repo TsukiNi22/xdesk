@@ -2588,14 +2588,31 @@
         tm.queue = tm.queue.then(() => tm.term.write(bytes));
     }
 
+    // zlib stream inflated, never past its announced size (a host cannot make this page inflate a bomb)
+    async function inflateBounded(packed, size) {
+        const reader = new Blob([packed]).stream().pipeThrough(new DecompressionStream("deflate")).getReader();
+        const out = new Uint8Array(size);
+        let at = 0;
+        for (;;) {
+            const {done, value} = await reader.read();
+            if (done) break;
+            if (at + value.length > size) {reader.cancel().catch(() => {}); return null;}
+            out.set(value, at);
+            at += value.length;
+        }
+        return at === size ? out : null;
+    }
+
     function onTermPacked(data) {
         if (data.length < 6 || !PALETTE) return;
         const tm = state.terms.get(data[1]);
         if (!tm) return;
         const packed = data.slice(6);
+        const size = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(2);
+        if (size > 16 * 1024 * 1024) return;
         tm.inflating = (tm.inflating || 0) + 1;
-        tm.queue = (tm.queue || Promise.resolve()).then(() => new Response(new Blob([packed]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer())
-            .then((out) => tm.term.write(new Uint8Array(out)), () => {})
+        tm.queue = (tm.queue || Promise.resolve()).then(() => inflateBounded(packed, size))
+            .then((out) => {if (out) tm.term.write(out);}, () => {})
             .finally(() => {tm.inflating -= 1;});
     }
 

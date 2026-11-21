@@ -67,6 +67,8 @@ File Description:
         int (*connection)(Display*) = nullptr;
         int (*free)(void*) = nullptr;
         Bool (*fixesQuery)(Display*, int*, int*) = nullptr;
+        XErrorHandler (*setErrorHandler)(XErrorHandler) = nullptr;
+        void (*setIOErrorExit)(Display*, void (*)(Display*, void*), void*) = nullptr; // libX11 1.7+
         void (*fixesSelect)(Display*, Window, Atom, unsigned long) = nullptr;
     };
 
@@ -88,6 +90,7 @@ File Description:
         QByteArray next; // the text to own at the next wake
         bool hasNext = false;
         std::atomic<bool> stop = false;
+        std::atomic<bool> dead = false; // the X server went away (Xwayland restarted): the bridge stops, the host lives
         std::thread thread;
         QPointer<Clipboard> owner;
 
@@ -105,6 +108,18 @@ File Description:
 /* TOOLS */
 
 #ifdef XDESK_X11_CLIPBOARD
+    // An X error is never fatal to the host (the request it answers is simply lost)
+    _cold static int ignore_x_error(Display*, XErrorEvent*)
+    {
+        return 0;
+    }
+
+    // The X server went away: the bridge stops (Xlib does not exit when this returns)
+    _cold static void x_gone(Display*, void* data)
+    {
+        static_cast<xdesk::platform::X11Clipboard*>(data)->dead = true;
+    }
+
     // Every entry point found, a display opened and the XFixes extension present
     _cold bool xdesk::platform::X11Clipboard::open(void)
     {
@@ -129,12 +144,18 @@ File Description:
         this->x.free = reinterpret_cast<decltype(this->x.free)>(this->libX11.resolve("XFree"));
         this->x.fixesQuery = reinterpret_cast<decltype(this->x.fixesQuery)>(this->libXfixes.resolve("XFixesQueryExtension"));
         this->x.fixesSelect = reinterpret_cast<decltype(this->x.fixesSelect)>(this->libXfixes.resolve("XFixesSelectSelectionInput"));
+        this->x.setErrorHandler = reinterpret_cast<decltype(this->x.setErrorHandler)>(this->libX11.resolve("XSetErrorHandler"));
+        this->x.setIOErrorExit = reinterpret_cast<decltype(this->x.setIOErrorExit)>(this->libX11.resolve("XSetIOErrorExitHandler"));
         if (!this->x.openDisplay || !this->x.closeDisplay || !this->x.internAtom || !this->x.defaultRoot || !this->x.createWindow || !this->x.pending
             || !this->x.nextEvent || !this->x.convertSelection || !this->x.getProperty || !this->x.changeProperty || !this->x.setOwner || !this->x.getOwner
-            || !this->x.sendEvent || !this->x.flush || !this->x.connection || !this->x.free || !this->x.fixesQuery || !this->x.fixesSelect)
+            || !this->x.sendEvent || !this->x.flush || !this->x.connection || !this->x.free || !this->x.fixesQuery || !this->x.fixesSelect || !this->x.setErrorHandler || !this->x.setIOErrorExit)
             return false;
+        // Xlib exits the process on an error by default: a client destroying its window while it asks the clipboard
+        // (BadWindow) or Xwayland going away would kill the host (and ban its sessions at the next start)
+        (void)this->x.setErrorHandler(ignore_x_error);
         this->display = this->x.openDisplay(nullptr);
         if (!this->display) return false;
+        this->x.setIOErrorExit(this->display, x_gone, this);
         if (!this->x.fixesQuery(this->display, &this->fixesEvent, &error)) return false;
         this->window = this->x.createWindow(this->display, this->x.defaultRoot(this->display), 0, 0, 1, 1, 0, 0, 0);
         this->clipboard = this->x.internAtom(this->display, "CLIPBOARD", False);
@@ -160,8 +181,8 @@ File Description:
         XEvent event;
         char drain[64];
 
-        while (!this->stop) {
-            while (this->x.pending(this->display)) {
+        while (!this->stop && !this->dead) {
+            while (!this->dead && this->x.pending(this->display)) {
                 this->x.nextEvent(this->display, &event);
                 if (event.type == this->fixesEvent + XFixesSelectionNotify) {
                     const XFixesSelectionNotifyEvent& notify = reinterpret_cast<const XFixesSelectionNotifyEvent&>(event);
@@ -237,7 +258,7 @@ File Description:
         this->stop = true;
         if (this->wake.getWrite() >= 0) (void)!write(this->wake.getWrite(), "x", 1);
         if (this->thread.joinable()) this->thread.join();
-        if (this->display) this->x.closeDisplay(this->display);
+        if (this->display && !this->dead) this->x.closeDisplay(this->display);
     }
 #endif
 

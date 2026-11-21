@@ -29,6 +29,8 @@ File Description:
 #include <QSslConfiguration>
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QBuffer>
+#include <QImageReader>
 #include <QHostInfo>
 #include <QDateTime>
 #include <QSaveFile>
@@ -296,8 +298,13 @@ void xdesk::client::Client::onBinary_(const QByteArray& data)
         case net::Binary::CursorShape: {
             const int x = r.u16();
             const int y = r.u16();
-            const QImage shape = r.ok() ? QImage::fromData(r.rest(), "PNG") : QImage();
-            if (!shape.isNull() && shape.width() <= 512 && shape.height() <= 512) emit this->cursorShape(shape, QPoint(x, y));
+            QByteArray png = r.rest();
+            QBuffer buffer(&png);
+            QImageReader reader(&buffer, "PNG");
+            // The size from the header first: a huge picture is never decoded
+            if (!r.ok() || !buffer.open(QIODevice::ReadOnly) || !reader.canRead() || reader.size().width() > 512 || reader.size().height() > 512) break;
+            const QImage shape = reader.read();
+            if (!shape.isNull()) emit this->cursorShape(shape, QPoint(x, y));
             break;
         }
         case net::Binary::TermData: {

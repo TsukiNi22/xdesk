@@ -351,7 +351,7 @@ xdesk::host::Permissions xdesk::host::Host::defaultPermissions_(const Session* s
     p.view = true;
     p.control = s.allowControl && !s.viewOnlyDefault;
     p.terminal = s.allowTerminal;
-    p.clipboard = s.allowClipboard;
+    p.clipboard = s.allowClipboard && p.control; // a session that only watches never gets what is copied here (passwords)
     return p;
 }
 
