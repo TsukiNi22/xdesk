@@ -57,8 +57,8 @@
             scanClose: "Annuler", scanNoCamera: "Caméra indisponible : autorisez-la, ou entrez le code à la main.",
             scanNotXdesk: "Ce QR code n'est pas un lien xdesk.", scanOther: "Ce QR code mène à un autre ordinateur : ",
             keysTitle: "Touches spéciales", menu: "Menu", keyboard: "Clavier", paste: "Coller", trackpad: "Pavé", direct: "Direct",
-            helpTrackpad: "Pavé tactile : glissez pour bouger le pointeur, touchez pour cliquer, touchez deux fois = double clic (maintenu au second : sélection par mots), touchez puis glissez ou maintenez puis glissez = déplacer, deux doigts = clic droit, glisser à deux doigts = défiler, pincer = zoomer, trois doigts = clavier",
-            helpDirect: "Toucher direct : touchez là où cliquer, touchez deux fois = double clic (maintenu au second : sélection par mots), glisser = déplacer, maintenir puis lâcher = clic droit, glisser à deux doigts = défiler, pincer = zoomer, trois doigts = clavier",
+            helpTrackpad: "Pavé tactile (comme Chrome Remote Desktop) : glissez pour bouger le pointeur, touchez = clic, deux doigts = clic droit, trois doigts = clic du milieu, maintenez jusqu'au cercle gris puis glissez = déplacer, glisser à deux doigts = défiler, pincer = zoomer, trois doigts vers le haut = clavier, vers le bas = touches spéciales",
+            helpDirect: "Toucher direct : touchez là où cliquer, touchez deux fois = double clic (maintenu au second : sélection par mots), glisser = déplacer, maintenir jusqu'au cercle gris puis lâcher = clic droit, deux doigts = clic droit, trois doigts = clic du milieu, glisser à deux doigts = défiler, pincer = zoomer, trois doigts vers le haut = clavier, vers le bas = touches spéciales",
             pastePrompt: "Texte à coller sur l'ordinateur distant",
             clipGet: "Copier du PC", clipSend: "Envoyer le presse-papier", clipAuto: "Presse-papier auto",
             clipGetTitle: "Copier ici le presse-papier de l'ordinateur", clipSendTitle: "Envoyer le presse-papier de cet appareil à l'ordinateur",
@@ -83,8 +83,8 @@
         scanNoCamera: "Camera unavailable: allow it, or type the code.", scanNotXdesk: "This QR code is not an xdesk link.",
         scanOther: "This QR code leads to another computer: ",
         keyboard: "Keyboard", paste: "Paste", trackpad: "Trackpad", direct: "Direct",
-        helpTrackpad: "Trackpad: slide to move the pointer, tap to click, double tap = double click (held on the second: select by words), tap then slide or hold then slide = drag, two fingers tap = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard",
-        helpDirect: "Direct touch: tap where to click, double tap = double click (held on the second: select by words), slide = drag, hold then lift = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard",
+        helpTrackpad: "Trackpad (as Chrome Remote Desktop): slide to move the pointer, tap = click, two fingers tap = right click, three fingers tap = middle click, hold until the gray circle then slide = drag, two fingers slide = scroll, pinch = zoom, three fingers swipe up = keyboard, down = special keys",
+        helpDirect: "Direct touch: tap where to click, double tap = double click (held on the second: select by words), slide = drag, hold until the gray circle then lift = right click, two fingers tap = right click, three fingers tap = middle click, two fingers slide = scroll, pinch = zoom, three fingers swipe up = keyboard, down = special keys",
         pastePrompt: "Text to paste on the remote computer",
         clipGet: "Copy from PC", clipSend: "Send clipboard", clipAuto: "Auto clipboard",
         clipGetTitle: "Copy the clipboard of the computer here", clipSendTitle: "Send the clipboard of this device to the computer",
@@ -1344,6 +1344,7 @@
     canvas.addEventListener("pointercancel", (e) => {
         if (e.pointerType === "touch") {
             touches.delete(e.pointerId);
+            hideRing();
             if (gesture) clearTimeout(gesture.timer);
             if (touches.size === 0) gesture = null;
         }
@@ -1363,12 +1364,86 @@
     //  trackpad (default): one finger slides the pointer, tap = click, double tap = double click, tap then slide or hold then slide = drag
     //  direct: the finger is the pointer, tap = click there, double tap = double click, slide = drag, hold then lift = right click, hold then slide = drag
     //  both: the second tap of a double tap holds the button while the finger stays (double click + hold / slide, as with a mouse)
-    //  both: two fingers tap = right click, two fingers slide = scroll, pinch = zoom, three fingers tap = keyboard
+    //  both (as Chrome Remote Desktop): two fingers tap = right click, three fingers tap = middle click, two fingers slide =
+    //  scroll (flung: it goes on and slows down), pinch = zoom, three fingers swipe up = keyboard, down = special keys
+    //  a hold shows a gray circle under the finger: from there the finger drags (trackpad) / lifted = right click (direct)
 
     const view = {zoom: 1, panX: 0, panY: 0}; // zoom of the screen (fit mode), css pixels
     const pad = {x: -1, y: -1}; // pointer moved by the trackpad (frame pixels)
     let gesture = null;
     let lastTap = null; // {t, x, y, p}: end of the last one finger tap (double taps)
+    const fling = {vx: 0, vy: 0, frame: 0, last: 0, x: 0, y: 0}; // scroll going on after the fingers left (px / ms)
+    const SWIPE3 = 60; // css pixels of a three finger swipe
+
+    // Gray circle of a hold (where the drag / right click starts)
+    function showRing(x, y) {
+        const ring = $("pressRing");
+        ring.style.left = x + "px";
+        ring.style.top = y + "px";
+        ring.hidden = false;
+    }
+
+    function hideRing() {$("pressRing").hidden = true;}
+
+    function stopFling() {
+        if (fling.frame) cancelAnimationFrame(fling.frame);
+        fling.frame = 0;
+    }
+
+    // The wheel of the host from a scroll in css pixels (4 px = one step of 12 / 120 of a notch)
+    function scrollBy(dx, dy, acc) {
+        acc.x += dx;
+        acc.y += dy;
+        const sy = Math.trunc(acc.y / 4);
+        const sx = Math.trunc(acc.x / 4);
+        if (!sy && !sx) return;
+        sendWheel(sx * 12, sy * 12);
+        acc.y -= sy * 4;
+        acc.x -= sx * 4;
+    }
+
+    function startFling(vx, vy) {
+        stopFling();
+        if (Math.hypot(vx, vy) < 0.35 || !canControl()) return;
+        fling.vx = vx;
+        fling.vy = vy;
+        fling.x = 0;
+        fling.y = 0;
+        fling.last = performance.now();
+        const step = (now) => {
+            const dt = Math.min(48, Math.max(1, now - fling.last));
+            const acc = {x: fling.x, y: fling.y};
+            fling.last = now;
+            scrollBy(fling.vx * dt, fling.vy * dt, acc);
+            fling.x = acc.x;
+            fling.y = acc.y;
+            const decay = Math.pow(0.996, dt); // about 1.5 s for a fast fling
+            fling.vx *= decay;
+            fling.vy *= decay;
+            fling.frame = Math.hypot(fling.vx, fling.vy) > 0.02 && canControl() ? requestAnimationFrame(step) : 0;
+        };
+        fling.frame = requestAnimationFrame(step);
+    }
+
+    function fingersCenter() {
+        const list = Array.from(touches.values());
+        return {x: list.reduce((a, t) => a + t.x, 0) / list.length, y: list.reduce((a, t) => a + t.y, 0) / list.length};
+    }
+
+    // Three fingers moving up / down: the keyboard / the special keys (once per gesture)
+    function threeFingerMove() {
+        if (!gesture.three || gesture.kind) return;
+        const c = fingersCenter();
+        const dy = c.y - gesture.three.y;
+        if (Math.abs(dy) < SWIPE3 || Math.abs(dy) < Math.abs(c.x - gesture.three.x)) return;
+        gesture.kind = "swipe3";
+        if (dy < 0) {
+            if (document.activeElement !== kbdInput) toggleKeyboard();
+        } else {
+            save("keys", keysWanted() ? "0" : "1");
+            updateKeybar();
+        }
+    }
 
     function touchInput() {return load("touch") === "direct" ? "direct" : "trackpad";}
     function trackpad() {return touchMode && touchInput() === "trackpad";}
@@ -1433,6 +1508,7 @@
         canvas.setPointerCapture(e.pointerId);
         const now = performance.now();
         touches.set(e.pointerId, {x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY});
+        stopFling(); // a finger stops a flung scroll, like a touch screen
         if (touches.size === 1) {
             const chained = lastTap && now - lastTap.t < DOUBLE_TAP && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < DOUBLE_SLOP * 3;
             gesture = {t: now, last: now, fingers: 1, moved: false, long: false, dragging: false, timer: 0, kind: "", two: null, scrollX: 0, scrollY: 0, p: null, chained: chained};
@@ -1453,6 +1529,7 @@
                     gesture.dragging = true;
                     sendMove(padPoint());
                     sendButton(0, true);
+                    showRing(e.clientX, e.clientY);
                     if (navigator.vibrate) navigator.vibrate(15);
                 }, LONG_PRESS);
             } else {
@@ -1469,6 +1546,7 @@
                 gesture.timer = setTimeout(() => {
                     // Held still: right click when lifted, drag when it slides
                     gesture.long = true;
+                    showRing(e.clientX, e.clientY);
                     if (navigator.vibrate) navigator.vibrate(15);
                 }, LONG_PRESS);
             }
@@ -1476,8 +1554,10 @@
         }
         if (!gesture) return;
         clearTimeout(gesture.timer);
+        hideRing();
         gesture.fingers = Math.max(gesture.fingers, touches.size);
         if (gesture.dragging) {sendButton(0, false); gesture.dragging = false;}
+        if (touches.size === 3) {gesture.three = fingersCenter(); gesture.kind = "";}
         if (touches.size === 2) {
             // Untransformed position of the canvas: the pinch keeps the point under the fingers
             const two = twoFingers();
@@ -1502,7 +1582,9 @@
             gesture.moved = true;
             if (!gesture.long) clearTimeout(gesture.timer);
         }
-        if (touches.size >= 2) {twoFingerMove(dx, dy); return;}
+        if (touches.size >= 3) {threeFingerMove(); return;}
+        if (touches.size === 2 && gesture.fingers < 3) {twoFingerMove(dx, dy, dt); return;}
+        if (touches.size >= 2) return;
         if (gesture.fingers > 1) return; // the fingers of a two-finger gesture leaving one by one
         if (!canControl()) {
             // View only: one finger moves the zoomed screen
@@ -1532,7 +1614,7 @@
         }
     }
 
-    function twoFingerMove(dx, dy) {
+    function twoFingerMove(dx, dy, dt) {
         const g = gesture.two;
         if (!g) return;
         const two = twoFingers();
@@ -1559,15 +1641,14 @@
             if (view.zoom > 1) {view.panX += dx / touches.size; view.panY += dy / touches.size; applyZoom();}
             return;
         }
-        gesture.scrollY += dy / touches.size;
-        gesture.scrollX += dx / touches.size;
-        const sy = Math.trunc(gesture.scrollY / 4);
-        const sx = Math.trunc(gesture.scrollX / 4);
-        if (sy || sx) {
-            sendWheel(sx * 12, sy * 12);
-            gesture.scrollY -= sy * 4;
-            gesture.scrollX -= sx * 4;
-        }
+        const acc = {x: gesture.scrollX, y: gesture.scrollY};
+        scrollBy(dx / touches.size, dy / touches.size, acc);
+        gesture.scrollX = acc.x;
+        gesture.scrollY = acc.y;
+        // Speed of the fingers (smoothed, per finger event): the fling starts from it
+        gesture.vx = (gesture.vx || 0) * 0.6 + dx / touches.size / dt * 0.4;
+        gesture.vy = (gesture.vy || 0) * 0.6 + dy / touches.size / dt * 0.4;
+        gesture.vt = performance.now();
     }
 
     function onTouchUp(e) {
@@ -1582,10 +1663,12 @@
         const quick = now - g.t < TAP_TIME;
         gesture = null;
         lastTap = null;
+        hideRing();
         if (g.dragging) {sendButton(0, false); return;}
+        if (g.kind === "scroll" && now - (g.vt || 0) < 80) startFling(g.vx || 0, g.vy || 0); // still moving when lifted
         if (g.kind) return;
-        if (g.fingers >= 3) {if (quick) toggleKeyboard(); return;}
         if (!canControl()) return;
+        if (g.fingers >= 3) {if (quick) click(1, trackpad() ? padPoint() : toFrame(tp.startX, tp.startY)); return;}
         if (g.fingers === 2) {if (quick) click(2, trackpad() ? padPoint() : toFrame(tp.startX, tp.startY)); return;}
         if (g.moved) return;
         const p = trackpad() ? padPoint() : (g.p || toFrame(tp.startX, tp.startY));
