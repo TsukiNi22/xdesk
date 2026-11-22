@@ -18,31 +18,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [pre-release]
+## [pre-release] (empty)
+
+## v1.9.2 - 2026-11-22
+### Fixed
+- Zoom: the part of the screen sent to a zoomed viewer was computed on the box of the canvas element instead of the frame drawn letterboxed in it, so the host sent the tiles of another area (old pixels where the viewer looked): the view is the part of the drawn frame seen through the viewport, the resolution asked follows the drawn frame too
+- Zoom: no copy tile (scroll) from a tile changed while it was out of the view (the viewer did not have its content)
+- A new frame size (a zoom asks another resolution) keeps the old picture scaled in the web client and the native viewers instead of black while the tiles of the new size come
+
+## v1.9.1 - 2026-11-22
+### Changed
+- The default clipboard right needs the control right: a session that only watches never gets what is copied on the host (it can still be given in the rights of the session)
+- Documentation: top-off, only the shown part, video at the link bitrate, cursor drawn by the viewers, security notes of the clipboard (README, site)
+### Fixed
+- Security: the X11 clipboard bridge ignores the X errors (a local client destroying its window while asking the clipboard made Xlib exit the host, banning its sessions at the next start) and stops alone when Xwayland goes away
+- Security: the web client inflates a `TermPacked` never past its announced size (16 MiB at most); the native viewers decode a cursor png only when its header says 512 x 512 or less
+
+## v1.9.0 - 2026-11-22
+### Changed
+- Top-off sooner and sharper: 150 ms back to the quality of the stream, 500 ms up to 90-95 (was 300 ms / 1 s, +20)
 ### Added
-- Hardware video: the large moves are encoded by the GPU (NVENC, Quick Sync, VA-API through the FFmpeg 8 libraries loaded at run time, headers vendored in `third_party/ffmpeg`) in AV1, HEVC or H.264, up to 4K at about 60 fps (openh264 stays the fallback, up to 1920 x 1200); the codec travels in bits 1-2 of the flags of the `Video` message and the clients list `hevc` / `av1` in `enc` when they decode them (WebCodecs in the browsers and the app, libavcodec in the native viewers); settings `hardwareVideo` and `videoCodec` (auto, h264, hevc, av1)
-- `xdesk bench [heights]`: every way of sending the screen (tiles, tiles + palette + copy, openh264, each GPU encoder of the computer) measured on synthetic scenes (typing, scroll, dragged window, full screen video) at 1080p / 4K (time, bytes, PSNR), played on six simulated networks (LAN to 2 Mb/s, 250 ms, 5 % loss), plus the compression of the terminal output; saved to `bench.json` in the data folder
-- Video encoder per viewer from the bench: while its link is the bottleneck, the encoder giving the most frames on its measured bandwidth and ping is used (the fastest with room on the link, the smallest frames on a slow one), looked at again when the bandwidth moves by 30 %
-- Compressed terminal output (`TermPacked`, zlib): 3.6x on a build log, for the viewers off the LAN (the bench: zlib pays below about 440 Mb/s, the tiles do not compress)
-- Shared clipboard both ways: a copy on the host reaches the viewers that keep the automatic clipboard on (default, can be turned off), a copy on a viewer reaches the host (web: when the page gets the focus back and at Ctrl+V through the paste event; app: the Android clipboard; Qt viewer; terminal client through OSC 52), buttons to force one way; on Wayland the host goes through the X11 selection of Xwayland (libX11 / libXfixes loaded at run time) since a background Wayland client cannot see the clipboard; host setting `allowClipboard` (on)
-- Text line above the special keys (web client and app): Send types the text as it is, Send with an empty line sends Enter, an erase key next to it (held: repeats), like Chrome Remote Desktop
-- Keyboard navigation: Tab / arrows / Home / End / Enter / Escape in the web client and the app (tabs, toolbar, menu, special keys, dialogs) and in the Qt windows (Enter clicks the focused button, arrows along the toolbars, the toolbar buttons reachable with Tab); while the remote screen has the focus every key goes to the remote computer (Tab too), Ctrl+Alt+Shift gives the keys back to the page / window
-- Top-off of a still screen (the way of Chrome Remote Desktop): a tile unchanged for 150 ms goes back to the quality of the stream, after 500 ms it is sent again sharper (90-95, 4:4:4 chroma: no color bleeding around text), within a byte budget taken from the measured bandwidth and only while the link has no queue; the stream keeps encoding while tiles wait, even without a new capture
-- Only what the viewer shows: a pinch zoom (web, app) or a 1:1 view larger than the window (web, Qt) tells the host the part shown (`view`), only its tiles are sent (one tile of margin), the rest once shown; the resolution asked follows the pixels the display shows (a 4K host on a phone gets about the phone resolution, a zoom asks more: the zoomed part in more detail)
 - Video sized for the link (the rate control of Chrome Remote Desktop): once the link of a viewer is the bottleneck, the GPU encoders run in CBR at 80 % of its measured bandwidth with about two frames of buffer (changes at most every 2 s, by 30 %: live on NVENC / Quick Sync, reopened on VA-API), so a large move never builds a queue; openh264 stays at a quantizer (its rate control does not hold low targets on screen content)
 - Large updates sized for the link: an update the link cannot carry in two frame intervals is sent lighter at once (jpeg size model per quality, learnt on the tiles sent), then topped off once still
 - Cursor drawn by the viewers (Wayland: the portal cursor as metadata, no more in the frames): its shape is sent when it changes (`CursorShape`, png + hotspot), the web client, the app and the Qt viewer show their own cursor with that shape while controlling (no round trip), the remote one only when the mouse is elsewhere; `{"t": "cursor", "embedded"}` tells when the host draws it in its frames
+
+## v1.8.0 - 2026-11-22
 ### Changed
 - Resolution "Native" is now "Auto (native max)": never above the host, never above what the display shows
-- Touch gestures of Chrome Remote Desktop: three fingers tap = middle click, three fingers swipe up = keyboard, down = special keys, a gray circle under the finger when a hold starts a drag (trackpad) or a right click (direct), the two fingers scroll goes on after the fingers leave (fling)
-- The hardware H.264 is constrained baseline like openh264 (the native viewers decode it with openh264)
-- The automatic resolution never goes under 1080p (native first: the quality goes down, then the frame rate, 1080p last), unless the viewer asked less
-- Faster BGRX -> YUV conversion (no bound check inside the rows): 4K in 5 ms on every core
+### Added
+- Top-off of a still screen (the way of Chrome Remote Desktop): a tile unchanged for 300 ms goes back to the quality of the stream, after 1 s it is sent again sharper (+20, 4:4:4 chroma: no color bleeding around text), within a byte budget taken from the measured bandwidth and only while the link has no queue; the stream keeps encoding while tiles wait, even without a new capture
+- Only what the viewer shows: a pinch zoom (web, app) or a 1:1 view larger than the window (web, Qt) tells the host the part shown (`view`), only its tiles are sent (one tile of margin), the rest once shown; the resolution asked follows the pixels the display shows (a 4K host on a phone gets about the phone resolution, a zoom asks more: the zoomed part in more detail)
+
+## v1.7.1 - 2026-11-22
 ### Fixed
 - Qt host panel: a page change no longer resizes / moves the window (it was grown to each page, never shrunk back, and grown again after the user made it smaller); the window is sized once at its first show for the largest page (90 % of the screen at most), the pages scroll inside it
-- Security: the X11 clipboard bridge ignores the X errors (a local client destroying its window while asking the clipboard made Xlib exit the host, banning its sessions at the next start) and stops alone when Xwayland goes away; the default clipboard right needs the control right (a session that only watches never gets what is copied on the host); the web client inflates a `TermPacked` never past its announced size; the native viewers decode a cursor png only when its header says 512 x 512 or less
 - Qt viewer: the 1:1 mode no longer forces the window to the size of the remote screen (a 4K host made it larger than the screen, kept on the terminal tabs): the screen scrolls inside its tab (the wheel scrolls it while viewing only)
-- Documentation site in the better-html-doc style ([tsukini22.github.io/xdesk/docs](https://tsukini22.github.io/xdesk/docs/)): user guide, concepts (pairing, screen stream), commands and settings generated from the sources, protocol, files, security and tamper protection, EN / FR with search; sources in `docs/site/`
+
+## v1.7.0 - 2026-11-22
+### Changed
+- Documentation: GPU video, `xdesk bench` results, shared clipboard, text line, gestures, keyboard navigation, `TermPacked` (README, site); the commands page shows `[` `]` and `|` of the usages as they are
+### Added
+- Video encoder per viewer from the bench: while its link is the bottleneck, the encoder giving the most frames on its measured bandwidth and ping is used (the fastest with room on the link, the smallest frames on a slow one), looked at again when the bandwidth moves by 30 %
+
+## v1.6.0 - 2026-11-22
+### Added
+- Compressed terminal output (`TermPacked`, zlib): 3.6x on a build log, for the viewers off the LAN (the bench: zlib pays below about 440 Mb/s, the tiles do not compress)
+
+## v1.5.0 - 2026-11-21
+### Changed
+- The automatic resolution never goes under 1080p (native first: the quality goes down, then the frame rate, 1080p last), unless the viewer asked less
+- Faster BGRX -> YUV conversion (no bound check inside the rows): 4K in 5 ms on every core
+### Added
+- Hardware video: the large moves are encoded by the GPU (NVENC, Quick Sync, VA-API through the FFmpeg 8 libraries loaded at run time, headers vendored in `third_party/ffmpeg`) in AV1, HEVC or H.264 (constrained baseline, like openh264), up to 4K at about 60 fps (openh264 stays the fallback, up to 1920 x 1200); the codec travels in bits 1-2 of the flags of the `Video` message and the clients list `hevc` / `av1` in `enc` when they decode them (WebCodecs in the browsers and the app, libavcodec in the native viewers); settings `hardwareVideo` and `videoCodec` (auto, h264, hevc, av1)
+- `xdesk bench [heights]`: every way of sending the screen (tiles, tiles + palette + copy, openh264, each GPU encoder of the computer) measured on synthetic scenes (typing, scroll, dragged window, full screen video) at 1080p / 4K (time, bytes, PSNR), played on six simulated networks (LAN to 2 Mb/s, 250 ms, 5 % loss), plus the compression of the terminal output; saved to `bench.json` in the data folder
+
+## v1.4.0 - 2026-11-21
+### Added
+- Keyboard navigation: Tab / arrows / Home / End / Enter / Escape in the web client and the app (tabs, toolbar, menu, special keys, dialogs) and in the Qt windows (Enter clicks the focused button, arrows along the toolbars, the toolbar buttons reachable with Tab); while the remote screen has the focus every key goes to the remote computer (Tab too), Ctrl+Alt+Shift gives the keys back to the page / window
+
+## v1.3.0 - 2026-11-21
+### Changed
+- Touch gestures of Chrome Remote Desktop: three fingers tap = middle click, three fingers swipe up = keyboard, down = special keys, a gray circle under the finger when a hold starts a drag (trackpad) or a right click (direct), the two fingers scroll goes on after the fingers leave (fling)
+
+## v1.2.0 - 2026-11-21
+### Added
+- Shared clipboard both ways: a copy on the host reaches the viewers that keep the automatic clipboard on (default, can be turned off), a copy on a viewer reaches the host (web: when the page gets the focus back and at Ctrl+V through the paste event; app: the Android clipboard; Qt viewer; terminal client through OSC 52), buttons to force one way; on Wayland the host goes through the X11 selection of Xwayland (libX11 / libXfixes loaded at run time) since a background Wayland client cannot see the clipboard; host setting `allowClipboard` (on)
+
+## v1.1.0 - 2026-11-21
+### Changed
+- Documentation site in the better-html-doc style ([tsukini22.github.io/xdesk/docs](https://tsukini22.github.io/xdesk/docs/)): user guide, concepts (pairing, screen stream), commands and settings generated from the sources, protocol, files, security and tamper protection, EN / FR with search; sources in `docs/site/`; the README points to it, the my-universe setup replaces the notes of the private repository
+### Added
+- Text line above the special keys (web client and app): Send types the text as it is, Send with an empty line sends Enter, an erase key next to it (held: repeats), like Chrome Remote Desktop
 
 ## v1.0.0 - 2026-11-09
 ### Added
@@ -110,4 +156,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A device trusted again after a ban still asked the code at each connection without saying why (the ban erases its key): its state shows `trusted · code once`, that one code needs no approval and gives it a new key
 - `scripts/install.sh --uinput`: the remote control works at once for the user at the screen (`uaccess`), no new login needed
 
+[v1.9.2]: https://github.com/TsukiNi22/xdesk/compare/v1.9.1...v1.9.2
+[v1.9.1]: https://github.com/TsukiNi22/xdesk/compare/v1.9.0...v1.9.1
+[v1.9.0]: https://github.com/TsukiNi22/xdesk/compare/v1.8.0...v1.9.0
+[v1.8.0]: https://github.com/TsukiNi22/xdesk/compare/v1.7.1...v1.8.0
+[v1.7.1]: https://github.com/TsukiNi22/xdesk/compare/v1.7.0...v1.7.1
+[v1.7.0]: https://github.com/TsukiNi22/xdesk/compare/v1.6.0...v1.7.0
+[v1.6.0]: https://github.com/TsukiNi22/xdesk/compare/v1.5.0...v1.6.0
+[v1.5.0]: https://github.com/TsukiNi22/xdesk/compare/v1.4.0...v1.5.0
+[v1.4.0]: https://github.com/TsukiNi22/xdesk/compare/v1.3.0...v1.4.0
+[v1.3.0]: https://github.com/TsukiNi22/xdesk/compare/v1.2.0...v1.3.0
+[v1.2.0]: https://github.com/TsukiNi22/xdesk/compare/v1.1.0...v1.2.0
+[v1.1.0]: https://github.com/TsukiNi22/xdesk/compare/v1.0.0...v1.1.0
 [v1.0.0]: https://github.com/TsukiNi22/xdesk/releases/tag/v1.0.0
