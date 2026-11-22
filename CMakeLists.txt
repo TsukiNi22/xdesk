@@ -3,7 +3,7 @@ set(TARGET xdesk)
 if(NOT CMAKE_TOOLCHAIN_FILE AND NOT DEFINED CMAKE_CXX_COMPILER)
     set(CMAKE_CXX_COMPILER clang++) # A toolchain (ex: cmake/toolchain/mingw-w64.cmake) or -DCMAKE_CXX_COMPILER wins
 endif()
-project(${TARGET} VERSION 1.0.0 LANGUAGES CXX)
+project(${TARGET} VERSION 1.9.2 LANGUAGES CXX)
 
 # =========================
 # Options

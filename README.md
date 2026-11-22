@@ -1,7 +1,7 @@
 # xdesk
 
 > [!TIP]
-> Documentation [TsukiNi22/xdesk](https://tsukini22.github.io/xdesk/docs/) (v1.0.0): user guide, concepts, commands, settings, protocol, security (searchable, EN / FR) and the interactive project graph.
+> Documentation [TsukiNi22/xdesk](https://tsukini22.github.io/xdesk/docs/) (v1.9.2): user guide, concepts, commands, settings, protocol, security (searchable, EN / FR) and the interactive project graph.
 
 Remote desktop and remote terminal in **one binary** for Windows and Unix: run `xdesk` on a PC, give its one time code, and someone can see / control its screen or open terminals on it, from the native viewer (Qt or terminal), a browser or the Android app.
 Every connection is end to end **TLS 1.3 with a post-quantum hybrid key exchange (X25519 + ML-KEM-768)**, the code is proven with **Argon2id** bound to the host certificate, and the person in front of the PC sees everything each session does, live, and decides who stays (trust, kick, ban).
