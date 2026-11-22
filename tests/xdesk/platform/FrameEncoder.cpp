@@ -522,3 +522,46 @@ TEST(FrameEncoder, OnlyTheViewIsSent)
     encoder.setView(QRectF(0.0, 0.0, 1.0, 1.0));
     EXPECT_EQ(std::get<3>(tiles_of(encoder.encode(noise_frame(1), 70))), all - shown); // shown again: the tiles it missed
 }
+
+// A tile changed out of a zoomed view is never the source of a copy tile once the whole screen is shown again
+TEST(FrameEncoder, NoCopyFromTilesChangedOutOfTheView)
+{
+    xdesk::platform::FrameEncoder encoder;
+    QImage page(640, 384, QImage::Format_RGB32);
+
+    // Lines of text like content (a scroll is found in it)
+    const std::function<void(QImage&, const int)> draw = [](QImage& image, const int offset) {
+        for (int y = 0; y < image.height(); ++y)
+            for (int x = 0; x < image.width(); ++x)
+                image.setPixel(x, y, ((y + offset) % 16 < 10 && (x * 7 + (y + offset) / 16 * 13) % 23 < 15) ? qRgb(220, 220, 220) : qRgb(30, 30, 30));
+    };
+    encoder.setCopy(true);
+    draw(page, 0);
+    (void)encoder.encode(page, 70);
+    encoder.setView(QRectF(0.0, 0.0, 0.2, 0.2)); // zoomed on the top left corner
+    draw(page, 48); // the page scrolled meanwhile: the client keeps the old content out of its view
+    (void)encoder.encode(page, 70);
+    encoder.setView(QRectF(0.0, 0.0, 1.0, 1.0));
+    QImage next(640, 384, QImage::Format_RGB32);
+    draw(next, 96); // scrolled again: copies would take sources the client does not have
+    const QByteArray message = encoder.encode(next, 70);
+    ASSERT_FALSE(message.isEmpty());
+    EXPECT_EQ(std::get<3>(tiles_of(message)), 640L * 384L); // every tile sent as itself (no copy tile counts its area twice)
+    xdesk::net::ByteReader r(message);
+    (void)r.u32();
+    (void)r.u16();
+    (void)r.u16();
+    const int count = r.u16();
+    for (int i = 0; i < count && r.ok(); ++i) {
+        (void)r.u16();
+        (void)r.u16();
+        (void)r.u16();
+        (void)r.u16();
+        const std::uint8_t encoding = r.u8();
+        EXPECT_NE(encoding, 4); // no copy tile
+        if (encoding == 1) (void)r.bytes(static_cast<qsizetype>(r.u32()));
+        else if (encoding == 3) {(void)r.bytes(r.u8() * 3); (void)r.bytes(static_cast<qsizetype>(r.u32()));}
+        else if (encoding == 2) {(void)r.u8(); (void)r.u8(); (void)r.u8();}
+        else if (encoding == 4) {(void)r.u16(); (void)r.u16();}
+    }
+}

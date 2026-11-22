@@ -565,21 +565,25 @@ QByteArray xdesk::platform::FrameEncoder::encode(const QImage& frame, const int 
     const int viewBottom = std::min(this->_rows - 1, static_cast<int>(std::ceil(this->_view.bottom() * this->_height)) / XDESK_TILE_SIZE + 1);
     const qint64 now = now_ms();
     QVector<bool> shown(count, true);
+    const bool stale = this->_stale; // the client may lack the content of some tiles (copies from them would be wrong)
+    this->_stale = false;
     if (!full) {
         for (qsizetype i = 0; i < count; ++i) {
             const int tx = static_cast<int>(i % this->_cols);
             const int ty = static_cast<int>(i / this->_cols);
             shown[i] = tx >= viewLeft && tx <= viewRight && ty >= viewTop && ty <= viewBottom;
-            if (!shown[i]) hashes[i] = this->_hashes[i]; // not sent: changed or not, it waits to be shown
+            if (shown[i]) continue;
+            if (hashes[i] != this->_hashes[i]) this->_stale = true; // changed out of the view: the client has an older one
+            hashes[i] = this->_hashes[i]; // not sent: changed or not, it waits to be shown
         }
     }
     for (qsizetype i = 0; i < count; ++i)
         if (hashes[i] != this->_hashes[i]) this->_changedAt[i] = now;
 
     // Scroll: the tiles found higher / lower in the previous frame are copied by the client from what it has (the whole
-    // screen only: out of a zoomed view the client may not have the source)
+    // screen only, and only once the client has every tile of the previous frame: never from a tile changed out of a view)
     offsets = QVector<int>(count, 0);
-    if (this->_copy && full && this->_previous.size() == image.size()) {
+    if (this->_copy && full && !stale && this->_previous.size() == image.size()) {
         for (qsizetype i = 0; i < count; ++i)
             if (hashes[i] != this->_hashes[i] && this->_hashes[i] != 0) moved++;
         if (moved >= COPY_MIN_MOVED) this->findCopies_(image, hashes, offsets);

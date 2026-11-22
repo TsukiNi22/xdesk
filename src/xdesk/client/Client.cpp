@@ -29,6 +29,7 @@ File Description:
 #include <QSslConfiguration>
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QPainter>
 #include <QBuffer>
 #include <QImageReader>
 #include <QHostInfo>
@@ -325,8 +326,16 @@ void xdesk::client::Client::onBinary_(const QByteArray& data)
 
 void xdesk::client::Client::fitCanvas_(const int width, const int height)
 {
+    const QImage old = this->_canvas;
+
+    // The picture of the old size scaled into the new one (no black while the tiles of the new size come)
     this->_canvas = QImage(width, height, QImage::Format_RGB32);
     this->_canvas.fill(Qt::black);
+    if (!old.isNull() && old.width() > 16 && old.height() > 9) {
+        QPainter painter(&this->_canvas);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+        painter.drawImage(this->_canvas.rect(), old);
+    }
     this->_tileColumns = (width + XDESK_TILE_SIZE - 1) / XDESK_TILE_SIZE;
     this->_tiles = QVector<std::uint32_t>(this->_tileColumns * ((height + XDESK_TILE_SIZE - 1) / XDESK_TILE_SIZE), 0);
 }

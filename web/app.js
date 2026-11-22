@@ -918,8 +918,18 @@
         showResolution();
         state.tileCols = Math.ceil(w / TILE_SIZE);
         state.tileIds = new Uint32Array(state.tileCols * Math.ceil(h / TILE_SIZE));
+        // The picture of the old size scaled into the new one: no black while the tiles of the new size come (a zoom
+        // asks another resolution, only the shown part is sent at once)
+        let old = null;
+        if (canvas.width > 16 && canvas.height > 9) {
+            old = document.createElement("canvas");
+            old.width = canvas.width;
+            old.height = canvas.height;
+            old.getContext("2d").drawImage(canvas, 0, 0);
+        }
         canvas.width = w;
         canvas.height = h;
+        if (old) ctx.drawImage(old, 0, 0, old.width, old.height, 0, 0, w, h);
         layoutCanvas();
         return true;
     }
@@ -1280,8 +1290,9 @@
     */
     function displayScale(chosen) {
         if (!$("viewport").classList.contains("fit") || !state.hostW) return chosen;
-        const r = canvas.getBoundingClientRect();
-        const shown = r.width * (window.devicePixelRatio || 1) / state.hostW;
+        const box = drawnBox(); // the frame as drawn (letterboxed inside the canvas element, zoom included)
+        if (!box) return chosen;
+        const shown = state.frameW * box.ratio * (window.devicePixelRatio || 1) / state.hostW;
         if (!(shown > 0)) return chosen;
         const step = Math.min(1, Math.pow(1.25, Math.ceil(Math.log(shown) / Math.log(1.25))));
         return Math.min(chosen, Math.max(0.1, step));
@@ -1311,10 +1322,16 @@
     let viewSent = {x: 0, y: 0, w: 1, h: 1};
     let viewTimer = 0;
 
+    // Shares of the frame seen through the viewport: the frame as drawn (object-fit letterboxes it inside the canvas
+    // element in fit mode, the zoom scales both), never the element box
     function visibleView() {
-        const r = canvas.getBoundingClientRect();
+        const box = drawnBox();
         const vp = $("viewport").getBoundingClientRect();
         const full = {x: 0, y: 0, w: 1, h: 1};
+        if (!box) return full;
+        const r = {left: box.left, top: box.top, width: state.frameW * box.ratio, height: state.frameH * box.ratio};
+        r.right = r.left + r.width;
+        r.bottom = r.top + r.height;
         if (!(r.width > 0) || !(r.height > 0)) return full;
         const left = Math.max(r.left, vp.left);
         const top = Math.max(r.top, vp.top);

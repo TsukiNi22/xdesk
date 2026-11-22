@@ -74,6 +74,7 @@ class FrameEncoder {
         int _videoBitrate = 0; // bits / s of the video frames (0 = constant quantizer from the quality)
         QRectF _view = QRectF(0.0, 0.0, 1.0, 1.0); // part of the screen the client shows (share of the frame): only its tiles are sent
         bool _pending = false; // tiles still waiting to be sent sharper (the stream calls encode again even without a new capture)
+        bool _stale = false; // tiles changed out of the view: the client lacks their latest content (no copy tile from them)
 
         // ---------- Pre-Function -------- //
         _hot void findCopies_(const QImage& image, const QVector<std::uint64_t>& hashes, QVector<int>& offsets) const; // offsets[tile] = rows its content moved down since the previous frame (0 = not found)
