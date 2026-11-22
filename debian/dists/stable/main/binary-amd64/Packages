@@ -17,6 +17,25 @@ Priority: optional
 Homepage: https://github.com/TsukiNi22/xdesk
 Description: Project xdesk (global)
 
+Package: mingw64-xdesk
+Version: 1.9.2-1
+Architecture: all
+Maintainer: TsukiNi22
+Installed-Size: 8
+Depends: mingw64-xdesk-op (>= 1.9.2)
+Conflicts: mingw64-xdesk-pre
+Breaks: mingw64-xdesk-pre
+Replaces: mingw64-xdesk-pre (<= 1.9.2)
+Filename: pool/main/mingw64-xdesk-1.9.2-win64.deb
+Size: 652
+MD5sum: 3f9d311be244b0a09e871b9348b74816
+SHA1: 7fbadc3bd84ac1e570c4878a010f0266da60aa01
+SHA256: cc9619d14f780aa8da4dc17f8e86a843bc3cdf9594b218054464bedd6a4881f7
+Section: devel
+Priority: optional
+Homepage: https://github.com/TsukiNi22/xdesk
+Description: Project xdesk (global)
+
 Package: mingw64-xdesk-db
 Version: 1.0.0-1
 Architecture: all
@@ -30,6 +49,24 @@ Size: 29779546
 MD5sum: 260d58d61c141f8a194690bc7dfd44e9
 SHA1: fe98bfbfb228c81b3cfd1f947edcb18b52ade20e
 SHA256: 70b52dc0b75d1c8279715c5fd0ae497efbffce8dc7998e99399c444a148c2159
+Section: devel
+Priority: optional
+Homepage: https://github.com/TsukiNi22/xdesk
+Description: Project xdesk (debug)
+
+Package: mingw64-xdesk-db
+Version: 1.9.2-1
+Architecture: all
+Maintainer: TsukiNi22
+Installed-Size: 147600
+Conflicts: mingw64-xdesk-db-pre, mingw64-xdesk-as, mingw64-xdesk-as-pre, mingw64-xdesk-op, mingw64-xdesk-op-pre
+Breaks: mingw64-xdesk-db-pre, mingw64-xdesk-as, mingw64-xdesk-as-pre, mingw64-xdesk-op, mingw64-xdesk-op-pre
+Replaces: mingw64-xdesk-db-pre (<= 1.9.2)
+Filename: pool/main/mingw64-xdesk-db-1.9.2-win64-bin.deb
+Size: 31736218
+MD5sum: a04cdc895cc83d2b92bb63c9c9ff9894
+SHA1: e8a7a2a4590754a3eb9af985cf847a29624afffd
+SHA256: 8d9ed5258819d7d91acf5c51c4c5aa30f16acdca2e9eb13b2d3c54de4dbd295f
 Section: devel
 Priority: optional
 Homepage: https://github.com/TsukiNi22/xdesk
@@ -53,6 +90,24 @@ Priority: optional
 Homepage: https://github.com/TsukiNi22/xdesk
 Description: Project xdesk (optimized)
 
+Package: mingw64-xdesk-op
+Version: 1.9.2-1
+Architecture: all
+Maintainer: TsukiNi22
+Installed-Size: 23284
+Conflicts: mingw64-xdesk-db, mingw64-xdesk-db-pre, mingw64-xdesk-as, mingw64-xdesk-as-pre, mingw64-xdesk-op-pre
+Breaks: mingw64-xdesk-db, mingw64-xdesk-db-pre, mingw64-xdesk-as, mingw64-xdesk-as-pre, mingw64-xdesk-op-pre
+Replaces: mingw64-xdesk-op-pre (<= 1.9.2)
+Filename: pool/main/mingw64-xdesk-op-1.9.2-win64-bin.deb
+Size: 7756158
+MD5sum: 2d3ddaf6da1aa8478d01efdac7fe68a6
+SHA1: 8427a3d7412fa8f3959362c8c66f74d29dba8610
+SHA256: b9ddd231362ec7fb3b558a098eb942804a917d3f23cf9fc8cacf5eb8fef06b3e
+Section: devel
+Priority: optional
+Homepage: https://github.com/TsukiNi22/xdesk
+Description: Project xdesk (optimized)
+
 Package: xdesk
 Version: 1.0.0-1
 Maintainer: TsukiNi22
@@ -66,6 +121,24 @@ Size: 608
 MD5sum: f1e24763a27c6ac4ed1c6ec23d2deed1
 SHA1: 8234c21444207eb35e35c331a5043819d92ef91e
 SHA256: 7c0eddc60eff6e3e6ccc506431c1f4821e2f16b9c317fd834917b9293fce92b2
+Section: devel
+Priority: optional
+Homepage: https://github.com/TsukiNi22/xdesk
+Description: Project xdesk (global)
+
+Package: xdesk
+Version: 1.9.2-1
+Maintainer: TsukiNi22
+Installed-Size: 4
+Depends: xdesk-op (>= 1.9.2)
+Conflicts: xdesk-pre
+Breaks: xdesk-pre
+Replaces: xdesk-pre (<= 1.9.2)
+Filename: pool/main/xdesk-1.9.2-Linux.deb
+Size: 608
+MD5sum: 1128e8dae540047d3ad40c13565f2193
+SHA1: dcfbbfcbe4d7172af7ccc06bd9e80ac2d49eedd7
+SHA256: 19b623b95f1e8d4fff729b24687dd788a1324c2a6c28f346b96d01e9ce1e3034
 Section: devel
 Priority: optional
 Homepage: https://github.com/TsukiNi22/xdesk
@@ -89,6 +162,24 @@ Priority: optional
 Homepage: https://github.com/TsukiNi22/xdesk
 Description: Project xdesk (asan)
 
+Package: xdesk-as
+Version: 1.9.2-1
+Maintainer: TsukiNi22
+Installed-Size: 35987
+Suggests: libopenh264-8
+Conflicts: xdesk-db, xdesk-db-pre, xdesk-as-pre, xdesk-op, xdesk-op-pre
+Breaks: xdesk-db, xdesk-db-pre, xdesk-as-pre, xdesk-op, xdesk-op-pre
+Replaces: xdesk-as-pre (<= 1.9.2)
+Filename: pool/main/xdesk-as-1.9.2-Linux-bin.deb
+Size: 11751360
+MD5sum: b4159de13cae3294cca5b62c9caf3aa8
+SHA1: 9b55fa72303d0ec43d376346bca3bb8982add0ba
+SHA256: 31487b42894f76f902b5bc4c2aa222f97b4f0a0b55875e94c380a5de56e7394d
+Section: devel
+Priority: optional
+Homepage: https://github.com/TsukiNi22/xdesk
+Description: Project xdesk (asan)
+
 Package: xdesk-db
 Version: 1.0.0-1
 Maintainer: TsukiNi22
@@ -107,6 +198,24 @@ Priority: optional
 Homepage: https://github.com/TsukiNi22/xdesk
 Description: Project xdesk (debug)
 
+Package: xdesk-db
+Version: 1.9.2-1
+Maintainer: TsukiNi22
+Installed-Size: 28549
+Suggests: libopenh264-8, gdb
+Conflicts: xdesk-db-pre, xdesk-as, xdesk-as-pre, xdesk-op, xdesk-op-pre
+Breaks: xdesk-db-pre, xdesk-as, xdesk-as-pre, xdesk-op, xdesk-op-pre
+Replaces: xdesk-db-pre (<= 1.9.2)
+Filename: pool/main/xdesk-db-1.9.2-Linux-bin.deb
+Size: 9605566
+MD5sum: de7b25ee43e7f319caa9c5abb7817830
+SHA1: 1ebbc724cb0490e454ef51c405a1726bb6d9817e
+SHA256: 1d4e7118860196285d07b8fecdea824f1be5872f9f1399d656d6c414ff691e18
+Section: devel
+Priority: optional
+Homepage: https://github.com/TsukiNi22/xdesk
+Description: Project xdesk (debug)
+
 Package: xdesk-op
 Version: 1.0.0-1
 Maintainer: TsukiNi22
@@ -120,6 +229,24 @@ Size: 1142492
 MD5sum: 10779cdc2fdfdfcc577211dfccbba3d2
 SHA1: 19939a03c0013e76a9f34ed17997794920038461
 SHA256: 78f79d2c0a8b0d08674bbb53295856614ff9b184aefea41199e02d6746648691
+Section: devel
+Priority: optional
+Homepage: https://github.com/TsukiNi22/xdesk
+Description: Project xdesk (optimized)
+
+Package: xdesk-op
+Version: 1.9.2-1
+Maintainer: TsukiNi22
+Installed-Size: 3086
+Suggests: libopenh264-8
+Conflicts: xdesk-db, xdesk-db-pre, xdesk-as, xdesk-as-pre, xdesk-op-pre
+Breaks: xdesk-db, xdesk-db-pre, xdesk-as, xdesk-as-pre, xdesk-op-pre
+Replaces: xdesk-op-pre (<= 1.9.2)
+Filename: pool/main/xdesk-op-1.9.2-Linux-bin.deb
+Size: 1239212
+MD5sum: 1ded7d4287aa09107a4467a9bb9cfd21
+SHA1: 8a52b4e96853cef305a218453b804b28d63b1bc2
+SHA256: 22610778274c9fb9500672093a4b5f8faf35c660dfc5fd282504c3339d72a2ae
 Section: devel
 Priority: optional
 Homepage: https://github.com/TsukiNi22/xdesk
